@@ -1,0 +1,58 @@
+# Реестр бэгов. split: train | holdout.
+# HOLDOUT НЕ ЗАПУСКАТЬ ДО ФАЗЫ 6 (PLAN.md 11.2.6, правило 16.3.1).
+# Пути - от корня data/ (папка исключена из git).
+
+bags:
+  roundT_doubleT:
+    path: data/recordings/roundT_doubleT
+    topic: /lidar_points
+    points_per_frame: 307200
+    rate_hz: 10.0
+    split: train
+    labels: [round_tunnel, straight, long_range]
+    notes: "Прямой участок. Медиана дальности по азимуту до 367 м. Основной бэг для проверки дальности."
+
+  doubleT_platform:
+    path: data/recordings/doubleT_platform
+    topic: /lidar_points
+    points_per_frame: 307200
+    rate_hz: 10.0
+    split: train
+    labels: [platform]
+    notes: "Платформа. Законная геометрия в габарите. Главный источник FP."
+
+  doubleT_obstacle:
+    path: data/recordings/doubleT_obstacle
+    topic: /sensing/lidar/hesai128/pointcloud
+    points_per_frame: 921600
+    rate_hz: 10.0
+    split: train
+    labels: [double_tunnel, obstacle]
+    notes: "ЕДИНСТВЕННЫЙ бэг с препятствием. Другой пайплайн (frame_id=lidar_livox), 3x точек."
+
+  roundT_pressureGate_roundT:
+    path: data/recordings/roundT_pressureGate_roundT
+    topic: /lidar_points
+    points_per_frame: 307200
+    rate_hz: 10.0
+    split: train
+    labels: [round_tunnel, pressure_gate]
+    notes: "Гермозатвор - законная геометрия в габарите."
+
+  roundT_squareT_pressureGate_squareT:
+    path: data/recordings/roundT_squareT_pressureGate_squareT
+    topic: /lidar_points
+    points_per_frame: 307200
+    rate_hz: 10.0
+    split: train
+    labels: [round_tunnel, square_tunnel, pressure_gate]
+    notes: "Переход круглый<->прямоугольный тоннель."
+
+  squareT_platform_squareT_switch:
+    path: data/recordings/squareT_platform_squareT_switch
+    topic: /lidar_points
+    points_per_frame: 307200
+    rate_hz: 10.0
+    split: holdout
+    labels: [square_tunnel, platform, switch]
+    notes: "Held-out. Три сложных класса сразу. Единственный честный тест обобщаемости."

@@ -1,0 +1,91 @@
+# ==============================================================================
+# Argus — правила исключения
+# ==============================================================================
+# ВАЖНО: материалы проекта (ТЗ, исследование, датасет, шаблоны) конфиденциальны
+# и НЕ подлежат публикации. Всё, что находится в data/, исключено из репозитория.
+# ==============================================================================
+
+# --- Конфиденциальные материалы проекта ---
+data/
+датасет/
+recordings.zst
+*.zst
+
+# --- Данные (никогда не коммитим) ---
+data/
+*.db3
+*.db3-wal
+*.db3-shm
+*.mcap
+*.pcd
+*.ply
+*.npz
+*.npy
+*.bag
+*.csv
+!config/*.csv
+
+# --- Результаты прогонов ---
+results/
+*.mp4
+*.mov
+*.webm
+
+# --- Артефакты сборки ROS 2 ---
+build/
+install/
+log/
+.deps/
+compile_commands.json
+
+# --- Артефакты сборки C++ ---
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+*.exe
+*.out
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+.conda/
+
+# --- Третьи стороны (подтягиваются через vcs import) ---
+third_party/*/
+!third_party/argus.repos
+
+# --- Инструменты и редакторы ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Секреты ---
+.env
+.env.*
+*.pem
+*.key
+secrets.yaml
+
+# --- ���������������� ��������� ---
+.repowise/

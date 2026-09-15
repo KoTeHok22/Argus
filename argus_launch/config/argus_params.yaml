@@ -1,0 +1,137 @@
+# Параметры конвейера Argus. ЕДИНАЯ ТОЧКА ИСТИНЫ (PLAN.md 10.2).
+# Ни один параметр не задаётся в коде. Каждое значение имеет диапазон и дефолт.
+
+/**:
+  ros__parameters:
+    # --- Общие ---
+    frame_id_lidar: ""            # пусто = брать из сообщения
+    publish_diagnostics: true
+
+    # --- Чтение облака (Фаза 1) ---
+    cloud:
+      input_topic: /lidar_points  # doubleT_obstacle: /sensing/lidar/hesai128/pointcloud
+      qos_depth: 10
+      min_range: 0.5              # м
+      max_range: 400.0            # м
+      max_abs_coord: 1.0e4        # отбраковка мусора (факт D4: ~70% точек)
+      drop_zero_xyz: true         # (0,0,0) = нет возврата
+      drop_nonfinite: true
+      echo_multiplier: 0          # 0 = автоопределение; 1 обычный; 3 тройное эхо
+
+    # --- Range image (Фаза 1) ---
+    range_image:
+      rings: 0                    # 0 = автоопределение (ожидается 128)
+      az_steps: 0                 # 0 = автоопределение (2400 или 7200)
+      prefer_ring_field: true
+
+    # --- Земля и рельсы (Фаза 1) ---
+    ground_segmentation:
+      enabled: true
+      method: patchworkpp
+      sensor_height: -1.20        # м, УТОЧНИТЬ по данным (допущение A3)
+      num_zones: 4
+      num_sectors: 54
+      enable_RNR: true            # reflected noise removal (мокрые рельсы)
+      enable_TGR: true
+      rail_max_height: 0.20       # м над полом
+      rail_max_width: 0.15        # м
+
+    # --- Одометрия (Фаза 2) ---
+    odometry:
+      enabled: true
+      method: kiss_icp
+      lock_lateral: true          # y = 0: рельсы держат
+      lock_roll: true             # roll = 0: рельсы держат
+      lock_vertical: false        # z меняется (уклон пути)
+      kiss_icp:
+        max_range: 120.0
+        min_range: 1.0
+        voxel_size: 0.5
+      max_speed_mps: 30.0         # валидация правдоподобности позы
+      max_accel_mps2: 2.0
+
+    # --- Модель тоннеля (Фаза 2) ---
+    tunnel_model:
+      enabled: true
+      voxel_size: 0.20            # м; меньше = точнее, дороже
+      free_space_margin: 0.15     # м
+      min_observations: 3         # клетка пуста минимум в N кадрах
+      max_range: 150.0            # м, дальше разреженно
+      enable_decay: false
+      decay_after_frames: 3000
+      forget_ray_fraction: 0.02
+      prior_map_path: ""          # пусто = онлайн-режим (основной)
+
+    # --- Профиль тоннеля (Фаза 2) ---
+    tunnel_profile:
+      enabled: true
+      alpha_initial: 0.30         # быстрое обучение вначале
+      alpha_steady: 0.02          # медленное после прогрева
+      warmup_frames: 200
+
+    # --- Детектор: потеря возвратов (Фаза 3) ---
+    detector_no_return:
+      enabled: true
+      min_missing_run: 8          # минимум подряд идущих «дыр»
+      azimuth_window: 5
+      min_baseline_hits: 0.70
+      min_range: 3.0
+
+    # --- Детектор: геометрический остаток (Фаза 3) ---
+    detector_geometry:
+      enabled: true
+      azimuth_median_half_window: 15
+      ring_median_half_window: 3
+      sigma_threshold: 3.0
+      min_abs_deviation_m: 0.50
+      max_range: 200.0
+      min_run_length: 3
+
+    # --- Детектор: свободное пространство (Фаза 3) ---
+    detector_free_space:
+      enabled: true
+      min_confidence: 0.70
+      min_range: 1.0
+      max_range: 150.0
+
+    # --- Габарит (Фаза 4) ---
+    gauge:
+      half_width: 1.45            # м, УТОЧНИТЬ (допущение A1)
+      height: 3.60                # м
+      base_offset: 0.20           # м
+      chamfer: 0.20               # м
+      nose_offset: 0.00           # м, УТОЧНИТЬ (допущение A2)
+      max_range: 300.0
+      safety_margin: 0.10
+
+    # --- Кластеризация (Фаза 4) ---
+    clustering:
+      neighbor_distance: 0.35     # м
+      adaptive_scaling: true
+      reference_range: 50.0
+      min_cluster_size: 15
+      max_cluster_size: 20000
+      min_extent_m: 0.20
+      max_extent_m: 5.00
+
+    # --- Трекинг (Фаза 4) ---
+    tracking:
+      max_association_distance: 2.0
+      min_hits_to_confirm: 3
+      max_misses_to_keep: 4
+      process_noise: 0.5
+      measurement_noise: 0.3
+
+    # --- Слияние (Фаза 4) ---
+    fusion:
+      min_votes_for_alert: 1      # начать с 1, поднять после калибровки (9.4)
+      require_confirmed_track: true
+      critical_range_m: 50.0
+      warning_range_m: 150.0
+      critical_ttc_s: 3.0
+
+    # --- Транспортное средство ---
+    vehicle:
+      speed_topic: ""             # пусто = из одометрии (допущение A4)
+      default_speed_mps: 0.0
+      braking_decel_mps2: 1.3

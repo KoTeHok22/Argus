@@ -1,0 +1,27 @@
+# Нормализация переводов строк: LF везде, и в репозитории, и в рабочей копии.
+* text=auto eol=lf
+
+# Явно текстовые — для корректного diff
+*.cpp   text diff=cpp
+*.hpp   text diff=cpp
+*.h     text diff=cpp
+*.cc    text diff=cpp
+*.py    text diff=python
+*.md    text diff=markdown
+*.yaml  text
+*.yml   text
+*.json  text
+*.xml   text
+*.msg   text
+*.txt   text
+*.sh    text eol=lf
+
+# Бинарные — не трогать
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.pptx  binary
+*.zst   binary
+*.db3   binary

@@ -1,0 +1,42 @@
+# Copyright 2026 Argus Team
+# Licensed under the Apache License, Version 2.0
+#
+# CI: линт + сборка + тесты в контейнере Humble.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    container: osrf/ros:humble-perception-jammy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deps
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            clang-format git python3-vcstool zstd libeigen3-dev \
+            libyaml-cpp-dev libtbb-dev liblz4-dev
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Lint
+        run: bash scripts/ci/lint.sh
+
+      - name: Build
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+      - name: Test
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test --event-handlers console_direct+
+          colcon test-result --verbose

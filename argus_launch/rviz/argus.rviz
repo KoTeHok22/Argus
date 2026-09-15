@@ -1,0 +1,43 @@
+﻿# RViz2 layout Argus - каркас (Ф5.6.10: настроить в RViz2 и сохранить сюда).
+# Отображения: RawCloud, CleanCloud, TunnelModel, ObstacleMarkers, Gauge.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: RawCloud
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /lidar_points
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: CleanCloud
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /argus/clean
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: TunnelModel
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /argus/model
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: GaugeMarkers
+      Topic:
+        Depth: 5
+        Reliability Policy: Reliable
+        Value: /argus/markers
+  Global Options:
+    Fixed Frame: lidar_link
+Window Geometry:
+  Height: 900
+  Width: 1400
