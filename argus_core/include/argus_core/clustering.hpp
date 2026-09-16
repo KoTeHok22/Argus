@@ -43,8 +43,9 @@ struct Cluster {
     Eigen::Vector3f min_corner = Eigen::Vector3f::Zero();
     Eigen::Vector3f max_corner = Eigen::Vector3f::Zero();
     float nearest_range = 0.0f; // м, ближайшая к лидару точка кластера
-    float volume = 0.0f;        // м^3 по ограничивающему боксу
-    float score = 0.0f;         // агрегированная уверенность
+    float forward_distance = -1.0f; // м вдоль оси движения, -1 если кластер вне габарита
+    float volume = 0.0f; // м^3 по ограничивающему боксу
+    float score = 0.0f;  // агрегированная уверенность
     uint32_t point_count = 0;
 
     // Голоса детекторов (fusion, PLAN.md §9.4)

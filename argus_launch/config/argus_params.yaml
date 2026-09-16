@@ -102,6 +102,8 @@
 
     # --- Габарит (Фаза 4) ---
     gauge:
+      forward_axis: "-y"          # ось «вперёд» в СК лидара (факт F-F): для
+                                  # doubleT-бэгов -y; варианты: x/-x/y/-y
       half_width: 1.45            # м, УТОЧНИТЬ (допущение A1)
       height: 3.60                # м
       base_offset: 0.20           # м
@@ -112,13 +114,13 @@
 
     # --- Кластеризация (Фаза 4) ---
     clustering:
-      neighbor_distance: 0.35     # м
+      neighbor_distance: 0.35     # м, 3D-порог связности соседних точек
       adaptive_scaling: true
       reference_range: 50.0
       min_cluster_size: 15
       max_cluster_size: 20000
-      min_extent_m: 0.20
-      max_extent_m: 5.00
+      min_extent_m: 0.20          # максимальная ось бокса кластера меньше — шум
+      max_extent_m: 5.00          # больше — архитектура, не объект
 
     # --- Трекинг (Фаза 4) ---
     tracking:

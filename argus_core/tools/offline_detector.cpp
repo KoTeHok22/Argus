@@ -22,6 +22,9 @@
 //   n_valid x (float x,y,z,intensity; uint32 raw_idx) | n_no_return x uint32.
 
 #include <argus_core/anomaly.hpp>
+#include <argus_core/clustering.hpp>
+#include <argus_core/fusion.hpp>
+#include <argus_core/gauge.hpp>
 #include <argus_core/range_image.hpp>
 #include <argus_core/types.hpp>
 
@@ -154,17 +157,27 @@ void report(uint32_t frame, const argus::AnomalySet& set, const argus::RangeImag
 
 int main(int argc, char** argv) {
     std::string path;
+    std::string forward_axis = "x";
     uint32_t limit = 0;
+    bool fusion_mode = false;
+    bool debug_clusters = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
             limit = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--fusion") {
+            fusion_mode = true;
+        } else if (a == "--debug-clusters") {
+            debug_clusters = true;
+        } else if (a == "--forward-axis" && i + 1 < argc) {
+            forward_axis = argv[++i];
         } else {
             path = a;
         }
     }
     if (path.empty()) {
-        std::cerr << "usage: offline_detector <frames.bin> [--frames N]\n";
+        std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] "
+                     "[--forward-axis x|-x|y|-y]\n";
         return 2;
     }
 
@@ -192,8 +205,27 @@ int main(int argc, char** argv) {
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;
 
-    std::cout << std::fixed << std::setprecision(2);
-    std::cout << "frame,source,points,cells,nearest_m,az_center,az_span,cells_bbox\n";
+    argus::ForwardAxis axis = argus::ForwardAxis::PosX;
+    if (!argus::parse_forward_axis(forward_axis, axis)) {
+        std::cerr << "bad --forward-axis: " << forward_axis << "\n";
+        return 2;
+    }
+    argus::ClearanceGaugeParams gauge_params;
+    gauge_params.forward_axis = axis;
+    argus::FusionParams fusion_params;
+    fusion_params.clustering.min_cluster_size = 15;
+    fusion_params.clustering.min_extent_m = 0.1f;
+    fusion_params.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
+
+    if (fusion_mode) {
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
+                     "anom_points,anom_cells\n";
+    } else {
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "frame,source,points,cells,nearest_m,az_center,az_span,cells_bbox\n";
+    }
 
     for (uint32_t k = 0; k < n_frames; ++k) {
         Frame f;
@@ -205,6 +237,38 @@ int main(int argc, char** argv) {
         const argus::RangeImage ri = argus::build_range_image(cloud, ri_params);
         if (!ri.valid()) {
             std::cerr << "frame " << k << ": invalid range image\n";
+            continue;
+        }
+        if (fusion_mode) {
+            const argus::AnomalySet geom = geometry.detect(cloud, ri);
+            const argus::AnomalySet nr = no_return.detect(cloud, ri);
+            if (debug_clusters) {
+                argus::AnomalySet merged;
+                merged.indices = geom.indices;
+                argus::ClusteringParams raw_cp;
+                raw_cp.min_cluster_size = 1;
+                raw_cp.min_extent_m = 0.0f;
+                raw_cp.max_extent_m = 1e9f;
+                const auto raw = argus::cluster_anomalies(cloud, ri, merged, raw_cp);
+                std::cerr << "frame " << k << ": anom=" << geom.indices.size()
+                          << " raw_components=" << raw.size() << "\n";
+                for (const auto& c : raw) {
+                    std::cerr << "  n=" << c.point_count << " nearest=" << c.nearest_range
+                              << " ext=" << (c.max_corner - c.min_corner).transpose()
+                              << " centroid=(" << c.centroid.transpose() << ")\n";
+                }
+                argus::ClusteringParams cp;
+                cp.min_cluster_size = fusion_params.clustering.min_cluster_size;
+                cp.min_extent_m = fusion_params.clustering.min_extent_m;
+                cp.max_extent_m = fusion_params.clustering.max_extent_m;
+                const auto cls = argus::cluster_anomalies(cloud, ri, merged, cp);
+                std::cerr << "  после фильтров: " << cls.size() << "\n";
+            }
+            const argus::FusionResult r = fusion.update(cloud, ri, geom, nr, 0.1f, 0.0f);
+            std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << r.clusters.size() << ','
+                      << r.n_clusters_raw << ',' << r.n_filtered_out << ',' << r.tracks.size()
+                      << ',' << r.nearest_forward_m << ',' << r.nearest_range_m << ','
+                      << r.n_anom_points << ',' << r.n_anom_cells << '\n';
             continue;
         }
         report(k, no_return.detect(cloud, ri), ri, cloud);

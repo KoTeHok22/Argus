@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME} SHARED
   src/gauge.cpp
   src/clustering.cpp
   src/tracking.cpp
+  src/fusion.cpp
   src/explain.cpp
   src/anomaly.cpp
 )
@@ -92,6 +93,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gauge ${PROJECT_NAME})
   ament_add_gtest(test_clustering test/test_clustering.cpp)
   target_link_libraries(test_clustering ${PROJECT_NAME})
+  ament_add_gtest(test_fusion test/test_fusion.cpp)
+  target_link_libraries(test_fusion ${PROJECT_NAME})
   ament_add_gtest(test_tracking test/test_tracking.cpp)
   target_link_libraries(test_tracking ${PROJECT_NAME})
 endif()

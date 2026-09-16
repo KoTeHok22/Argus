@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Габарит движения поезда — твёрдое тело, усечённая призма вдоль оси X.
-// Профиль поперёк оси (вид спереди):
+// Габарит движения поезда — твёрдое тело, усечённая призма вдоль оси
+// движения. Профиль поперёк оси (вид спереди):
 //
 //        +------------------------+   <- height
 //       /                          /
@@ -22,11 +22,13 @@
 //     +--------------------------+
 //     <--------- 2*half_width ---->
 //
-// Соглашение об осях: X — вперёд, Y — влево, Z — вверх (в СК лидара).
+// Ось «вперёд» конфигурируется (факт F-F: в doubleT-бэгах ось тоннеля — Y,
+// поезд движется в сторону -Y). По умолчанию — +X (PLAN.md §9.1).
 
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <Eigen/Geometry>
@@ -35,14 +37,22 @@
 
 namespace argus {
 
+/// Ось «вперёд» в СК лидара. Латеральная ось = forward, повёрнутый на +90°.
+enum class ForwardAxis : uint8_t { PosX, NegX, PosY, NegY };
+
+/// "x"/"+x" -> PosX, "-x" -> NegX, "y"/"+y" -> PosY, "-y" -> NegY.
+/// Неизвестная строка -> false, out не меняется.
+bool parse_forward_axis(const std::string& name, ForwardAxis& out);
+
 struct ClearanceGaugeParams {
     float half_width = 1.45f; // м. УТОЧНИТЬ по ТТХ подвижного состава
     float height = 3.60f;     // м от головки рельса
     float base_offset = 0.20f; // м от головки рельса до низа габарита
     float chamfer = 0.20f;     // м, фаска по верхним углам
-    float nose_offset = 0.00f; // м от лидара до носа поезда
-    float max_range = 300.0f;  // м, предел проверки
-    float safety_margin = 0.10f; // м, дополнительный запас
+    float nose_offset = 0.00f; // м от лидара до носа поезда вдоль оси движения
+    float max_range = 300.0f;                     // м, предел проверки
+    float safety_margin = 0.10f;                  // м, дополнительный запас
+    ForwardAxis forward_axis = ForwardAxis::PosX; // ось «вперёд» (факт F-F)
 };
 
 class ClearanceGauge {
@@ -70,6 +80,14 @@ private:
     // запас по ширине на уровне z.
     float chamfer_start_z_ = 0.0f;
     float chamfer_height_ = 0.0f;
+    // Компоненты осей «вперёд» и «влево» в СК лидара.
+    float fx_ = 1.0f, fy_ = 0.0f; // forward
+    float lx_ = 0.0f, ly_ = 1.0f; // left
+
+    /// Координаты точки в системе габарита: gx — вперёд, gy — влево.
+    void to_gauge(float x, float y, float& gx, float& gy) const;
+    /// Обратное преобразование (для mesh).
+    void from_gauge(float gx, float gy, float& x, float& y) const;
 };
 
 } // namespace argus

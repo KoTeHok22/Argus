@@ -94,7 +94,13 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
             member_cells.push_back(cur);
             const uint32_t az = cur / ri.height;
             const uint32_t ring = cur % ri.height;
-            const float range_here = ri.range[cur];
+
+            const uint32_t cur_ci = cell_to_cloud[cur];
+            if (cur_ci == kNoCloudIndex || cur_ci >= cloud.size()) {
+                continue;
+            }
+            const Eigen::Vector3f p_cur(cloud.x[cur_ci], cloud.y[cur_ci], cloud.z[cur_ci]);
+            const float cur_range = p_cur.norm();
 
             std::array<std::pair<uint32_t, uint32_t>, 8> nb{};
             const uint32_t nn = neighbors8(ri, az, ring, nb);
@@ -104,14 +110,18 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
                     continue;
                 }
 
-                // Связность по фактической дистанции (адаптивный порог).
-                const float r2 = ri.range[nidx];
-                if (!std::isfinite(r2) || !std::isfinite(range_here)) {
+                // Связность по фактической 3D-дистанции между точками
+                // (PLAN.md §9.2): разность дальностей ломается на косых
+                // поверхностях, где соседние лучи далеко друг от друга
+                // по дальности, но близко в пространстве.
+                const uint32_t nb_ci = cell_to_cloud[nidx];
+                if (nb_ci == kNoCloudIndex || nb_ci >= cloud.size()) {
                     continue;
                 }
-                const float thr = neighbor_distance_at(p.neighbor_distance, range_here,
+                const Eigen::Vector3f p_nb(cloud.x[nb_ci], cloud.y[nb_ci], cloud.z[nb_ci]);
+                const float thr = neighbor_distance_at(p.neighbor_distance, cur_range,
                                                        p.reference_range, p.adaptive_scaling);
-                if (std::abs(r2 - range_here) > thr) {
+                if ((p_nb - p_cur).norm() > thr) {
                     continue;
                 }
 
@@ -146,7 +156,11 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
         c.centroid = sum / static_cast<float>(c.point_count);
 
         const Eigen::Vector3f ext = c.max_corner - c.min_corner;
-        if (ext.minCoeff() < p.min_extent_m || ext.maxCoeff() > p.max_extent_m) {
+        // «Физический размер» кластера = максимальная ось бокса: тонкие
+        // поверхности (кромка объекта, стенка) легитимны, фильтр должен
+        // отсекать точечный шум и «архитектуру», а не плоские кластеры.
+        const float max_ext = ext.maxCoeff();
+        if (max_ext < p.min_extent_m || max_ext > p.max_extent_m) {
             continue;
         }
         c.volume = ext.x() * ext.y() * ext.z();
