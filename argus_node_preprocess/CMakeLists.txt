@@ -1,3 +1,17 @@
+# Copyright 2026 Argus Team
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Сборка пакета Argus.
+
 cmake_minimum_required(VERSION 3.8)
 project(argus_node_preprocess)
 
@@ -14,11 +28,12 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(argus_core REQUIRED)
+find_package(argus_msgs REQUIRED)
 
 add_executable(preprocess_node src/preprocess_node.cpp)
 target_compile_features(preprocess_node PUBLIC cxx_std_17)
 ament_target_dependencies(preprocess_node
-  rclcpp sensor_msgs std_msgs argus_core)
+  rclcpp sensor_msgs std_msgs argus_core argus_msgs)
 
 install(TARGETS preprocess_node DESTINATION lib/${PROJECT_NAME})
 

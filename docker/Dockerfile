@@ -21,9 +21,6 @@ COPY argus_node_detector     src/argus_node_detector
 COPY argus_node_fusion       src/argus_node_fusion
 COPY argus_launch src/argus_launch
 COPY argus_eval   src/argus_eval
-COPY config       src/argus_launch/config
-# Дублируем конфиг также в argus_launch исходников (launch ищет в share пакета)
-COPY config/argus_params.yaml src/argus_launch/config/argus_params.yaml
 
 RUN . /opt/ros/humble/setup.sh && \
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release

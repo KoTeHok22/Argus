@@ -30,7 +30,7 @@ Argus принимает поток `sensor_msgs/PointCloud2` от 128-кана�
 
 ```bash
 docker build -f docker/Dockerfile -t argus .
-docker run --rm -v "$PWD/data/bags":/data argus detect /data/recordings/roundT_doubleT
+docker run --rm -v "$PWD/data":/data argus detect /data/recordings/roundT_doubleT
 ```
 
 ## Статус

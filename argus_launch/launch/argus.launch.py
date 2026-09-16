@@ -1,5 +1,15 @@
 # Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 # Основной launch-файл Argus (PLAN.md 10.4).
 #
@@ -12,10 +22,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    LaunchConfiguration,
+    PythonExpression,
+)
 from launch_ros.actions import Node
 
 
@@ -79,24 +91,23 @@ def generate_launch_description():
         ),
     ]
 
+    # bag-play подключается только если bag задан; loop выбирает ветку с --loop.
+    bag_with_loop = PythonExpression(
+        ["'", bag, "' != '' and '", loop, "'.lower() == 'true'"])
+    bag_no_loop = PythonExpression(
+        ["'", bag, "' != '' and '", loop, "'.lower() == 'false'"])
     processes = [
         ExecuteProcess(
-            condition=IfCondition(loop),
+            condition=IfCondition(bag_no_loop),
+            cmd=['ros2', 'bag', 'play', bag, '--rate', rate],
+            output='screen',
+        ),
+        ExecuteProcess(
+            condition=IfCondition(bag_with_loop),
             cmd=['ros2', 'bag', 'play', bag, '--rate', rate, '--loop'],
             output='screen',
         ),
     ]
-    # Не-цикличное воспроизведение: отдельная ветка, чтобы не дублировать.
-    processes.append(
-        ExecuteProcess(
-            condition=IfCondition(
-                # loop=false эмулируем через отдельный аргумент ниже;
-                # каркас: bag plays когда задан и loop=false.
-                _not_loop_available(bag, loop)),
-            cmd=['ros2', 'bag', 'play', bag, '--rate', rate],
-            output='screen',
-        ),
-    )
 
     rviz_node = Node(
         package='rviz2', executable='rviz2',
@@ -106,12 +117,3 @@ def generate_launch_description():
     )
 
     return LaunchDescription(arguments + nodes + processes + [rviz_node])
-
-
-def _not_loop_available(bag, loop):
-    """Каркас: условие «bag задан и loop=false».
-
-    TODO(Ф5.6.9): заменить на корректную IfCondition с PythonExpression,
-    сейчас bag-play подключается вручную командой из README.
-    """
-    return 'false'  # не запускаем bag-play автоматически в каркасе

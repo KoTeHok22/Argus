@@ -5,7 +5,7 @@
 # Точка входа образа Argus (PLAN.md 12.2).
 # Требование ТЗ: docker build -> docker run -> ros2 bag play -> увидеть результат.
 
-set -euo pipefail
+set -eo pipefail
 
 source /opt/ros/humble/setup.bash
 if [ -f "${WS}/install/setup.bash" ]; then
