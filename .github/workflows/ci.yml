@@ -13,7 +13,10 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-22.04
-    container: osrf/ros:humble-perception-jammy
+    # Тег osrf/ros:humble-desktop-full-jammy, запиненный по digest
+    # (там собирается и локальный argus:dev; тег humble-perception-jammy
+    # не существует в Docker Hub, см. PROJECT_STATUS §7).
+    container: osrf/ros@sha256:592f97da6b871a438fdb97f86b422ab9f80657e80efa7b98d258894738c8a0c0
     steps:
       - uses: actions/checkout@v4
 
