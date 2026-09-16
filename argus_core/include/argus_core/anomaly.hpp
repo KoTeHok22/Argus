@@ -64,27 +64,41 @@ private:
     NoReturnParams p_;
 };
 
-// --- Детектор C: геометрический остаток (нужен профиль тоннеля) ---
+// --- Детектор C: геометрический остаток (пороги-якоря проверены офлайн) ---
 
 struct GeometryResidualParams {
-    uint32_t azimuth_median_half_window = 15;
-    uint32_t ring_median_half_window = 3;
-    float sigma_threshold = 3.0f;      // сколько сигм = аномалия
-    float min_abs_deviation_m = 0.50f; // отсечь шум
-    float max_range = 200.0f;
-    uint32_t min_run_length = 3; // минимум подряд по азимуту
+    uint32_t median_half_window = 100; // окно скользящей медианы = 2*100+1 = 201 az
+    float residual_threshold_m = 1.0f; // клетка ближе базовой линии на > порога
+    uint32_t min_cells = 50; // минимум клеток в связной компоненте
+    float min_fill = 0.3f;   // плотность заполнения bbox компоненты
+    float min_range = 4.0f; // отсекать близкие возвраты пола/потолка
+    float max_target_range_m = 45.0f; // цель ближе этой дальности (по F-D)
+    // Дискриминатор F-E: транзиентные срабатывания (край платформы при
+    // движении) не накапливают серию; стоящий объект стабилен по кадрам.
+    uint32_t min_stable_frames = 2; // 1 = без проверки стабильности
+    uint32_t az_tolerance = 20;     // допуск центра по азимуту, клеток
+    float range_tolerance_m = 3.0f; // допуск ближайшей дальности, м
 };
 
 /// Детектор отклонения от гладкого профиля тоннеля. Ф3.5.2.
+/// Локальная скользящая медиана по азимуту (глобальная кольцевая медиана
+/// не работает — массовые ложные срабатывания на платформе, см. PROJECT_STATUS
+/// §7.2). Компоненты отфильтровываются по плотности, дальности и стабильности.
 class GeometryResidualDetector : public IAnomalyDetector {
 public:
     explicit GeometryResidualDetector(const GeometryResidualParams& p);
     AnomalySet detect(const CleanCloud& cloud, const RangeImage& ri) override;
-    void update(const CleanCloud& cloud, const RangeImage& ri) override;
     std::string name() const override { return "geometry"; }
 
 private:
+    struct Track {
+        float az_center = 0.0f;
+        float nearest = 0.0f;
+        uint32_t streak = 0;
+    };
+
     GeometryResidualParams p_;
+    std::vector<Track> tracks_; // кандидаты предыдущего кадра
 };
 
 // --- Детектор A: нарушение свободного пространства (нужна модель тоннеля) ---

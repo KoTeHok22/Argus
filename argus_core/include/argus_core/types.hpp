@@ -72,10 +72,18 @@ struct RangeImage {
 };
 
 /// Результат работы одного детектора аномалий.
+/// Семантика индексов (устраняет проблему №2 из PROJECT_STATUS):
+///   - indices — индексы точек в CleanCloud (параллельны score);
+///     для аномалий, у которых есть реальные возвраты (geometry, free_space).
+///   - cells   — индексы клеток RangeImage (az*height+ring, параллельны
+///     cells_score); для аномалий БЕЗ точек — «дыры» потери возвратов
+///     (no_return). Луч, не вернувшийся, точки в CleanCloud не имеет.
 struct AnomalySet {
-    std::vector<uint32_t> indices; // индексы в CleanCloud
-    std::vector<float> score;      // 0..1, уверенность признака
-    std::string source;            // "free_space" | "no_return" | "geometry"
+    std::vector<uint32_t> indices;  // индексы в CleanCloud
+    std::vector<float> score;       // 0..1, уверенность признака
+    std::vector<uint32_t> cells;    // индексы клеток RangeImage (az*height+ring)
+    std::vector<float> cells_score; // 0..1, параллелен cells
+    std::string source;             // "free_space" | "no_return" | "geometry"
 };
 
 // Габарит движения поезда: класс ClearanceGauge и ClearanceGaugeParams

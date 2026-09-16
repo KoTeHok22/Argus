@@ -10,14 +10,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Кластеризация аномалий на range image (Фаза 4). AnomalySet.indices —
+// индексы точек в CleanCloud (см. types.hpp); связность ищется по клеткам
+// развёртки (az*height+ring), в которые эти точки отображаются.
 
 #include "argus_core/clustering.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace argus {
+namespace {
+
+constexpr uint32_t kNoCloudIndex = std::numeric_limits<uint32_t>::max();
+
+} // namespace
 
 float neighbor_distance_at(float base, float d, float ref, bool adaptive) {
     if (!adaptive) {
@@ -29,79 +39,99 @@ float neighbor_distance_at(float base, float d, float ref, bool adaptive) {
 std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage& ri,
                                        const AnomalySet& merged, const ClusteringParams& p) {
     std::vector<Cluster> out;
-    if (merged.indices.empty() || !ri.valid()) {
+    if (merged.indices.empty() || !ri.valid() || cloud.empty()) {
         return out;
     }
 
-    // Пометим аномальные точки (индексы в cloud -> позиция в развёртке).
-    // Индекс в cloud = az * rings + ring при полной развёртке; но фильтр
-    // удалил часть точек, поэтому сопоставляем через ring/az, если возможно.
-    // Для каркаса: считаем, что аномалии заданы позициями (az, ring) через
-    // индекс в cloud ДО фильтрации — уточняется в Ф4.7.2 вместе с детекторами.
-    // Здесь реализована связность по range image от переданных индексов,
-    // трактуемых как позиции в развёртке (az * height + ring).
+    const size_t n_cells = ri.range.size();
 
-    std::vector<uint8_t> visited(ri.range.size(), 0);
-    std::vector<size_t> stack;
+    // Карта клетка развёртки -> точка в cloud. Клетка (az, ring) соответствует
+    // сырому лучу src = az*height + ring (build_range_image, факт D3), поэтому
+    // клетка и сырой индекс совпадают. Перезапись последней точкой — та же
+    // семантика, что и в build_range_image.
+    std::vector<uint32_t> cell_to_cloud(n_cells, kNoCloudIndex);
+    const bool has_raw = !cloud.raw_idx.empty();
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        const uint32_t src = has_raw ? cloud.raw_idx[i] : static_cast<uint32_t>(i);
+        if (src < n_cells) {
+            cell_to_cloud[src] = static_cast<uint32_t>(i);
+        }
+    }
 
-    const auto ring_of = [&](size_t idx) { return idx % ri.height; };
-    const auto az_of = [&](size_t idx) { return idx / ri.height; };
+    // Аномальные клетки по индексам CleanCloud.
+    std::vector<uint8_t> anomalous(n_cells, 0);
+    for (uint32_t idx : merged.indices) {
+        if (idx >= cloud.size()) {
+            continue;
+        }
+        const uint32_t src = has_raw ? cloud.raw_idx[idx] : idx;
+        if (src < n_cells) {
+            anomalous[src] = 1;
+        }
+    }
 
-    for (uint32_t seed : merged.indices) {
-        const size_t s = seed;
-        if (s >= ri.range.size() || visited[s]) {
+    std::vector<uint8_t> visited(n_cells, 0);
+    std::vector<uint32_t> stack;
+
+    for (uint32_t idx : merged.indices) {
+        if (idx >= cloud.size()) {
+            continue;
+        }
+        const uint32_t seed_src = has_raw ? cloud.raw_idx[idx] : idx;
+        if (seed_src >= n_cells || visited[seed_src] || !anomalous[seed_src]) {
             continue;
         }
 
         Cluster c;
-        std::vector<uint32_t> members;
+        std::vector<uint32_t> member_cells;
         stack.clear();
-        stack.push_back(s);
-        visited[s] = 1;
+        stack.push_back(seed_src);
+        visited[seed_src] = 1;
 
         while (!stack.empty()) {
-            const size_t cur = stack.back();
+            const uint32_t cur = stack.back();
             stack.pop_back();
-            members.push_back(static_cast<uint32_t>(cur));
-
-            std::array<std::pair<uint32_t, uint32_t>, 8> nb{};
-            const uint32_t nn = neighbors8(ri, az_of(cur), ring_of(cur), nb);
+            member_cells.push_back(cur);
+            const uint32_t az = cur / ri.height;
+            const uint32_t ring = cur % ri.height;
             const float range_here = ri.range[cur];
 
+            std::array<std::pair<uint32_t, uint32_t>, 8> nb{};
+            const uint32_t nn = neighbors8(ri, az, ring, nb);
             for (uint32_t k = 0; k < nn; ++k) {
-                const size_t nidx = ri.idx(nb[k].first, nb[k].second);
-                if (visited[nidx]) continue;
-
-                const bool anomalous = std::binary_search(
-                    merged.indices.begin(), merged.indices.end(), static_cast<uint32_t>(nidx));
-                if (!anomalous) continue;
+                const uint32_t nidx = ri.idx(nb[k].first, nb[k].second);
+                if (visited[nidx] || !anomalous[nidx]) {
+                    continue;
+                }
 
                 // Связность по фактической дистанции (адаптивный порог).
                 const float r2 = ri.range[nidx];
-                if (!std::isfinite(r2) || !std::isfinite(range_here)) continue;
+                if (!std::isfinite(r2) || !std::isfinite(range_here)) {
+                    continue;
+                }
                 const float thr = neighbor_distance_at(p.neighbor_distance, range_here,
                                                        p.reference_range, p.adaptive_scaling);
-                if (std::abs(r2 - range_here) > thr) continue;
+                if (std::abs(r2 - range_here) > thr) {
+                    continue;
+                }
 
                 visited[nidx] = 1;
                 stack.push_back(nidx);
             }
         }
 
-        if (members.size() < p.min_cluster_size || members.size() > p.max_cluster_size) {
-            continue;
-        }
-
-        // Метрики кластера в декартовых координатах.
+        // Метрики кластера в декартовых координатах по точкам клеток.
         Eigen::Vector3f sum = Eigen::Vector3f::Zero();
         c.min_corner.setConstant(std::numeric_limits<float>::max());
         c.max_corner.setConstant(-std::numeric_limits<float>::max());
         c.nearest_range = std::numeric_limits<float>::max();
 
-        for (uint32_t m : members) {
-            const size_t ci = m; // позиция в развёртке == индекс в cloud при
-                                 // полной развёртке (уточняется в Ф4.7.2)
-            if (ci >= cloud.size()) continue;
+        for (uint32_t cell : member_cells) {
+            const uint32_t ci = cell_to_cloud[cell];
+            if (ci == kNoCloudIndex || ci >= cloud.size()) {
+                continue;
+            }
+            c.indices.push_back(ci);
             const Eigen::Vector3f pt(cloud.x[ci], cloud.y[ci], cloud.z[ci]);
             sum += pt;
             c.min_corner = c.min_corner.cwiseMin(pt);
@@ -110,7 +140,9 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
             c.point_count++;
         }
 
-        if (c.point_count == 0) continue;
+        if (c.point_count < p.min_cluster_size || c.point_count > p.max_cluster_size) {
+            continue;
+        }
         c.centroid = sum / static_cast<float>(c.point_count);
 
         const Eigen::Vector3f ext = c.max_corner - c.min_corner;

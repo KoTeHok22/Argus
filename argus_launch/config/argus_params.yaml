@@ -78,14 +78,18 @@
       min_range: 3.0
 
     # --- Детектор: геометрический остаток (Фаза 3) ---
+    # Пороги-якоря проверены офлайн (PROJECT_STATUS §3, факты F-D/F-E).
     detector_geometry:
       enabled: true
-      azimuth_median_half_window: 15
-      ring_median_half_window: 3
-      sigma_threshold: 3.0
-      min_abs_deviation_m: 0.50
-      max_range: 200.0
-      min_run_length: 3
+      median_half_window: 100     # окно скользящей медианы 2*100+1 = 201 az
+      residual_threshold_m: 1.0   # клетка ближе базовой линии на > 1 м
+      min_cells: 50               # минимум клеток в связной компоненте
+      min_fill: 0.3               # плотность заполнения bbox компоненты
+      min_range: 4.0              # отсекать близкие (< 4 м) возвраты пола/потолка
+      max_target_range_m: 45.0    # цель ближе 45 м (F-D: препятствие на 16.9 м)
+      min_stable_frames: 2        # дискриминатор F-E: транзиенты не накапливают серию
+      az_tolerance: 20            # допуск центра по азимуту, клеток
+      range_tolerance_m: 3.0      # допуск ближайшей дальности между кадрами, м
 
     # --- Детектор: свободное пространство (Фаза 3) ---
     detector_free_space:

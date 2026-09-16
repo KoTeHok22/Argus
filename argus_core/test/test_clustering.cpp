@@ -51,5 +51,49 @@ TEST(Clustering, EmptyInputEmptyOutput) {
     EXPECT_TRUE(argus::cluster_anomalies(cloud, ri, merged, p).empty());
 }
 
-// Полные сценарии слияния/разделения — Ф4.7.2, после того как детекторы
-// начнут возвращать реальные AnomalySet с позициями развёртки.
+// Семантика AnomalySet.indices: индексы в CleanCloud отображаются в клетки
+// развёртки через raw_idx; кластер собирается по клеткам, метрики — по точкам.
+TEST(Clustering, CleanCloudIndicesMapThroughRawIdx) {
+    const uint32_t w = 100, h = 8;
+    argus::CleanCloud cloud;
+    cloud.rings = h;
+    cloud.n_raw = w * h;
+    std::vector<uint32_t> box_cloud_idx;
+    for (uint32_t src = 0; src < cloud.n_raw; ++src) {
+        if (src % 10 == 7) continue; // эмуляция отбраковки фильтром
+        const uint32_t az = src / h, ring = src % h;
+        const bool in_box = az >= 30 && az <= 45 && ring >= 3 && ring <= 5;
+        const float d = in_box ? 16.9f : 25.5f;
+        cloud.x.push_back(d);
+        cloud.y.push_back(0.0f);
+        cloud.z.push_back(0.0f);
+        cloud.intensity.push_back(1.0f);
+        cloud.raw_idx.push_back(src);
+        if (in_box) box_cloud_idx.push_back(static_cast<uint32_t>(cloud.size() - 1));
+    }
+    ASSERT_FALSE(box_cloud_idx.empty());
+
+    argus::RangeImageParams rp;
+    rp.rings_fallback = h;
+    const auto ri = argus::build_range_image(cloud, rp);
+    ASSERT_TRUE(ri.valid());
+
+    argus::AnomalySet merged;
+    merged.indices = box_cloud_idx;
+    argus::ClusteringParams p;
+    p.min_cluster_size = 15;
+    p.min_extent_m = 0.0f;
+    p.max_extent_m = 100.0f;
+
+    const auto clusters = argus::cluster_anomalies(cloud, ri, merged, p);
+    ASSERT_EQ(clusters.size(), 1u);
+    const auto& c = clusters[0];
+    EXPECT_EQ(c.point_count, box_cloud_idx.size());
+    EXPECT_EQ(c.indices.size(), box_cloud_idx.size());
+    for (uint32_t idx : c.indices) {
+        EXPECT_FLOAT_EQ(cloud.x[idx], 16.9f);
+    }
+    EXPECT_NEAR(c.nearest_range, 16.9f, 1e-4f);
+}
+
+// Полные сценарии слияния/разделения — Ф4.7.2, после интеграции fusion.
