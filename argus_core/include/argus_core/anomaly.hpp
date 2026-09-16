@@ -48,6 +48,8 @@ public:
 
 struct NoReturnParams {
     uint32_t min_missing_run = 8; // минимум подряд идущих «дыр» по азимуту
+    float max_missing_run_deg = 15.0f; // тень объекта компактна; длинные серии
+                                       // — слепые секторы развёртки, не тревожат
     uint32_t azimuth_window = 5; // по скольким столбцам судить о норме
     float min_baseline_hits = 0.70f; // доля возвратов в окне = норма
     float min_range = 3.0f;          // м, ближе — не рассматриваем

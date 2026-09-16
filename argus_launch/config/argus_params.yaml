@@ -73,6 +73,8 @@
     detector_no_return:
       enabled: true
       min_missing_run: 8          # минимум подряд идущих «дыр»
+      max_missing_run_deg: 15.0   # тень объекта компактна; длинные серии —
+                                  # слепые секторы развёртки (факт F-A)
       azimuth_window: 5
       min_baseline_hits: 0.70
       min_range: 3.0

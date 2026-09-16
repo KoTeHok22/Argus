@@ -245,6 +245,18 @@ TEST(NoReturnDetector, DeadRingNotFlagged) {
     EXPECT_TRUE(set.cells.empty());
 }
 
+TEST(NoReturnDetector, HugeRunNotFlagged) {
+    // Серия на сотни градусов — слепой сектор развёртки, а не тень объекта:
+    // ограничитель max_missing_run_deg не даёт тревожить.
+    const auto cloud = make_cloud_with_holes({{0, 399, 4}}, {});
+    const auto ri = ri_of(cloud);
+
+    argus::NoReturnParams p;
+    argus::NoReturnDetector det(p);
+    const argus::AnomalySet set = det.detect(cloud, ri);
+    EXPECT_TRUE(set.cells.empty());
+}
+
 TEST(NoReturnDetector, DeadBaselineNotFlagged) {
     // Возвраты пропали и вокруг серии (базовая линия мертва) — не тревожит:
     // это слепой сектор, а не близкий объект. Края серии — лучи, отброшенные

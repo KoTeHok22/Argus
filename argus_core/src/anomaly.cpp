@@ -88,6 +88,10 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
     const uint32_t w = ri.width;
     const uint32_t h = ri.height;
     const int aw = static_cast<int>(p_.azimuth_window);
+    // Масштабно-независимый ограничитель: тень объекта — единицы-десяток
+    // градусов, слепой сектор — десятки градусов независимо от az_steps.
+    const uint32_t max_run = std::max<uint32_t>(
+        p_.min_missing_run, static_cast<uint32_t>(p_.max_missing_run_deg * w / 360.0f) + 1);
 
     for (uint32_t r = 0; r < h; ++r) {
         // Якорь: первый азимут с возвратом. Полностью «дырявое» кольцо
@@ -115,10 +119,9 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
             } else if (!missing && in_run) {
                 in_run = false;
                 const uint32_t run_len = (az + w - run_start) % w;
-                if (run_len < p_.min_missing_run) {
+                if (run_len < p_.min_missing_run || run_len > max_run) {
                     continue;
                 }
-
                 // Базовая линия: столбцы по краям серии. Живая база означает,
                 // что в соседних направлениях стена стабильно отражает, а тут
                 // лучи потеряны — признак поглощения/близкого объекта.

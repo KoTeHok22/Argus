@@ -52,6 +52,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${PCL_DEFINITIONS})
 # Только msg-типы sensor_msgs (заголовки, без линковки и без rclcpp) —
 # ядро остаётся тестируемым вне ROS-рантайма (T5 в уточнённой формулировке).
 
+add_executable(offline_detector tools/offline_detector.cpp)
+target_link_libraries(offline_detector PRIVATE ${PROJECT_NAME})
+
 ament_export_targets(${PROJECT_NAME}Targets HAS_LIBRARY_TARGET)
 ament_export_dependencies(eigen3_cmake_module Eigen3 PCL sensor_msgs)
 
@@ -67,6 +70,11 @@ install(
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
   INCLUDES DESTINATION include
+)
+
+install(
+  TARGETS offline_detector
+  RUNTIME DESTINATION lib/argus_core
 )
 
 if(BUILD_TESTING)
