@@ -36,6 +36,13 @@ struct FusionParams {
     float critical_range_m = 50.0f;
     float warning_range_m = 150.0f;
     float critical_ttc_s = 3.0f;
+    // Временная замена Ф1.2.3 (Patchwork++, не реализован): точки путевой
+    // структуры (рельсы, контактный рельс, постель) исключаются из
+    // кластеризации. Отсекаются ТОЧКИ, не кластеры — объект на путях
+    // сохраняет верхние точки и остаётся детектируемым.
+    bool ground_filter = true;
+    float ground_clearance_m = 0.45f; // z над головкой рельса ниже — путевая структура
+    float rail_zone_m = 2.0f; // |латераль| меньше — зона колеи
     ClusteringParams clustering;
     TrackingParams tracking;
 };

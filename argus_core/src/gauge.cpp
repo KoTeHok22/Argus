@@ -63,10 +63,12 @@ bool ClearanceGauge::contains(float x, float y, float z) const {
         return false;
     }
 
-    // Поперечный профиль с фаской по верхним углам.
+    // Поперечный профиль с фаской по верхним углам; z-границы заданы от
+    // головки рельса и сдвигаются в СК сенсора на -sensor_height.
+    const float z_shift = -p_.sensor_height;
     const float hw = p_.half_width + p_.safety_margin;
-    const float z_min = p_.base_offset - p_.safety_margin;
-    const float z_max = p_.height + p_.safety_margin;
+    const float z_min = z_shift + p_.base_offset - p_.safety_margin;
+    const float z_max = z_shift + p_.height + p_.safety_margin;
     if (z < z_min || z > z_max) {
         return false;
     }
@@ -75,8 +77,8 @@ bool ClearanceGauge::contains(float x, float y, float z) const {
     }
 
     // Фаска: выше chamfer_start_z_ ширина линейно сужается до (hw - chamfer).
-    if (z > chamfer_start_z_ && chamfer_height_ > 0.0f) {
-        const float t = (z - chamfer_start_z_) / chamfer_height_;
+    if (z > chamfer_start_z_ + z_shift && chamfer_height_ > 0.0f) {
+        const float t = (z - chamfer_start_z_ - z_shift) / chamfer_height_;
         const float hw_at_z = hw - p_.chamfer * t;
         if (std::abs(gy) > hw_at_z) {
             return false;
@@ -101,9 +103,10 @@ float ClearanceGauge::distance_to(float x, float y, float z) const {
 
     float gx = 0.0f, gy = 0.0f;
     to_gauge(x, y, gx, gy);
+    const float z_shift = -p_.sensor_height;
     const float hw = p_.half_width + p_.safety_margin;
-    const float z_min = p_.base_offset - p_.safety_margin;
-    const float z_max = p_.height + p_.safety_margin;
+    const float z_min = z_shift + p_.base_offset - p_.safety_margin;
+    const float z_max = z_shift + p_.height + p_.safety_margin;
 
     // Расстояние до бокса без фаски; фаска упрощаем (консервативно
     // занижаем дистанцию — для тревог это безопаснее).
@@ -122,9 +125,10 @@ void ClearanceGauge::to_mesh(float max_range, std::vector<Eigen::Vector3f>& vert
     indices.clear();
 
     const float hw = p_.half_width;
-    const float z0 = p_.base_offset;
-    const float z1 = p_.height - p_.chamfer;
-    const float z2 = p_.height;
+    const float z_shift = -p_.sensor_height;
+    const float z0 = z_shift + p_.base_offset;
+    const float z1 = z_shift + p_.height - p_.chamfer;
+    const float z2 = z_shift + p_.height;
     const float hw_top = p_.half_width - p_.chamfer;
 
     for (int side = 0; side < 2; ++side) {

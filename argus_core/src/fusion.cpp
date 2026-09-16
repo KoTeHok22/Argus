@@ -32,7 +32,21 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     // 1. Кластеризация по аномальным точкам. Клетки no_return точек не имеют
     //    и не кластеризуются — учитываются счётчиком и голосом совпадения.
     AnomalySet merged;
-    merged.indices = geometry.indices;
+    merged.indices.reserve(geometry.indices.size());
+    for (uint32_t idx : geometry.indices) {
+        if (idx >= cloud.size()) {
+            continue;
+        }
+        if (p_.ground_filter) {
+            const float z_rel = cloud.z[idx] + gauge_.params().sensor_height;
+            const float lat =
+                std::fabs(cloud.x[idx] * gauge_.left_x() + cloud.y[idx] * gauge_.left_y());
+            if (z_rel < p_.ground_clearance_m && lat < p_.rail_zone_m) {
+                continue; // путевая структура: рельсы, постель, контактный рельс
+            }
+        }
+        merged.indices.push_back(idx);
+    }
     const std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
 
     // Оценка достоверности по индексу точки в cloud (score параллелен indices).

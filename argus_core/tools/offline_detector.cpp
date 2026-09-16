@@ -212,6 +212,7 @@ int main(int argc, char** argv) {
     }
     argus::ClearanceGaugeParams gauge_params;
     gauge_params.forward_axis = axis;
+    gauge_params.sensor_height = 1.2f; // допущение A3 (пол ~ -1.2 м в СК сенсора)
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size = 15;
     fusion_params.clustering.min_extent_m = 0.1f;

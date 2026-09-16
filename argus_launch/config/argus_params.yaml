@@ -109,6 +109,8 @@
       base_offset: 0.20           # м
       chamfer: 0.20               # м
       nose_offset: 0.00           # м, УТОЧНИТЬ (допущение A2)
+      sensor_height: 1.20         # м, сенсор над головкой рельса; по данным
+                                  # platform-бэга пол на z ~ -1.2 м (A3)
       max_range: 300.0
       safety_margin: 0.10
 

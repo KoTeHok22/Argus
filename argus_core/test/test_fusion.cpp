@@ -145,6 +145,62 @@ TEST(Fusion, NoReturnCellsCountedNotClustered) {
     EXPECT_FALSE(r.alert);
 }
 
+TEST(Fusion, GroundFilterDropsRailLikePoints) {
+    // Рельсы: низкие точки (z_rel < ground_clearance_m) в зоне колеи
+    // не кластеризуются; объект над рельсом остаётся детектируемым.
+    argus::CleanCloud cloud;
+    cloud.rings = kH;
+    cloud.n_raw = kW * kH;
+    std::vector<uint32_t> rail_idx, object_idx;
+    for (uint32_t az = 0; az < 200; ++az) {
+        // Рельсы: латераль -1.5, z на 0.3 над головкой рельса (z = -1.2+0.3)
+        cloud.x.push_back(-1.5f);
+        cloud.y.push_back(-static_cast<float>(az) * 0.05f - 3.0f);
+        cloud.z.push_back(-0.9f);
+        cloud.intensity.push_back(1.0f);
+        cloud.ring.push_back(static_cast<uint16_t>(az % kH));
+        cloud.azimuth_idx.push_back(az);
+        rail_idx.push_back(static_cast<uint32_t>(cloud.size() - 1));
+    }
+    for (uint32_t az = 200; az <= 249; ++az) {
+        // Объект: z_rel = 1.0 м над головкой рельса (z = -1.2 + 1.0),
+        // протяжённость по оси движения ~1 м.
+        cloud.x.push_back(0.0f);
+        cloud.y.push_back(-16.9f - static_cast<float>(az - 200) * 0.02f);
+        cloud.z.push_back(-0.2f);
+        cloud.intensity.push_back(1.0f);
+        cloud.ring.push_back(static_cast<uint16_t>(az % kH));
+        cloud.azimuth_idx.push_back(az);
+        object_idx.push_back(static_cast<uint32_t>(cloud.size() - 1));
+    }
+
+    argus::RangeImageParams rp;
+    rp.rings_fallback = kH;
+    const auto ri = argus::build_range_image(cloud, rp);
+
+    argus::AnomalySet geometry;
+    geometry.source = "geometry";
+    geometry.indices = rail_idx;
+    geometry.indices.insert(geometry.indices.end(), object_idx.begin(), object_idx.end());
+    geometry.score.assign(geometry.indices.size(), 0.8f);
+
+    argus::FusionParams p = fusion_params();
+    p.clustering.min_cluster_size = 5;
+    p.clustering.min_extent_m = 0.1f;
+    p.tracking.min_hits_to_confirm = 1;
+    argus::ClearanceGaugeParams gp;
+    gp.forward_axis = argus::ForwardAxis::NegY;
+    gp.sensor_height = 1.2f; // как в конфиге: пол на -1.2 м в СК сенсора
+    argus::FusionPipeline pipe(argus::ClearanceGauge(gp), p);
+    const argus::FusionResult r = pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+
+    // Кластер объекта остался, рельсы не дали ложного кластера.
+    ASSERT_EQ(r.clusters.size(), 1u);
+    EXPECT_NEAR(r.clusters[0].forward_distance, 16.9f, 0.5f);
+    EXPECT_EQ(r.clusters[0].point_count, object_idx.size());
+    EXPECT_TRUE(r.alert);
+}
+
 TEST(Fusion, GaugeAxisParsedAndApplied) {
     argus::ForwardAxis axis = argus::ForwardAxis::PosX;
     ASSERT_TRUE(argus::parse_forward_axis("-y", axis));
@@ -163,4 +219,21 @@ TEST(Fusion, GaugeAxisParsedAndApplied) {
     argus::ClearanceGaugeParams gpx;
     const argus::ClearanceGauge gx(gpx);
     EXPECT_EQ(gx.forward_distance(0.5f, -16.9f, 1.0f), -1.0f);
+}
+
+TEST(Fusion, GaugeSensorHeightShiftsZBounds) {
+    // Пол в СК сенсора на z ~ -1.2 (допущение A3): точка на уровне пола
+    // ниже габарита, а точка на 0.5 м над полом — внутри (z от рельса 0.5).
+    argus::ClearanceGaugeParams gp;
+    gp.forward_axis = argus::ForwardAxis::NegY;
+    gp.sensor_height = 1.2f;
+    const argus::ClearanceGauge g(gp);
+    EXPECT_FLOAT_EQ(g.forward_distance(0.0f, -16.9f, -0.7f), 16.9f); // 0.5 м над полом
+    EXPECT_EQ(g.forward_distance(0.0f, -16.9f, -1.2f), -1.0f);       // уровень пола
+    // Без сдвига та же точка пола была бы «внутри» — фиксируем сдвиг.
+    argus::ClearanceGaugeParams g0;
+    g0.forward_axis = argus::ForwardAxis::NegY;
+    const argus::ClearanceGauge without_shift(g0);
+    EXPECT_EQ(without_shift.forward_distance(0.0f, -16.9f, -1.2f), -1.0f);
+    EXPECT_FLOAT_EQ(without_shift.forward_distance(0.0f, -16.9f, -0.7f), -1.0f);
 }

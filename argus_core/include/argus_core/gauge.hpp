@@ -50,8 +50,13 @@ struct ClearanceGaugeParams {
     float base_offset = 0.20f; // м от головки рельса до низа габарита
     float chamfer = 0.20f;     // м, фаска по верхним углам
     float nose_offset = 0.00f; // м от лидара до носа поезда вдоль оси движения
-    float max_range = 300.0f;                     // м, предел проверки
-    float safety_margin = 0.10f;                  // м, дополнительный запас
+    float max_range = 300.0f;    // м, предел проверки
+    float safety_margin = 0.10f; // м, дополнительный запас
+    // Высота сенсора над головкой рельса, м. Габарит отсчитывается от
+    // головки рельса, а точки приходят в СК сенсора: z-границы сдвигаются
+    // на -sensor_height. 0 = сенсор на уровне головки рельса.
+    // По данным platform-бэга пол в СК сенсора на z ~ -1.2 м (допущение A3).
+    float sensor_height = 0.0f;
     ForwardAxis forward_axis = ForwardAxis::PosX; // ось «вперёд» (факт F-F)
 };
 
@@ -73,6 +78,12 @@ public:
                  std::vector<uint32_t>& indices) const;
 
     const ClearanceGaugeParams& params() const { return p_; }
+
+    /// Компоненты осей «вперёд»/«влево» в СК лидара (для внешних фильтров).
+    float forward_x() const { return fx_; }
+    float forward_y() const { return fy_; }
+    float left_x() const { return lx_; }
+    float left_y() const { return ly_; }
 
 private:
     ClearanceGaugeParams p_;
