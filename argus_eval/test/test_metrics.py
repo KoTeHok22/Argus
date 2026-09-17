@@ -1,15 +1,3 @@
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import sys
 from pathlib import Path
 
@@ -35,7 +23,7 @@ def test_fp_rate_fails_threshold():
     m = EmptyRunMetrics(
         bag="x", total_frames=100, frames_with_alert=10,
         duration_s=10.0, max_alert_streak=50)
-    assert not m.ok()  # streak 50 > 10
+    assert not m.ok()
 
 
 def test_recall_by_range():
@@ -47,4 +35,4 @@ def test_recall_by_range():
     curve = recall_by_range(ms)
     assert abs(curve[25.0] - 0.5) < 1e-9
     assert curve[250.0] == 0.0
-    assert 275.0 not in curve  # пустой бин не попадает в кривую
+    assert 275.0 not in curve

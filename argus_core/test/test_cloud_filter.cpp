@@ -1,17 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Тесты cloud_filter: раскладка 26 байт, отбраковка мусора (факты D1, D2, D4).
 
 #include <gtest/gtest.h>
 
@@ -32,8 +18,6 @@ using sensor_msgs::msg::PointField;
 
 constexpr uint32_t kPointStep = 26;
 
-/// Собрать сообщение раскладки Hesai ROS-драйвера (факт D1):
-/// x@0 y@4 z@8 intensity@12 ring@16 timestamp@18.
 PointCloud2 make_msg(size_t n) {
     PointCloud2 msg;
     msg.height = 1;
@@ -91,10 +75,10 @@ TEST(CloudFilter, ParseLayoutHesai26Bytes) {
 
 TEST(CloudFilter, RejectsMissingZ) {
     auto msg = make_msg(2);
-    msg.fields.pop_back(); // убрали timestamp — ок; уберём z вручную
+    msg.fields.pop_back();
     for (auto& f : msg.fields) {
         if (f.name == "z") {
-            f.datatype = PointField::FLOAT64; // не float32 — отвергнуть
+            f.datatype = PointField::FLOAT64;
         }
     }
     const auto layout = argus::parse_layout(msg);
@@ -103,13 +87,12 @@ TEST(CloudFilter, RejectsMissingZ) {
 
 TEST(CloudFilter, RejectsUnknownLayout) {
     auto msg = make_msg(2);
-    msg.fields.clear(); // ни одного поля
+    msg.fields.clear();
     const auto layout = argus::parse_layout(msg);
     EXPECT_FALSE(layout.has_value());
 }
 
 TEST(CloudFilter, AcceptsObstacleBagDatatypeQuirk) {
-    // Факт F-B: doubleT_obstacle пишет x/y/z/intensity с datatype = INT32.
     auto msg = make_msg(2);
     for (auto& f : msg.fields) {
         if (f.name == "x" || f.name == "y" || f.name == "z" || f.name == "intensity") {
@@ -133,28 +116,23 @@ TEST(CloudFilter, AcceptsObstacleBagDatatypeQuirk) {
 TEST(CloudFilter, DropsJunkZeroAndNonfiniteKeepsValid) {
     const size_t n = 6;
     auto msg = make_msg(n);
-    // 0: мусор |x| > 1e4
     put_point(msg, 0, 5.0e5f, 0.0f, 0.0f, 0.0f, 0);
-    // 1: ровно (0,0,0) — нет возврата
     put_point(msg, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0);
-    // 2: NaN
     const float nan = std::numeric_limits<float>::quiet_NaN();
     put_point(msg, 2, nan, 1.0f, 1.0f, 0.0f, 0);
-    // 3: слишком близко
     put_point(msg, 3, 0.1f, 0.0f, 0.0f, 0.0f, 0);
-    // 4-5: валидные
     put_point(msg, 4, 10.0f, 0.0f, 0.0f, 5.0f, 1);
     put_point(msg, 5, 0.0f, 20.0f, 3.0f, 7.0f, 2);
 
     const auto layout = argus::parse_layout(msg);
     ASSERT_TRUE(layout.has_value());
 
-    argus::FilterParams params; // дефолты: [0.5, 400] м, |coord| <= 1e4
+    argus::FilterParams params;
     argus::FilterStats stats;
     const argus::CleanCloud cloud = argus::filter_and_index(msg, *layout, params, &stats);
 
     EXPECT_EQ(stats.n_raw, n);
-    EXPECT_EQ(stats.reject_out_of_range, 2u); // мусор + слишком близко
+    EXPECT_EQ(stats.reject_out_of_range, 2u);
     EXPECT_EQ(stats.reject_zero, 1u);
     EXPECT_EQ(stats.reject_nonfinite, 1u);
     ASSERT_EQ(cloud.size(), 2u);
@@ -185,8 +163,8 @@ TEST(CloudFilter, InvariantsHold) {
 TEST(CloudFilter, FillsRawIndicesAndScanMeta) {
     const size_t n = 4;
     auto msg = make_msg(n);
-    put_point(msg, 0, 5.0e5f, 0.0f, 0.0f, 0.0f, 0); // мусор
-    put_point(msg, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0);   // нет возврата
+    put_point(msg, 0, 5.0e5f, 0.0f, 0.0f, 0.0f, 0);
+    put_point(msg, 1, 0.0f, 0.0f, 0.0f, 0.0f, 0);
     put_point(msg, 2, 10.0f, 0.0f, 0.0f, 5.0f, 1);
     put_point(msg, 3, 0.0f, 20.0f, 3.0f, 7.0f, 2);
 
@@ -196,16 +174,14 @@ TEST(CloudFilter, FillsRawIndicesAndScanMeta) {
         argus::filter_and_index(msg, *layout, argus::FilterParams{}, nullptr);
 
     ASSERT_EQ(cloud.size(), 2u);
-    // Сырые индексы выживших и «нет возврата» — для no_return_mask.
     ASSERT_EQ(cloud.raw_idx.size(), cloud.size());
     EXPECT_EQ(cloud.raw_idx[0], 2u);
     EXPECT_EQ(cloud.raw_idx[1], 3u);
     ASSERT_EQ(cloud.no_return_raw.size(), 1u);
     EXPECT_EQ(cloud.no_return_raw[0], 1u);
     EXPECT_EQ(cloud.n_raw, n);
-    // Развёртка 128 колец — факт D3/D5; поле ring главнее позиционного.
     EXPECT_EQ(cloud.rings, 128u);
-    EXPECT_EQ(cloud.az_steps, 1u); // ceil(4 / 128)
+    EXPECT_EQ(cloud.az_steps, 1u);
     EXPECT_EQ(cloud.ring[0], 1u);
     EXPECT_EQ(cloud.ring[1], 2u);
     EXPECT_EQ(cloud.azimuth_idx[0], 0u);
@@ -213,8 +189,6 @@ TEST(CloudFilter, FillsRawIndicesAndScanMeta) {
 }
 
 TEST(CloudFilter, PositionalRingWhenFieldMissing) {
-    // doubleT_obstacle: fields[] без ring/timestamp (факт F-B) —
-    // ring считается позиционно: ring = i % 128.
     auto msg = make_msg(3);
     msg.fields.erase(std::remove_if(msg.fields.begin(), msg.fields.end(),
                                     [](const PointField& f) {

@@ -1,19 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Кластеризация аномалий на range image (Фаза 4). AnomalySet.indices —
-// индексы точек в CleanCloud (см. types.hpp); связность ищется по клеткам
-// развёртки (az*height+ring), в которые эти точки отображаются.
 
 #include "argus_core/clustering.hpp"
 
@@ -27,7 +11,7 @@ namespace {
 
 constexpr uint32_t kNoCloudIndex = std::numeric_limits<uint32_t>::max();
 
-} // namespace
+}
 
 float neighbor_distance_at(float base, float d, float ref, bool adaptive) {
     if (!adaptive) {
@@ -45,10 +29,6 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
 
     const size_t n_cells = ri.range.size();
 
-    // Карта клетка развёртки -> точка в cloud. Клетка (az, ring) соответствует
-    // сырому лучу src = az*height + ring (build_range_image, факт D3), поэтому
-    // клетка и сырой индекс совпадают. Перезапись последней точкой — та же
-    // семантика, что и в build_range_image.
     std::vector<uint32_t> cell_to_cloud(n_cells, kNoCloudIndex);
     const bool has_raw = !cloud.raw_idx.empty();
     for (size_t i = 0; i < cloud.size(); ++i) {
@@ -58,7 +38,6 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
         }
     }
 
-    // Аномальные клетки по индексам CleanCloud.
     std::vector<uint8_t> anomalous(n_cells, 0);
     for (uint32_t idx : merged.indices) {
         if (idx >= cloud.size()) {
@@ -110,10 +89,6 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
                     continue;
                 }
 
-                // Связность по фактической 3D-дистанции между точками
-                // (PLAN.md §9.2): разность дальностей ломается на косых
-                // поверхностях, где соседние лучи далеко друг от друга
-                // по дальности, но близко в пространстве.
                 const uint32_t nb_ci = cell_to_cloud[nidx];
                 if (nb_ci == kNoCloudIndex || nb_ci >= cloud.size()) {
                     continue;
@@ -130,7 +105,6 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
             }
         }
 
-        // Метрики кластера в декартовых координатах по точкам клеток.
         Eigen::Vector3f sum = Eigen::Vector3f::Zero();
         c.min_corner.setConstant(std::numeric_limits<float>::max());
         c.max_corner.setConstant(-std::numeric_limits<float>::max());
@@ -156,9 +130,6 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
         c.centroid = sum / static_cast<float>(c.point_count);
 
         const Eigen::Vector3f ext = c.max_corner - c.min_corner;
-        // «Физический размер» кластера = максимальная ось бокса: тонкие
-        // поверхности (кромка объекта, стенка) легитимны, фильтр должен
-        // отсекать точечный шум и «архитектуру», а не плоские кластеры.
         const float max_ext = ext.maxCoeff();
         if (max_ext < p.min_extent_m || max_ext > p.max_extent_m) {
             continue;

@@ -1,15 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 #include "argus_core/gauge.hpp"
 
@@ -56,15 +44,12 @@ bool ClearanceGauge::contains(float x, float y, float z) const {
     float gx = 0.0f, gy = 0.0f;
     to_gauge(x, y, gx, gy);
 
-    // Продольные границы: от носа до предела проверки.
     const float x_min = p_.nose_offset - p_.safety_margin;
     const float x_max = p_.max_range;
     if (gx < x_min || gx > x_max) {
         return false;
     }
 
-    // Поперечный профиль с фаской по верхним углам; z-границы заданы от
-    // головки рельса и сдвигаются в СК сенсора на -sensor_height.
     const float z_shift = -p_.sensor_height;
     const float hw = p_.half_width + p_.safety_margin;
     const float z_min = z_shift + p_.base_offset - p_.safety_margin;
@@ -76,7 +61,6 @@ bool ClearanceGauge::contains(float x, float y, float z) const {
         return false;
     }
 
-    // Фаска: выше chamfer_start_z_ ширина линейно сужается до (hw - chamfer).
     if (z > chamfer_start_z_ + z_shift && chamfer_height_ > 0.0f) {
         const float t = (z - chamfer_start_z_ - z_shift) / chamfer_height_;
         const float hw_at_z = hw - p_.chamfer * t;
@@ -108,8 +92,6 @@ float ClearanceGauge::distance_to(float x, float y, float z) const {
     const float z_min = z_shift + p_.base_offset - p_.safety_margin;
     const float z_max = z_shift + p_.height + p_.safety_margin;
 
-    // Расстояние до бокса без фаски; фаска упрощаем (консервативно
-    // занижаем дистанцию — для тревог это безопаснее).
     const float dx = std::max(0.0f, p_.nose_offset - gx);
     const float dy = std::max(0.0f, std::abs(gy) - hw);
     const float dz = std::max(0.0f, std::max(z_min - z, z - z_max));
@@ -118,9 +100,6 @@ float ClearanceGauge::distance_to(float x, float y, float z) const {
 
 void ClearanceGauge::to_mesh(float max_range, std::vector<Eigen::Vector3f>& vertices,
                              std::vector<uint32_t>& indices) const {
-    // Упрощённый wireframe-профиль: 2 сечения (нос и хвост) по 4 угла с фаской.
-    // Полная отрисовка — в Ф4.7.1 (маркеры RViz2). Вершины возвращаются
-    // в СК лидара (профиль строится в системе габарита и преобразуется).
     vertices.clear();
     indices.clear();
 
@@ -144,7 +123,6 @@ void ClearanceGauge::to_mesh(float max_range, std::vector<Eigen::Vector3f>& vert
 }
 
 ClearanceGauge::ClearanceGauge(const ClearanceGaugeParams& p) : p_(p) {
-    // Фаска занимает верхнюю часть профиля высотой chamfer.
     chamfer_start_z_ = p_.height - p_.chamfer;
     chamfer_height_ = std::max(0.001f, p_.chamfer);
 

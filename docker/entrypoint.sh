@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0
-#
-# Точка входа образа Argus (PLAN.md 12.2).
-# Требование ТЗ: docker build -> docker run -> ros2 bag play -> увидеть результат.
 
 set -eo pipefail
 

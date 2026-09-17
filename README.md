@@ -40,7 +40,3 @@ docker run --rm -v "$PWD/data":/data argus detect /data/recordings/roundT_double
 ## Требования
 
 Ubuntu 22.04, ROS 2 Humble, Docker. GPU опционально.
-
-## Лицензия
-
-Apache-2.0. Сторонние компоненты и их лицензии — в [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).

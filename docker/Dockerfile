@@ -1,4 +1,3 @@
-# ---------- Этап 1: сборка ----------
 FROM osrf/ros:humble-perception-jammy AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -25,7 +24,6 @@ COPY argus_eval   src/argus_eval
 RUN . /opt/ros/humble/setup.sh && \
     colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
-# ---------- Этап 2: рантайм ----------
 FROM osrf/ros:humble-perception-jammy
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -40,7 +38,6 @@ COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV WS=/ws
-# Данные монтируются, а НЕ встраиваются в образ (конфиденциальность ТЗ)
 VOLUME ["/data"]
 
 ENTRYPOINT ["/entrypoint.sh"]

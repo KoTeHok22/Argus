@@ -1,47 +1,29 @@
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Описание сообщений Argus.
 
-# Диагностика конвейера. Публикуется каждый кадр (/argus/diagnostics).
-# Назначение: отладка, замеры производительности, проверка совпадения
-# наблюдений с форензикой данных (см. PLAN.md, раздел 2).
 
 std_msgs/Header header
 
-# --- Входные данные: счётчики точек ---
-uint32 n_points_raw          # точек пришло в кадре
-uint32 n_points_valid        # прошло sanity-фильтр
-uint32 n_points_rejected     # отброшено всего
-uint32 reject_zero           # отброшено ровно (0,0,0) — нет возврата
-uint32 reject_nonfinite      # отброшено NaN/Inf
-uint32 reject_out_of_range   # отброшено по дальности |p|
+uint32 n_points_raw
+uint32 n_points_valid
+uint32 n_points_rejected
+uint32 reject_zero
+uint32 reject_nonfinite
+uint32 reject_out_of_range
 
-# --- Входные данные: структура развёртки ---
-uint32 rings_detected        # число колец (ожидается 128)
-uint32 az_steps_detected     # азимутальных шагов (307200/128=2400 или 921600/128=7200)
-uint8  echo_multiplier       # 1 обычный режим, 3 тройное эхо (doubleT_obstacle)
-uint32 point_step            # байт на точку (наблюдается 26)
-bool   layout_ok             # раскладка полей распознана
-string layout_error          # описание проблемы, если layout_ok == false
+uint32 rings_detected
+uint32 az_steps_detected
+uint8  echo_multiplier
+uint32 point_step
+bool   layout_ok
+string layout_error
 
-# --- Модель тоннеля ---
-float32 profile_median_deviation_m  # медианное отклонение от профиля (<0.3 м на пустом)
-uint32  model_voxel_count           # занятых вокселей в карте
-bool    model_ready                 # карта прогрета
+float32 profile_median_deviation_m
+uint32  model_voxel_count
+bool    model_ready
 
-# --- Производительность (миллисекунды по шагам) ---
+uint32 n_ground_points
 float32 t_filter_ms
 float32 t_range_image_ms
+float32 t_ground_ms
 float32 t_odometry_ms
 float32 t_model_ms
 float32 t_detect_ms
@@ -50,7 +32,6 @@ float32 t_track_ms
 float32 t_total_ms
 float32 fps
 
-# --- Счётчики за всё время работы ---
 uint64 frames_processed
 uint64 alerts_total
 uint64 false_alerts_suppressed

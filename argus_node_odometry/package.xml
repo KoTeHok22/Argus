@@ -5,18 +5,18 @@
   <version>0.1.0</version>
   <description>Нода конвейера Argus. Реализация по PLAN.md.</description>
   <maintainer email="dev@example.com">Argus team</maintainer>
-  <license>Apache-2.0</license>
+  <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>argus_core</depend>
   <depend>argus_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_cmake_copyright</test_depend>
   <test_depend>ament_cmake_flake8</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_pep257</test_depend>

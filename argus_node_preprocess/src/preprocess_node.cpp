@@ -1,38 +1,23 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Нода предобработки (Фаза 1, PLAN.md §6).
-// Вход:  sensor_msgs/PointCloud2 (топик из параметра cloud.input_topic)
-// Выход: /argus/clean — PointCloud2 после sanity-фильтра,
-//        /argus/diagnostics — счётчики отбраковки и структура развёртки.
 
 #include <chrono>
-#include <cstring>
+#include <cmath>
+#include <memory>
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/point_field.hpp>
 
+#include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
 
 #include "argus_core/cloud_filter.hpp"
+#include "argus_core/ground.hpp"
 #include "argus_core/range_image.hpp"
 
 namespace argus {
 
 using sensor_msgs::msg::PointCloud2;
-using PointField = sensor_msgs::msg::PointField;
+using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using Diagnostics = argus_msgs::msg::Diagnostics;
 
 class PreprocessNode : public rclcpp::Node {
@@ -45,13 +30,41 @@ public:
             static_cast<float>(declare_parameter<double>("cloud.max_abs_coord", 1.0e4));
         params_.drop_zero_xyz = declare_parameter<bool>("cloud.drop_zero_xyz", true);
         params_.drop_nonfinite = declare_parameter<bool>("cloud.drop_nonfinite", true);
-        ri_params_.rings_fallback =
-            static_cast<uint32_t>(declare_parameter<int>("cloud.rings", 128));
+
+        const int rings_param = declare_parameter<int>("range_image.rings", 0);
+        if (rings_param > 0) {
+            ri_params_.rings_fallback = static_cast<uint32_t>(rings_param);
+        }
+        ri_params_.prefer_ring_field =
+            declare_parameter<bool>("range_image.prefer_ring_field", true);
+
+        GroundParams gp;
+        gp.enabled = declare_parameter<bool>("ground_segmentation.enabled", true);
+        const double gs_h = declare_parameter<double>("ground_segmentation.sensor_height", -1.20);
+        gp.sensor_height = static_cast<float>(std::fabs(gs_h));
+        gp.rail_zone_m =
+            static_cast<float>(declare_parameter<double>("ground_segmentation.rail_zone_m", 2.0));
+        gp.rail_max_height = static_cast<float>(
+            declare_parameter<double>("ground_segmentation.rail_max_height", 0.45));
+        gp.max_ground_z_rel = static_cast<float>(
+            declare_parameter<double>("ground_segmentation.max_ground_z_rel", 0.60));
+        gp.min_range =
+            static_cast<float>(declare_parameter<double>("ground_segmentation.min_range", 1.0));
+        gp.max_range =
+            static_cast<float>(declare_parameter<double>("ground_segmentation.max_range", 80.0));
+        gp.enable_RNR = declare_parameter<bool>("ground_segmentation.enable_RNR", true);
+        gp.enable_TGR = declare_parameter<bool>("ground_segmentation.enable_TGR", true);
+        const std::string axis_name =
+            declare_parameter<std::string>("ground_segmentation.forward_axis", "-y");
+        if (!parse_forward_axis(axis_name, gp.forward_axis)) {
+            gp.forward_axis = ForwardAxis::NegY;
+        }
+        ground_ = std::make_unique<GroundSegmenter>(gp);
 
         auto qos = rclcpp::QoS(10);
         sub_ = create_subscription<PointCloud2>(
             input_topic_, qos, [this](PointCloud2::ConstSharedPtr msg) { on_cloud(msg); });
-        pub_clean_ = create_publisher<PointCloud2>("/argus/clean", qos);
+        pub_clean_ = create_publisher<CleanCloudMsg>("/argus/clean", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics", qos);
 
         RCLCPP_INFO(get_logger(), "argus_preprocess подписан на '%s'", input_topic_.c_str());
@@ -64,37 +77,22 @@ private:
             std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(dt).count());
     }
 
-    static PointCloud2 make_clean_msg(const CleanCloud& cloud, const rclcpp::Time& stamp) {
-        PointCloud2 out;
+    static CleanCloudMsg make_clean_msg(const CleanCloud& cloud, const RangeImage& ri,
+                                        const rclcpp::Time& stamp) {
+        CleanCloudMsg out;
         out.header.stamp = stamp;
         out.header.frame_id = cloud.frame_id;
-        out.height = 1;
-        out.width = static_cast<uint32_t>(cloud.size());
-        out.point_step = 16; // x@0 y@4 z@8 intensity@12, все float32
-        out.row_step = out.width * out.point_step;
-        out.is_dense = true;
-
-        auto add = [&out](const std::string& name, uint32_t offset) {
-            PointField f;
-            f.name = name;
-            f.offset = offset;
-            f.datatype = PointField::FLOAT32;
-            f.count = 1;
-            out.fields.push_back(f);
-        };
-        add("x", 0);
-        add("y", 4);
-        add("z", 8);
-        add("intensity", 12);
-
-        out.data.resize(out.data.size() + static_cast<size_t>(out.width) * out.point_step);
-        for (size_t i = 0; i < cloud.size(); ++i) {
-            uint8_t* p = out.data.data() + i * out.point_step;
-            std::memcpy(p + 0, &cloud.x[i], 4);
-            std::memcpy(p + 4, &cloud.y[i], 4);
-            std::memcpy(p + 8, &cloud.z[i], 4);
-            std::memcpy(p + 12, &cloud.intensity[i], 4);
-        }
+        out.n_raw = cloud.n_raw;
+        out.rings = ri.height;
+        out.az_steps = ri.width;
+        out.echo_multiplier = cloud.echo_multiplier;
+        out.x = cloud.x;
+        out.y = cloud.y;
+        out.z = cloud.z;
+        out.intensity = cloud.intensity;
+        out.raw_idx = cloud.raw_idx;
+        out.no_return_raw = cloud.no_return_raw;
+        out.ground_mask = cloud.ground_mask;
         return out;
     }
 
@@ -104,7 +102,6 @@ private:
 
         const auto layout = parse_layout(*msg);
         if (!layout.has_value()) {
-            // Один раз залогировать, дальше — только диагностика (не спамить).
             if (!layout_error_logged_) {
                 RCLCPP_ERROR(get_logger(), "раскладка отвергнута: %s", layout->error.c_str());
                 layout_error_logged_ = true;
@@ -114,14 +111,19 @@ private:
 
         FilterStats stats;
         const auto t_filter0 = std::chrono::steady_clock::now();
-        const CleanCloud cloud = filter_and_index(*msg, *layout, params_, &stats);
+        CleanCloud cloud = filter_and_index(*msg, *layout, params_, &stats);
         const float t_filter_ms = ms_since(t_filter0);
+
+        GroundStats gst;
+        const auto t_g0 = std::chrono::steady_clock::now();
+        ground_->apply(cloud, &gst);
+        const float t_ground_ms = ms_since(t_g0);
 
         const auto t_ri0 = std::chrono::steady_clock::now();
         const RangeImage ri = build_range_image(cloud, ri_params_);
         const float t_range_image_ms = ms_since(t_ri0);
 
-        pub_clean_->publish(make_clean_msg(cloud, stamp));
+        pub_clean_->publish(make_clean_msg(cloud, ri, stamp));
 
         Diagnostics d;
         d.header.stamp = stamp;
@@ -137,8 +139,10 @@ private:
         d.echo_multiplier = cloud.echo_multiplier;
         d.point_step = layout->point_step;
         d.layout_ok = true;
+        d.n_ground_points = gst.n_ground;
         d.t_filter_ms = t_filter_ms;
         d.t_range_image_ms = t_range_image_ms;
+        d.t_ground_ms = t_ground_ms;
         d.fps = (t_total_ms_prev_ > 0.0f) ? 1000.0f / t_total_ms_prev_ : 0.0f;
         d.frames_processed = ++frames_processed_;
         pub_diag_->publish(d);
@@ -146,19 +150,21 @@ private:
         t_total_ms_prev_ = ms_since(t_start);
         RCLCPP_DEBUG(get_logger(),
                      "raw=%u valid=%u zero=%u nonfinite=%u range=%u | ri %ux%u | "
-                     "filter %.2f ms, ri %.2f ms",
+                     "filter %.2f ms, ground %.2f ms (%u pts), ri %.2f ms",
                      stats.n_raw, stats.n_valid, stats.reject_zero, stats.reject_nonfinite,
-                     stats.reject_out_of_range, ri.width, ri.height, t_filter_ms, t_range_image_ms);
+                     stats.reject_out_of_range, ri.width, ri.height, t_filter_ms, t_ground_ms,
+                     gst.n_ground, t_range_image_ms);
     }
 
     std::string input_topic_;
     FilterParams params_;
     RangeImageParams ri_params_;
+    std::unique_ptr<GroundSegmenter> ground_;
     bool layout_error_logged_ = false;
     uint64_t frames_processed_ = 0;
     float t_total_ms_prev_ = 0.0f;
     rclcpp::Subscription<PointCloud2>::SharedPtr sub_;
-    rclcpp::Publisher<PointCloud2>::SharedPtr pub_clean_;
+    rclcpp::Publisher<CleanCloudMsg>::SharedPtr pub_clean_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
 };
 

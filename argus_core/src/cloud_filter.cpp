@@ -1,17 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Реализации облачного фильтра. См. cloud_filter.hpp для контрактов.
 
 #include "argus_core/cloud_filter.hpp"
 
@@ -27,7 +13,6 @@ using sensor_msgs::msg::PointField;
 
 namespace {
 
-/// Найти поле по имени. Вернуть nullptr если отсутствует.
 const PointField* find_field(const PointCloud2& msg, const std::string& name) {
     for (const auto& f : msg.fields) {
         if (f.name == name) {
@@ -37,10 +22,6 @@ const PointField* find_field(const PointCloud2& msg, const std::string& name) {
     return nullptr;
 }
 
-/// Поле float32 нужного размера, иначе nullptr.
-/// Факт F-B: doubleT_obstacle пишет x/y/z/intensity с datatype = INT32 (7),
-/// хотя данные — float32 (писатель багует). Принимаем 4-байтовые целые типы
-/// как float32: размер слота совпадает, декодирование по offset корректно.
 const PointField* find_float32(const PointCloud2& msg, const std::string& name) {
     const PointField* f = find_field(msg, name);
     if (f == nullptr || f->count < 1) {
@@ -92,7 +73,6 @@ std::optional<CloudLayout> parse_layout(const PointCloud2& msg) {
         out.offset_timestamp = t->offset;
     }
 
-    // Границы буфера: ширина * высота * point_step должна помещаться в data.
     const uint64_t declared = static_cast<uint64_t>(msg.width) * msg.height * msg.point_step;
     if (declared > msg.data.size()) {
         out.error = "data buffer smaller than width*height*point_step";
@@ -100,9 +80,6 @@ std::optional<CloudLayout> parse_layout(const PointCloud2& msg) {
     }
     out.n_points = static_cast<uint32_t>(msg.width) * msg.height;
 
-    // Известные раскладки (факт D1): point_step 26 — hesai, либо любая
-    // согласованная раскладка. Угадывание запрещено: всё, что нужно,
-    // уже прочитано из fields[].
     return out;
 }
 
@@ -117,8 +94,6 @@ CleanCloud filter_and_index(const PointCloud2& msg, const CloudLayout& layout,
                   static_cast<double>(msg.header.stamp.nanosec) * 1e-9;
     out.frame_id = msg.header.frame_id;
 
-    // Развёртка 128 колец — факт D3/D5 (у всех бэгов датасета). Если в
-    // сообщении есть поле ring, оно главнее позиционного правила.
     constexpr uint32_t kRings = 128;
     out.rings = kRings;
     out.az_steps = (static_cast<uint32_t>(layout.n_points) + kRings - 1) / kRings;
@@ -146,7 +121,6 @@ CleanCloud filter_and_index(const PointCloud2& msg, const CloudLayout& layout,
         std::memcpy(&y, p + layout.offset_y, sizeof(float));
         std::memcpy(&z, p + layout.offset_z, sizeof(float));
 
-        // Отбраковка NaN/Inf (факт D4).
         if (params.drop_nonfinite &&
             (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))) {
             ++s.reject_nonfinite;
@@ -154,8 +128,6 @@ CleanCloud filter_and_index(const PointCloud2& msg, const CloudLayout& layout,
             continue;
         }
 
-        // Отбраковка «нет возврата» (факт D4). Сырой индекс сохраняется:
-        // build_range_image отметит луч в no_return_mask (детектор B).
         if (params.drop_zero_xyz && x == 0.0f && y == 0.0f && z == 0.0f) {
             ++s.reject_zero;
             ++s.n_rejected;
@@ -163,7 +135,6 @@ CleanCloud filter_and_index(const PointCloud2& msg, const CloudLayout& layout,
             continue;
         }
 
-        // Отбраковка мусора: |coord| > 1e4 (факт D4).
         if (std::abs(x) > params.max_abs_coord || std::abs(y) > params.max_abs_coord ||
             std::abs(z) > params.max_abs_coord) {
             ++s.reject_out_of_range;
@@ -191,8 +162,6 @@ CleanCloud filter_and_index(const PointCloud2& msg, const CloudLayout& layout,
         }
         out.intensity.push_back(intensity);
 
-        // Позиционная разметка развёртки (факт D3): ring = i % rings,
-        // az = i / rings. Поле ring из сообщения главнее, если есть.
         uint16_t ring = static_cast<uint16_t>(raw % kRings);
         if (layout.has_ring) {
             std::memcpy(&ring, p + layout.offset_ring, sizeof(uint16_t));

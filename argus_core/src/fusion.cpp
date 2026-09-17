@@ -1,15 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 #include "argus_core/fusion.hpp"
 
@@ -29,12 +17,14 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     out.n_anom_points = static_cast<uint32_t>(geometry.indices.size());
     out.n_anom_cells = static_cast<uint32_t>(no_return.cells.size());
 
-    // 1. Кластеризация по аномальным точкам. Клетки no_return точек не имеют
-    //    и не кластеризуются — учитываются счётчиком и голосом совпадения.
     AnomalySet merged;
     merged.indices.reserve(geometry.indices.size());
     for (uint32_t idx : geometry.indices) {
         if (idx >= cloud.size()) {
+            continue;
+        }
+        if (!cloud.ground_mask.empty() && idx < cloud.ground_mask.size() &&
+            cloud.ground_mask[idx] != 0) {
             continue;
         }
         if (p_.ground_filter) {
@@ -42,14 +32,13 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
             const float lat =
                 std::fabs(cloud.x[idx] * gauge_.left_x() + cloud.y[idx] * gauge_.left_y());
             if (z_rel < p_.ground_clearance_m && lat < p_.rail_zone_m) {
-                continue; // путевая структура: рельсы, постель, контактный рельс
+                continue;
             }
         }
         merged.indices.push_back(idx);
     }
     const std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
 
-    // Оценка достоверности по индексу точки в cloud (score параллелен indices).
     std::vector<float> cloud_score(cloud.size(), 0.0f);
     for (size_t i = 0; i < geometry.indices.size() && i < geometry.score.size(); ++i) {
         if (geometry.indices[i] < cloud.size()) {
@@ -57,13 +46,9 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         }
     }
 
-    // Клетки no_return для голоса совпадения кластера с потерей возвратов.
     std::vector<uint32_t> nr_cells = no_return.cells;
     std::sort(nr_cells.begin(), nr_cells.end());
 
-    // 2. Габаритная фильтрация: кластер проходит, если хотя бы одна его точка
-    //    внутри габарита. Устраняет законную геометрию — стены и платформу
-    //    сбоку (факт F-F, валидация Ф3.5.4).
     out.n_clusters_raw = static_cast<uint32_t>(all.size());
     for (Cluster c : all) {
         c.votes_geometry = 1;
@@ -97,10 +82,8 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         out.clusters.push_back(std::move(c));
     }
 
-    // 3. Трекинг подтверждённых кластеров.
     out.tracks = tracker_.update(out.clusters, dt, train_speed_mps);
 
-    // 4. Решение: подтверждённый трек кластера в габарите (PLAN.md §9.4).
     for (const Track& t : out.tracks) {
         out.nearest_range_m = out.nearest_range_m < 0.0f
                                   ? t.nearest_range
@@ -118,7 +101,27 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
                                     ? c.forward_distance
                                     : std::min(out.nearest_forward_m, c.forward_distance);
     }
-    out.alert = p_.require_confirmed_track ? !out.tracks.empty() : !out.clusters.empty();
+    if (p_.require_confirmed_track) {
+        for (const Track& t : out.tracks) {
+            const uint32_t votes = static_cast<uint32_t>(t.votes_free_space) +
+                                   static_cast<uint32_t>(t.votes_no_return) +
+                                   static_cast<uint32_t>(t.votes_geometry);
+            if (t.confirmed && votes >= p_.min_votes_for_alert) {
+                out.alert = true;
+                break;
+            }
+        }
+    } else {
+        for (const Cluster& c : out.clusters) {
+            const uint32_t votes = static_cast<uint32_t>(c.votes_free_space) +
+                                   static_cast<uint32_t>(c.votes_no_return) +
+                                   static_cast<uint32_t>(c.votes_geometry);
+            if (votes >= p_.min_votes_for_alert) {
+                out.alert = true;
+                break;
+            }
+        }
+    }
     if (!out.alert) {
         out.nearest_forward_m = -1.0f;
         out.nearest_range_m = -1.0f;

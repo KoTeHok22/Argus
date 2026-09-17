@@ -1,23 +1,3 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Детекторы аномалий (Фаза 3, PLAN.md §8).
-//   no_return — серии «дыр» в no_return_mask при живой базовой линии.
-//   geometry  — отклонение от локальной скользящей медианы по азимуту
-//               (перенос проверенного офлайн-детектора bag_range_hunt.py,
-//               пороги-якоря: окно 201, порог 1 м, min_cells 50, fill 0.3,
-//               цель 4-45 м; PROJECT_STATUS §3).
-//   free_space — Ф3.5.3, ждёт модель тоннеля (Ф2.3.2), пока заглушка.
 
 #include "argus_core/anomaly.hpp"
 
@@ -55,9 +35,6 @@ uint32_t cyclic_az_diff(uint32_t a, uint32_t b, uint32_t width) {
     return std::min(d, width - d);
 }
 
-/// Клетка развёртки -> индекс точки в CleanCloud. Клетка (az, ring)
-/// соответствует сырому лучу src = az*height + ring, поэтому клетка
-/// и сырой индекс совпадают (build_range_image, факт D3).
 std::vector<uint32_t> build_cell_to_cloud(const CleanCloud& cloud, size_t n_cells) {
     std::vector<uint32_t> map(n_cells, kNoCloudIndex);
     const bool has_raw = !cloud.raw_idx.empty();
@@ -72,10 +49,6 @@ std::vector<uint32_t> build_cell_to_cloud(const CleanCloud& cloud, size_t n_cell
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// NoReturnDetector
-// ---------------------------------------------------------------------------
-
 NoReturnDetector::NoReturnDetector(const NoReturnParams& p) : p_(p) {}
 
 AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
@@ -88,14 +61,10 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
     const uint32_t w = ri.width;
     const uint32_t h = ri.height;
     const int aw = static_cast<int>(p_.azimuth_window);
-    // Масштабно-независимый ограничитель: тень объекта — единицы-десяток
-    // градусов, слепой сектор — десятки градусов независимо от az_steps.
     const uint32_t max_run = std::max<uint32_t>(
         p_.min_missing_run, static_cast<uint32_t>(p_.max_missing_run_deg * w / 360.0f) + 1);
 
     for (uint32_t r = 0; r < h; ++r) {
-        // Якорь: первый азимут с возвратом. Полностью «дырявое» кольцо
-        // (нет базовой линии) не тревожит — пропасть не похоже на объект.
         uint32_t anchor = w;
         for (uint32_t az = 0; az < w; ++az) {
             if (ri.no_return_mask[ri.idx(az, r)] == 0) {
@@ -107,7 +76,6 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
             continue;
         }
 
-        // Линейный проход от якоря: серии дыр не пересекают якорь.
         uint32_t run_start = 0;
         bool in_run = false;
         for (uint32_t step = 0; step <= w; ++step) {
@@ -122,9 +90,6 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
                 if (run_len < p_.min_missing_run || run_len > max_run) {
                     continue;
                 }
-                // Базовая линия: столбцы по краям серии. Живая база означает,
-                // что в соседних направлениях стена стабильно отражает, а тут
-                // лучи потеряны — признак поглощения/близкого объекта.
                 std::vector<float> base;
                 base.reserve(2 * static_cast<size_t>(aw));
                 for (int d = 1; d <= aw; ++d) {
@@ -152,10 +117,6 @@ AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// GeometryResidualDetector
-// ---------------------------------------------------------------------------
-
 GeometryResidualDetector::GeometryResidualDetector(const GeometryResidualParams& p) : p_(p) {}
 
 AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const RangeImage& ri) {
@@ -171,8 +132,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
     const size_t n_cells = static_cast<size_t>(w) * h;
     const uint32_t half = std::min(p_.median_half_window, (w - 1) / 2);
 
-    // Базовая линия: скользящая медиана по азимуту для каждого кольца.
-    // NaN пропускаются; окно циклично по азимуту.
     std::vector<float> baseline(n_cells, std::numeric_limits<float>::quiet_NaN());
     std::vector<float> win;
     win.reserve(2 * static_cast<size_t>(half) + 1);
@@ -195,7 +154,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
     }
 
-    // Кандидаты: клетка ближе базовой линии на > порога.
     std::vector<uint8_t> hit(n_cells, 0);
     std::vector<float> resid(n_cells, 0.0f);
     for (size_t i = 0; i < n_cells; ++i) {
@@ -211,7 +169,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
     }
 
-    // Связные компоненты (8-связность, цикл по азимуту).
     std::vector<uint8_t> visited(n_cells, 0);
     std::vector<size_t> stack;
     struct Candidate {
@@ -262,8 +219,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             continue;
         }
 
-        // Размах по азимуту относительно «якоря» — корректно для компонент,
-        // пересекающих шов развёртки (az = 0 и w-1 соседи).
         uint32_t span = 0;
         for (uint32_t cidx : cand.cells) {
             const uint32_t az = cidx / h;
@@ -278,8 +233,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             continue;
         }
 
-        // Центр по азимуту: взвешивание ближних клеток (вес ~ 1/r^2),
-        // как в офлайн-проверке (bag_range_hunt.py).
         double wsum = 0.0, asum = 0.0;
         for (uint32_t cidx : cand.cells) {
             const float v = ri.range[cidx];
@@ -294,8 +247,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         candidates.push_back(std::move(cand));
     }
 
-    // Стабильность по кадрам (дискриминатор F-E): кандидат тревожит, только
-    // если похожий кандидат был и в предыдущем кадре (серия min_stable_frames).
     if (p_.min_stable_frames <= 1) {
         tracks_.clear();
     } else {
@@ -341,7 +292,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             tracks_ = std::move(next_tracks);
             return out;
         }
-        // Оставляем только стабильных кандидатов.
         std::vector<Candidate> stable;
         for (const Track& t : next_tracks) {
             if (t.streak < p_.min_stable_frames) {
@@ -361,7 +311,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         tracks_ = std::move(next_tracks);
     }
 
-    // Клетки кандидатов -> индексы точек в CleanCloud (семантика AnomalySet).
     const std::vector<uint32_t> cell_to_cloud = build_cell_to_cloud(cloud, n_cells);
     for (const Candidate& cand : candidates) {
         for (uint32_t cidx : cand.cells) {
@@ -376,16 +325,10 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// FreeSpaceDetector — Ф3.5.3, требуется модель тоннеля (Ф2.3.2).
-// ---------------------------------------------------------------------------
-
 FreeSpaceDetector::FreeSpaceDetector(TunnelModel* model, const FreeSpaceParams& p)
     : model_(model), p_(p) {}
 
 AnomalySet FreeSpaceDetector::detect(const CleanCloud&, const RangeImage&) {
-    // Каркас: пустой AnomalySet (система не даёт ложных тревог, пока
-    // детектор не готов). Реализация — после TunnelModel (Ф2.3.2).
     AnomalySet out;
     out.source = name();
     return out;

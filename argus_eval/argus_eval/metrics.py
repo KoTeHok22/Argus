@@ -1,29 +1,3 @@
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""
-Метрики качества Argus (PLAN.md 11.1).
-
-Принципиальное ограничение задачи: покадровой разметки препятствий НЕТ.
-Метрики делятся на два класса:
-
-A. Пустые участки (ground truth тривиален: препятствий нет)
-   - fp_rate, fp_per_minute, длительность удержания ложной тревоги.
-
-B. Синтетические препятствия (ground truth известен с точностью до см,
-   потому что мы сами вставили объект)
-   - recall, ошибка дистанции, кривая "дальность vs recall".
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,7 +12,7 @@ class EmptyRunMetrics:
     total_frames: int
     frames_with_alert: int
     duration_s: float
-    max_alert_streak: int  # сколько кадров подряд держалась ложная тревога
+    max_alert_streak: int
 
     @property
     def fp_rate(self) -> float:
@@ -49,7 +23,7 @@ class EmptyRunMetrics:
         return self.frames_with_alert / max(1e-6, self.duration_s / 60.0)
 
     def ok(self) -> bool:
-        """Целевые значения PLAN.md 11.2.2: fp_rate < 0.05, streak < 10 кадров."""
+        """Ниже порогов PLAN.md 11.2.2: fp_rate < 0.05, streak < 10."""
         return self.fp_rate < 0.05 and self.max_alert_streak < 10
 
 

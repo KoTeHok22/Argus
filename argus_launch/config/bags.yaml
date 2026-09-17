@@ -1,6 +1,3 @@
-# Реестр бэгов. split: train | holdout.
-# HOLDOUT НЕ ЗАПУСКАТЬ ДО ФАЗЫ 6 (PLAN.md 11.2.6, правило 16.3.1).
-# Пути - от корня data/ (папка исключена из git).
 
 bags:
   roundT_doubleT:

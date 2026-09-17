@@ -1,7 +1,5 @@
-# Нормализация переводов строк: LF везде, и в репозитории, и в рабочей копии.
 * text=auto eol=lf
 
-# Явно текстовые — для корректного diff
 *.cpp   text diff=cpp
 *.hpp   text diff=cpp
 *.h     text diff=cpp
@@ -16,7 +14,6 @@
 *.txt   text
 *.sh    text eol=lf
 
-# Бинарные — не трогать
 *.png   binary
 *.jpg   binary
 *.jpeg  binary

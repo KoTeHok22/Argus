@@ -1,4 +1,3 @@
-# Dev-образ: инструменты разработки + офлайн-анализ (PLAN.md 5.1.3).
 FROM osrf/ros:humble-desktop-full-jammy
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -15,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN rosdep init || true && rosdep update
 
-# Офлайн-инструменты отдельным слоем, чтобы кэшировалось
 RUN pip3 install --no-cache-dir \
     numpy scipy matplotlib pandas open3d rerun-sdk zstandard
 

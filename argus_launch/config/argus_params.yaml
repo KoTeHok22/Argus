@@ -1,130 +1,120 @@
-# Параметры конвейера Argus. ЕДИНАЯ ТОЧКА ИСТИНЫ (PLAN.md 10.2).
-# Ни один параметр не задаётся в коде. Каждое значение имеет диапазон и дефолт.
 
 /**:
   ros__parameters:
-    # --- Общие ---
-    frame_id_lidar: ""            # пусто = брать из сообщения
+    frame_id_lidar: ""
     publish_diagnostics: true
 
-    # --- Чтение облака (Фаза 1) ---
     cloud:
-      input_topic: /lidar_points  # doubleT_obstacle: /sensing/lidar/hesai128/pointcloud
+      input_topic: /lidar_points
       qos_depth: 10
-      min_range: 0.5              # м
-      max_range: 400.0            # м
-      max_abs_coord: 1.0e4        # отбраковка мусора (факт D4: ~70% точек)
-      drop_zero_xyz: true         # (0,0,0) = нет возврата
+      min_range: 0.5
+      max_range: 400.0
+      max_abs_coord: 1.0e4
+      drop_zero_xyz: true
       drop_nonfinite: true
-      echo_multiplier: 0          # 0 = автоопределение; 1 обычный; 3 тройное эхо
+      echo_multiplier: 0
 
-    # --- Range image (Фаза 1) ---
     range_image:
-      rings: 0                    # 0 = автоопределение (ожидается 128)
-      az_steps: 0                 # 0 = автоопределение (2400 или 7200)
+      rings: 0
+      az_steps: 0
       prefer_ring_field: true
 
-    # --- Земля и рельсы (Фаза 1) ---
     ground_segmentation:
       enabled: true
       method: patchworkpp
-      sensor_height: -1.20        # м, УТОЧНИТЬ по данным (допущение A3)
+      sensor_height: -1.20
       num_zones: 4
       num_sectors: 54
-      enable_RNR: true            # reflected noise removal (мокрые рельсы)
+      enable_RNR: true
       enable_TGR: true
-      rail_max_height: 0.20       # м над полом
-      rail_max_width: 0.15        # м
+      rail_max_height: 0.45
+      rail_max_width: 0.15
+      rail_zone_m: 2.0
+      max_ground_z_rel: 0.60
+      min_range: 1.0
+      max_range: 80.0
+      forward_axis: "-y"
 
-    # --- Одометрия (Фаза 2) ---
     odometry:
       enabled: true
-      method: kiss_icp
-      lock_lateral: true          # y = 0: рельсы держат
-      lock_roll: true             # roll = 0: рельсы держат
-      lock_vertical: false        # z меняется (уклон пути)
-      kiss_icp:
-        max_range: 120.0
-        min_range: 1.0
-        voxel_size: 0.5
-      max_speed_mps: 30.0         # валидация правдоподобности позы
+      method: 4dof_icp
+      lock_lateral: true
+      lock_roll: true
+      lock_vertical: false
+      max_range: 120.0
+      min_range: 1.0
+      voxel_size: 0.5
+      max_speed_mps: 30.0
       max_accel_mps2: 2.0
+      max_iterations: 8
+      max_correspondence_m: 2.0
+      rest_translation_m: 0.20
+      keep_ground: true
+      forward_axis: "-y"
 
-    # --- Модель тоннеля (Фаза 2) ---
     tunnel_model:
       enabled: true
-      voxel_size: 0.20            # м; меньше = точнее, дороже
-      free_space_margin: 0.15     # м
-      min_observations: 3         # клетка пуста минимум в N кадрах
-      max_range: 150.0            # м, дальше разреженно
+      voxel_size: 0.20
+      free_space_margin: 0.15
+      min_observations: 3
+      max_range: 150.0
       enable_decay: false
       decay_after_frames: 3000
       forget_ray_fraction: 0.02
-      prior_map_path: ""          # пусто = онлайн-режим (основной)
+      prior_map_path: ""
 
-    # --- Профиль тоннеля (Фаза 2) ---
     tunnel_profile:
       enabled: true
-      alpha_initial: 0.30         # быстрое обучение вначале
-      alpha_steady: 0.02          # медленное после прогрева
+      alpha_initial: 0.30
+      alpha_steady: 0.02
       warmup_frames: 200
 
-    # --- Детектор: потеря возвратов (Фаза 3) ---
     detector_no_return:
       enabled: true
-      min_missing_run: 8          # минимум подряд идущих «дыр»
-      max_missing_run_deg: 15.0   # тень объекта компактна; длинные серии —
-                                  # слепые секторы развёртки (факт F-A)
+      min_missing_run: 8
+      max_missing_run_deg: 15.0
       azimuth_window: 5
       min_baseline_hits: 0.70
       min_range: 3.0
 
-    # --- Детектор: геометрический остаток (Фаза 3) ---
-    # Пороги-якоря проверены офлайн (PROJECT_STATUS §3, факты F-D/F-E).
     detector_geometry:
       enabled: true
-      median_half_window: 100     # окно скользящей медианы 2*100+1 = 201 az
-      residual_threshold_m: 1.0   # клетка ближе базовой линии на > 1 м
-      min_cells: 50               # минимум клеток в связной компоненте
-      min_fill: 0.3               # плотность заполнения bbox компоненты
-      min_range: 4.0              # отсекать близкие (< 4 м) возвраты пола/потолка
-      max_target_range_m: 45.0    # цель ближе 45 м (F-D: препятствие на 16.9 м)
-      min_stable_frames: 2        # дискриминатор F-E: транзиенты не накапливают серию
-      az_tolerance: 20            # допуск центра по азимуту, клеток
-      range_tolerance_m: 3.0      # допуск ближайшей дальности между кадрами, м
+      median_half_window: 100
+      residual_threshold_m: 1.0
+      min_cells: 50
+      min_fill: 0.3
+      min_range: 4.0
+      max_target_range_m: 45.0
+      min_stable_frames: 2
+      az_tolerance: 20
+      range_tolerance_m: 3.0
 
-    # --- Детектор: свободное пространство (Фаза 3) ---
     detector_free_space:
       enabled: true
       min_confidence: 0.70
       min_range: 1.0
       max_range: 150.0
 
-    # --- Габарит (Фаза 4) ---
     gauge:
-      forward_axis: "-y"          # ось «вперёд» в СК лидара (факт F-F): для
-                                  # doubleT-бэгов -y; варианты: x/-x/y/-y
-      half_width: 1.45            # м, УТОЧНИТЬ (допущение A1)
-      height: 3.60                # м
-      base_offset: 0.20           # м
-      chamfer: 0.20               # м
-      nose_offset: 0.00           # м, УТОЧНИТЬ (допущение A2)
-      sensor_height: 1.20         # м, сенсор над головкой рельса; по данным
-                                  # platform-бэга пол на z ~ -1.2 м (A3)
+      forward_axis: "-y"
+      half_width: 1.45
+      height: 3.60
+      base_offset: 0.20
+      chamfer: 0.20
+      nose_offset: 0.00
+      sensor_height: 1.20
       max_range: 300.0
       safety_margin: 0.10
 
-    # --- Кластеризация (Фаза 4) ---
     clustering:
-      neighbor_distance: 0.35     # м, 3D-порог связности соседних точек
+      neighbor_distance: 0.35
       adaptive_scaling: true
       reference_range: 50.0
       min_cluster_size: 15
       max_cluster_size: 20000
-      min_extent_m: 0.20          # максимальная ось бокса кластера меньше — шум
-      max_extent_m: 5.00          # больше — архитектура, не объект
+      min_extent_m: 0.20
+      max_extent_m: 5.00
 
-    # --- Трекинг (Фаза 4) ---
     tracking:
       max_association_distance: 2.0
       min_hits_to_confirm: 3
@@ -132,16 +122,20 @@
       process_noise: 0.5
       measurement_noise: 0.3
 
-    # --- Слияние (Фаза 4) ---
     fusion:
-      min_votes_for_alert: 1      # начать с 1, поднять после калибровки (9.4)
+      min_votes_for_alert: 1
       require_confirmed_track: true
       critical_range_m: 50.0
       warning_range_m: 150.0
       critical_ttc_s: 3.0
+      ground_filter: false
+      ground_clearance_m: 0.45
+      rail_zone_m: 2.0
+      default_dt_s: 0.1
+      stale_timeout_s: 1.0
+      max_pending_frames: 16
 
-    # --- Транспортное средство ---
     vehicle:
-      speed_topic: ""             # пусто = из одометрии (допущение A4)
+      speed_topic: ""
       default_speed_mps: 0.0
       braking_decel_mps2: 1.3

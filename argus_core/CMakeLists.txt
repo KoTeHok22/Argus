@@ -1,16 +1,3 @@
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# Сборка пакета Argus.
 
 cmake_minimum_required(VERSION 3.8)
 project(argus_core)
@@ -20,15 +7,22 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
 find_package(ament_cmake REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(sensor_msgs REQUIRED)
+
+set(PWP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/patchworkpp")
+if(NOT EXISTS "${PWP_ROOT}/cpp/patchworkpp/src/patchworkpp.cpp")
+  message(FATAL_ERROR
+    "Patchwork++ не найден в ${PWP_ROOT}. "
+    "Импорт: vcs import third_party < third_party/argus.repos")
+endif()
+set(PARENT_PROJECT_NAME patchworkpp)
+set(TARGET_NAME ground_seg_cores)
+add_subdirectory("${PWP_ROOT}/cpp/common" pwp_common)
+add_subdirectory("${PWP_ROOT}/cpp/patchworkpp" pwp_pp)
 
 add_library(${PROJECT_NAME} SHARED
   src/cloud_filter.cpp
@@ -39,6 +33,8 @@ add_library(${PROJECT_NAME} SHARED
   src/fusion.cpp
   src/explain.cpp
   src/anomaly.cpp
+  src/ground.cpp
+  src/odometry.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -48,10 +44,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   ${sensor_msgs_INCLUDE_DIRS}
 )
 
-target_link_libraries(${PROJECT_NAME} PUBLIC ${PCL_LIBRARIES} Eigen3::Eigen)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${PCL_LIBRARIES} Eigen3::Eigen ground_seg_cores)
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
+  "${PWP_ROOT}/cpp/patchworkpp/include"
+  "${PWP_ROOT}/cpp/common/include")
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${PCL_DEFINITIONS})
-# Только msg-типы sensor_msgs (заголовки, без линковки и без rclcpp) —
-# ядро остаётся тестируемым вне ROS-рантайма (T5 в уточнённой формулировке).
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_executable(offline_detector tools/offline_detector.cpp)
 target_link_libraries(offline_detector PRIVATE ${PROJECT_NAME})
@@ -65,7 +65,7 @@ install(
 )
 
 install(
-  TARGETS ${PROJECT_NAME}
+  TARGETS ${PROJECT_NAME} ground_seg_cores ground_seg_common
   EXPORT ${PROJECT_NAME}Targets
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
@@ -97,6 +97,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_fusion ${PROJECT_NAME})
   ament_add_gtest(test_tracking test/test_tracking.cpp)
   target_link_libraries(test_tracking ${PROJECT_NAME})
+  ament_add_gtest(test_ground test/test_ground.cpp)
+  target_link_libraries(test_ground ${PROJECT_NAME})
+  ament_add_gtest(test_odometry test/test_odometry.cpp)
+  target_link_libraries(test_odometry ${PROJECT_NAME})
 endif()
 
 ament_package()

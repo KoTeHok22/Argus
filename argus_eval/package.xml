@@ -8,7 +8,7 @@
     на синтетических препятствиях, latency. Python, офлайн и онлайн (PLAN.md 11).
   </description>
   <maintainer email="dev@example.com">Argus team</maintainer>
-  <license>Apache-2.0</license>
+  <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
@@ -17,7 +17,6 @@
   <exec_depend>python3-pandas</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_cmake_copyright</test_depend>
   <test_depend>ament_cmake_flake8</test_depend>
   <test_depend>ament_cmake_lint_cmake</test_depend>
   <test_depend>ament_cmake_pep257</test_depend>

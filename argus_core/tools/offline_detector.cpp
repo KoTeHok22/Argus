@@ -1,30 +1,10 @@
-// Copyright 2026 Argus Team
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Офлайн-раннер детекторов (валидация Ф3.5.4): читает бинарный дамп кадров
-// ARGFRM1 (scripts/bag2frames.py), строит CleanCloud + RangeImage и прогоняет
-// те же детекторы argus_core, что работают в рантайме. Отчёт — CSV в stdout.
-//
-//   frame,source,points,cells,nearest_m,az_center,az_span,cells_bbox
-//
-// Формат ARGFRM1 (little-endian): magic "ARGFRM1" | uint32 n_frames;
-// на кадр: double stamp_s | uint32 n_raw | n_valid | n_no_return |
-//   n_valid x (float x,y,z,intensity; uint32 raw_idx) | n_no_return x uint32.
 
 #include <argus_core/anomaly.hpp>
 #include <argus_core/clustering.hpp>
 #include <argus_core/fusion.hpp>
 #include <argus_core/gauge.hpp>
+#include <argus_core/ground.hpp>
+#include <argus_core/odometry.hpp>
 #include <argus_core/range_image.hpp>
 #include <argus_core/types.hpp>
 
@@ -115,8 +95,6 @@ void report(uint32_t frame, const argus::AnomalySet& set, const argus::RangeImag
         return;
     }
 
-    // Компонентная сводка по точкам: собираем клетки, группируем по близости
-    // дальности (просто и достаточно для отчёта).
     std::vector<std::vector<uint32_t>> groups;
     std::vector<float> group_nearest;
     for (uint32_t idx : set.indices) {
@@ -160,6 +138,7 @@ int main(int argc, char** argv) {
     std::string forward_axis = "x";
     uint32_t limit = 0;
     bool fusion_mode = false;
+    bool odometry_mode = false;
     bool debug_clusters = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -167,6 +146,8 @@ int main(int argc, char** argv) {
             limit = static_cast<uint32_t>(std::atoi(argv[++i]));
         } else if (a == "--fusion") {
             fusion_mode = true;
+        } else if (a == "--odometry") {
+            odometry_mode = true;
         } else if (a == "--debug-clusters") {
             debug_clusters = true;
         } else if (a == "--forward-axis" && i + 1 < argc) {
@@ -176,7 +157,7 @@ int main(int argc, char** argv) {
         }
     }
     if (path.empty()) {
-        std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] "
+        std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
                      "[--forward-axis x|-x|y|-y]\n";
         return 2;
     }
@@ -212,14 +193,25 @@ int main(int argc, char** argv) {
     }
     argus::ClearanceGaugeParams gauge_params;
     gauge_params.forward_axis = axis;
-    gauge_params.sensor_height = 1.2f; // допущение A3 (пол ~ -1.2 м в СК сенсора)
+    gauge_params.sensor_height = 1.2f;
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size = 15;
     fusion_params.clustering.min_extent_m = 0.1f;
     fusion_params.tracking.min_hits_to_confirm = 3;
+    fusion_params.ground_filter = false;
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
+    argus::GroundParams ground_params;
+    ground_params.sensor_height = 1.2f;
+    ground_params.forward_axis = axis;
+    argus::GroundSegmenter ground(ground_params);
+    argus::OdometryParams odom_params;
+    odom_params.forward_axis = axis;
+    argus::TunnelOdometry odom(odom_params);
 
-    if (fusion_mode) {
+    if (odometry_mode) {
+        std::cout << std::fixed << std::setprecision(3);
+        std::cout << "frame,valid,x,y,z,speed,corr,down,fitness\n";
+    } else if (fusion_mode) {
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
                      "anom_points,anom_cells\n";
@@ -234,7 +226,16 @@ int main(int argc, char** argv) {
             std::cerr << "truncated frame " << k << "\n";
             return 2;
         }
-        const argus::CleanCloud cloud = to_clean_cloud(f);
+        argus::CleanCloud cloud = to_clean_cloud(f);
+        ground.apply(cloud);
+        if (odometry_mode) {
+            const argus::OdometryResult r = odom.update(cloud, f.stamp_s);
+            const Eigen::Vector3d t = r.pose.translation();
+            std::cout << k << ',' << (r.valid ? 1 : 0) << ',' << t.x() << ',' << t.y() << ','
+                      << t.z() << ',' << r.speed_mps << ',' << r.n_correspondences << ','
+                      << r.n_downsampled << ',' << r.fitness << '\n';
+            continue;
+        }
         const argus::RangeImage ri = argus::build_range_image(cloud, ri_params);
         if (!ri.valid()) {
             std::cerr << "frame " << k << ": invalid range image\n";
