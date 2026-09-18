@@ -51,7 +51,7 @@ bool ClearanceGauge::contains(float x, float y, float z) const {
     }
 
     const float z_shift = -p_.sensor_height;
-    const float hw = p_.half_width + p_.safety_margin;
+    const float hw = p_.half_width;
     const float z_min = z_shift + p_.base_offset - p_.safety_margin;
     const float z_max = z_shift + p_.height + p_.safety_margin;
     if (z < z_min || z > z_max) {

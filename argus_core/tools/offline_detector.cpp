@@ -6,6 +6,8 @@
 #include <argus_core/ground.hpp>
 #include <argus_core/odometry.hpp>
 #include <argus_core/range_image.hpp>
+#include <argus_core/tunnel_model.hpp>
+#include <argus_core/tunnel_profile.hpp>
 #include <argus_core/types.hpp>
 
 #include <algorithm>
@@ -139,15 +141,24 @@ int main(int argc, char** argv) {
     uint32_t limit = 0;
     bool fusion_mode = false;
     bool odometry_mode = false;
+    bool tunnel_mode = false;
     bool debug_clusters = false;
+    uint32_t warmup_frames = 10;
+    bool free_space_vote = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
             limit = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--warmup" && i + 1 < argc) {
+            warmup_frames = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--free-space-vote") {
+            free_space_vote = true;
         } else if (a == "--fusion") {
             fusion_mode = true;
         } else if (a == "--odometry") {
             odometry_mode = true;
+        } else if (a == "--tunnel") {
+            tunnel_mode = true;
         } else if (a == "--debug-clusters") {
             debug_clusters = true;
         } else if (a == "--forward-axis" && i + 1 < argc) {
@@ -158,6 +169,7 @@ int main(int argc, char** argv) {
     }
     if (path.empty()) {
         std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
+                     "[--tunnel] [--warmup N] [--free-space-vote] "
                      "[--forward-axis x|-x|y|-y]\n";
         return 2;
     }
@@ -196,9 +208,12 @@ int main(int argc, char** argv) {
     gauge_params.sensor_height = 1.2f;
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size = 15;
-    fusion_params.clustering.min_extent_m = 0.1f;
+    fusion_params.clustering.min_extent_m = 0.20f;
     fusion_params.tracking.min_hits_to_confirm = 3;
     fusion_params.ground_filter = false;
+    fusion_params.use_free_space = free_space_vote;
+    fusion_params.free_space_warmup_frames = warmup_frames;
+    fusion_params.model.min_observations = std::max<uint32_t>(1, warmup_frames / 10);
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
     argus::GroundParams ground_params;
     ground_params.sensor_height = 1.2f;
@@ -208,7 +223,21 @@ int main(int argc, char** argv) {
     odom_params.forward_axis = axis;
     argus::TunnelOdometry odom(odom_params);
 
-    if (odometry_mode) {
+    argus::TunnelProfileParams profile_params;
+    argus::TunnelProfile profile(profile_params);
+    argus::FreeSpaceParams free_space_params;
+    free_space_params.min_confidence = 0.85f;
+    free_space_params.min_range = 3.0f;
+    free_space_params.max_range = 90.0f;
+    free_space_params.min_free_observations = std::max<uint32_t>(1, warmup_frames / 10);
+    argus::FreeSpaceDetector free_space(const_cast<argus::TunnelModel*>(&fusion.model()),
+                                        free_space_params);
+
+    if (tunnel_mode) {
+        std::cout << std::fixed << std::setprecision(3);
+        std::cout << "frame,alert,model_ready,model_updated,voxels,fs_rate,fs_points,"
+                     "profile_median_m,odom_valid,speed_mps\n";
+    } else if (odometry_mode) {
         std::cout << std::fixed << std::setprecision(3);
         std::cout << "frame,valid,x,y,z,speed,corr,down,fitness\n";
     } else if (fusion_mode) {
@@ -239,6 +268,22 @@ int main(int argc, char** argv) {
         const argus::RangeImage ri = argus::build_range_image(cloud, ri_params);
         if (!ri.valid()) {
             std::cerr << "frame " << k << ": invalid range image\n";
+            continue;
+        }
+        if (tunnel_mode) {
+            const argus::OdometryResult o = odom.update(cloud, f.stamp_s);
+            const argus::AnomalySet geom = geometry.detect(cloud, ri);
+            const argus::AnomalySet nr = no_return.detect(cloud, ri);
+            const argus::AnomalySet fs =
+                fusion.model().ready() ? free_space.detect(cloud, ri, o.pose) : argus::AnomalySet{};
+            const argus::FusionResult r =
+                fusion.update(cloud, ri, geom, nr, fs, 0.1f, 0.0f, o.pose);
+            profile.update(ri, !r.alert);
+            const float profile_median = profile.median_deviation(ri);
+            std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << (r.model_ready ? 1 : 0) << ','
+                      << (r.model_updated ? 1 : 0) << ',' << fusion.model().voxel_count() << ','
+                      << r.free_space_violation_rate << ',' << fs.indices.size() << ','
+                      << profile_median << ',' << (o.valid ? 1 : 0) << ',' << o.speed_mps << '\n';
             continue;
         }
         if (fusion_mode) {

@@ -7,12 +7,38 @@
 
 namespace argus {
 
+FusionParams default_fusion_params() {
+    return FusionParams{};
+}
+
 FusionPipeline::FusionPipeline(ClearanceGauge gauge, const FusionParams& params)
-    : gauge_(std::move(gauge)), p_(params), tracker_(params.tracking) {}
+    : gauge_(std::move(gauge)), p_(params), tracker_(params.tracking), model_(params.model) {}
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     float dt, float train_speed_mps) {
+    return run(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps,
+               Eigen::Isometry3d::Identity());
+}
+
+FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
+                                    const AnomalySet& geometry, const AnomalySet& no_return,
+                                    float dt, float train_speed_mps,
+                                    const Eigen::Isometry3d& pose) {
+    return run(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps, pose);
+}
+
+FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
+                                    const AnomalySet& geometry, const AnomalySet& no_return,
+                                    const AnomalySet& free_space, float dt, float train_speed_mps,
+                                    const Eigen::Isometry3d& pose) {
+    return run(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose);
+}
+
+FusionResult FusionPipeline::run(const CleanCloud& cloud, const RangeImage& ri,
+                                 const AnomalySet& geometry, const AnomalySet& no_return,
+                                 const AnomalySet& free_space, float dt, float train_speed_mps,
+                                 const Eigen::Isometry3d& pose) {
     FusionResult out;
     out.n_anom_points = static_cast<uint32_t>(geometry.indices.size());
     out.n_anom_cells = static_cast<uint32_t>(no_return.cells.size());
@@ -37,6 +63,22 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         }
         merged.indices.push_back(idx);
     }
+
+    const bool prior_ready =
+        model_.ready() && model_.frames_integrated() >= p_.free_space_warmup_frames;
+    if (p_.use_free_space && prior_ready && !free_space.indices.empty()) {
+        std::vector<uint8_t> already(cloud.size(), 0);
+        for (uint32_t idx : merged.indices) {
+            already[idx] = 1;
+        }
+        for (uint32_t idx : free_space.indices) {
+            if (idx >= cloud.size() || already[idx] != 0) {
+                continue;
+            }
+            merged.indices.push_back(idx);
+        }
+    }
+
     const std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
 
     std::vector<float> cloud_score(cloud.size(), 0.0f);
@@ -49,9 +91,19 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     std::vector<uint32_t> nr_cells = no_return.cells;
     std::sort(nr_cells.begin(), nr_cells.end());
 
+    std::vector<uint8_t> free_cell(cloud.size(), 0);
+    if (p_.use_free_space && prior_ready) {
+        for (uint32_t idx : free_space.indices) {
+            if (idx < free_cell.size()) {
+                free_cell[idx] = 1;
+            }
+        }
+    }
+
     out.n_clusters_raw = static_cast<uint32_t>(all.size());
     for (Cluster c : all) {
         c.votes_geometry = 1;
+        uint32_t free_space_points = 0;
         float fwd_min = -1.0f;
         bool in_gauge = false;
         double score_sum = 0.0;
@@ -60,6 +112,9 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
             const float x = cloud.x[idx], y = cloud.y[idx], z = cloud.z[idx];
             score_sum += cloud_score[idx];
             ++score_n;
+            if (free_cell[idx] != 0) {
+                ++free_space_points;
+            }
             if (!gauge_.contains(x, y, z)) {
                 continue;
             }
@@ -73,7 +128,13 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
                 c.votes_no_return = 1;
             }
         }
+        const uint32_t free_space_cells = free_space_points;
         c.score = score_n > 0 ? static_cast<float>(score_sum / score_n) : 0.0f;
+        out.n_free_space_points += free_space_points;
+        if (free_space_points >= p_.free_space_min_points &&
+            free_space_cells >= p_.free_space_min_cells) {
+            c.votes_free_space = 1;
+        }
         if (!in_gauge) {
             ++out.n_filtered_out;
             continue;
@@ -127,6 +188,15 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         out.nearest_range_m = -1.0f;
         out.ttc_s = -1.0f;
     }
+
+    if (p_.update_model_with_clean_frames) {
+        const bool clean_frame = geometry.indices.empty();
+        model_.integrate(cloud, pose, clean_frame);
+        out.model_updated = true;
+    }
+    out.model_ready = model_.ready();
+    const FreeSpaceCheck fs = model_.check(cloud, pose, p_.free_space_min_confidence);
+    out.free_space_violation_rate = fs.violation_rate();
     return out;
 }
 

@@ -24,6 +24,14 @@ TEST(Gauge, OutsideByWidth) {
     EXPECT_FALSE(g.contains(50.0f, -1.451f, 2.0f));
 }
 
+TEST(Gauge, SafetyMarginDoesNotWidenLateralContains) {
+    argus::ClearanceGaugeParams p;
+    p.safety_margin = 0.10f;
+    const argus::ClearanceGauge g(p);
+    EXPECT_TRUE(g.contains(50.0f, 1.45f, 2.0f));
+    EXPECT_FALSE(g.contains(50.0f, 1.50f, 2.0f));
+}
+
 TEST(Gauge, BoundaryExact) {
     const auto g = default_gauge();
     EXPECT_TRUE(g.contains(50.0f, 1.45f, 2.0f));

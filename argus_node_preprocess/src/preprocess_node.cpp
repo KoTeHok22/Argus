@@ -45,7 +45,7 @@ public:
         gp.rail_zone_m =
             static_cast<float>(declare_parameter<double>("ground_segmentation.rail_zone_m", 2.0));
         gp.rail_max_height = static_cast<float>(
-            declare_parameter<double>("ground_segmentation.rail_max_height", 0.45));
+            declare_parameter<double>("ground_segmentation.rail_max_height", 0.55));
         gp.max_ground_z_rel = static_cast<float>(
             declare_parameter<double>("ground_segmentation.max_ground_z_rel", 0.60));
         gp.min_range =

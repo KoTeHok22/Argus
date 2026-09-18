@@ -241,3 +241,103 @@ TEST(Fusion, GaugeSensorHeightShiftsZBounds) {
     EXPECT_EQ(without_shift.forward_distance(0.0f, -16.9f, -1.2f), -1.0f);
     EXPECT_FLOAT_EQ(without_shift.forward_distance(0.0f, -16.9f, -0.7f), -1.0f);
 }
+
+TEST(Fusion, CleanFramesBuildTheTunnelModel) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+
+    argus::FusionParams p = fusion_params();
+    p.use_free_space = true;
+    p.model.voxel_size = 0.5f;
+    p.model.min_observations = 2;
+
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+    const argus::FusionResult clean = pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f);
+    EXPECT_TRUE(clean.model_updated);
+    EXPECT_GT(pipe.model().voxel_count(), 0u);
+}
+
+TEST(Fusion, DirtyFramesStillCarveButDoNotRegisterHits) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+
+    argus::FusionParams p = fusion_params();
+    p.use_free_space = true;
+    p.model.voxel_size = 0.5f;
+    p.model.min_observations = 2;
+    p.tracking.min_hits_to_confirm = 1;
+
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+    const auto geometry = geometry_of_box(cloud);
+    ASSERT_FALSE(geometry.indices.empty());
+    const argus::FusionResult dirty = pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    EXPECT_TRUE(dirty.alert);
+    EXPECT_TRUE(dirty.model_updated);
+
+    const argus::TunnelModelStats s = pipe.model().stats();
+    EXPECT_EQ(s.n_occupied, 0u);
+}
+
+TEST(Fusion, FreeSpaceVoteCountsOnlyProvidedViolations) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+
+    argus::FusionParams p = fusion_params();
+    p.use_free_space = true;
+    p.model.voxel_size = 0.5f;
+    p.model.min_observations = 1;
+    p.free_space_warmup_frames = 2;
+    p.free_space_min_points = 5;
+    p.free_space_min_cells = 5;
+    p.tracking.min_hits_to_confirm = 1;
+
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+    for (int i = 0; i < 3; ++i) {
+        pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f);
+    }
+    ASSERT_TRUE(pipe.model().ready());
+
+    argus::AnomalySet free_space;
+    free_space.source = "free_space";
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        if (cloud.y[i] <= -kBoxRange - 0.001f && cloud.y[i] > -18.0f) {
+            free_space.indices.push_back(static_cast<uint32_t>(i));
+            free_space.score.push_back(0.9f);
+        }
+    }
+    ASSERT_FALSE(free_space.indices.empty());
+
+    const argus::FusionResult r =
+        pipe.update(cloud, ri, {}, {}, free_space, 0.1f, 0.0f, Eigen::Isometry3d::Identity());
+    EXPECT_GT(r.n_free_space_points, 0u);
+    ASSERT_FALSE(r.clusters.empty());
+    EXPECT_EQ(r.clusters[0].votes_free_space, 1u);
+}
+
+TEST(Fusion, FreeSpaceVoteIgnoredDuringWarmup) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+
+    argus::FusionParams p = fusion_params();
+    p.use_free_space = true;
+    p.model.voxel_size = 0.5f;
+    p.model.min_observations = 1;
+    p.free_space_warmup_frames = 100;
+    p.tracking.min_hits_to_confirm = 1;
+
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+    argus::AnomalySet free_space;
+    free_space.source = "free_space";
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        if (cloud.y[i] <= -kBoxRange - 0.001f && cloud.y[i] > -18.0f) {
+            free_space.indices.push_back(static_cast<uint32_t>(i));
+            free_space.score.push_back(0.9f);
+        }
+    }
+
+    const argus::FusionResult r =
+        pipe.update(cloud, ri, {}, {}, free_space, 0.1f, 0.0f, Eigen::Isometry3d::Identity());
+    EXPECT_EQ(r.n_free_space_points, 0u);
+    EXPECT_TRUE(r.clusters.empty());
+    EXPECT_FALSE(r.alert);
+}

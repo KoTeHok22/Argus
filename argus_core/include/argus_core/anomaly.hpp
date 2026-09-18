@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 
+#include <Eigen/Geometry>
+
 #include "argus_core/range_image.hpp"
 #include "argus_core/types.hpp"
 
@@ -71,9 +73,11 @@ private:
 };
 
 struct FreeSpaceParams {
+    bool enabled = true;
     float min_confidence = 0.70f;
     float min_range = 1.0f;
     float max_range = 150.0f;
+    uint32_t min_free_observations = 5;
     bool require_multiple_observations = true;
 };
 
@@ -83,6 +87,7 @@ class FreeSpaceDetector : public IAnomalyDetector {
 public:
     FreeSpaceDetector(TunnelModel* model, const FreeSpaceParams& p);
     AnomalySet detect(const CleanCloud& cloud, const RangeImage& ri) override;
+    AnomalySet detect(const CleanCloud& cloud, const RangeImage& ri, const Eigen::Isometry3d& pose);
     std::string name() const override { return "free_space"; }
 
 private:

@@ -12,7 +12,7 @@ struct GroundParams {
     bool enabled = true;
     float sensor_height = 1.20f;
     float rail_zone_m = 2.0f;
-    float rail_max_height = 0.45f;
+    float rail_max_height = 0.55f;
     float max_ground_z_rel = 0.60f;
     float min_range = 1.0f;
     float max_range = 80.0f;

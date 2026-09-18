@@ -76,7 +76,6 @@ public:
         free_space_enabled_ = declare_parameter<bool>("detector_free_space.enabled", false);
         geom_enabled_ = declare_parameter<bool>("detector_geometry.enabled", true);
         nr_enabled_ = declare_parameter<bool>("detector_no_return.enabled", true);
-
         auto qos = rclcpp::QoS(10);
         sub_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
@@ -90,9 +89,9 @@ public:
         RCLCPP_INFO(get_logger(), "argus_detector: geometry=%s no_return=%s",
                     geom_enabled_ ? "on" : "off", nr_enabled_ ? "on" : "off");
         if (free_space_enabled_) {
-            RCLCPP_WARN(
-                get_logger(),
-                "detector_free_space.enabled=true, детектор появится в Фазе 2 (модель тоннеля)");
+            RCLCPP_WARN(get_logger(),
+                        "detector_free_space.enabled=true, детектор публикует /argus/anom_fs "
+                        "из argus_tunnel_model (нужна одометрия и прогретая карта)");
         }
     }
 

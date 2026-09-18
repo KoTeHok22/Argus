@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
@@ -98,6 +99,15 @@ public:
                 const uint64_t key = stamp_ns(msg->header.stamp);
                 slots_[key].no_return = msg;
                 try_process(key);
+            });
+        sub_free_space_ = create_subscription<AnomalySetMsg>(
+            "/argus/anom_fs", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+                const uint64_t key = stamp_ns(msg->header.stamp);
+                slots_[key].free_space = msg;
+            });
+        sub_pose_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/argus/pose", qos, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
+                poses_[stamp_ns(msg->header.stamp)] = to_pose(*msg);
             });
         pub_obstacles_ = create_publisher<ObstacleArray>("/argus/obstacles", qos);
 
@@ -225,14 +235,24 @@ private:
         last_stamp_ns_ = key;
 
         const auto t0 = std::chrono::steady_clock::now();
+        Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
+        const auto pose_it = poses_.find(key);
+        if (pose_it != poses_.end()) {
+            pose = pose_it->second;
+        }
+        AnomalySet free_space;
+        if (slot.free_space) {
+            free_space = msg_to_set(*slot.free_space);
+        }
         const FusionResult result =
             pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
-                              dt, static_cast<float>(train_speed_));
+                              free_space, dt, static_cast<float>(train_speed_), pose);
         const float processing_ms = ms_since(t0);
 
         publish_result(result, *slot.cloud, processing_ms);
 
         slots_.erase(slots_.begin(), slots_.upper_bound(key));
+        poses_.erase(poses_.begin(), poses_.upper_bound(key));
         while (slots_.size() > max_pending_) {
             slots_.erase(slots_.begin());
         }
@@ -350,7 +370,18 @@ private:
         CleanCloudMsg::ConstSharedPtr cloud;
         AnomalySetMsg::ConstSharedPtr geometry;
         AnomalySetMsg::ConstSharedPtr no_return;
+        AnomalySetMsg::ConstSharedPtr free_space;
     };
+
+    static Eigen::Isometry3d to_pose(const geometry_msgs::msg::PoseStamped& msg) {
+        Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
+        const Eigen::Quaterniond q(msg.pose.orientation.w, msg.pose.orientation.x,
+                                   msg.pose.orientation.y, msg.pose.orientation.z);
+        pose.rotate(q.normalized());
+        pose.pretranslate(
+            Eigen::Vector3d(msg.pose.position.x, msg.pose.position.y, msg.pose.position.z));
+        return pose;
+    }
 
     ClearanceGaugeParams gauge_params_;
     FusionParams params_;
@@ -362,6 +393,7 @@ private:
 
     std::unique_ptr<FusionPipeline> pipeline_;
     std::map<uint64_t, FrameSlot> slots_;
+    std::map<uint64_t, Eigen::Isometry3d> poses_;
     uint64_t last_stamp_ns_ = 0;
     float fps_ = 0.0f;
     std::chrono::steady_clock::time_point last_output_{};
@@ -369,6 +401,8 @@ private:
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_clean_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_geometry_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_no_return_;
+    rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_free_space_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Publisher<ObstacleArray>::SharedPtr pub_obstacles_;
     rclcpp::TimerBase::SharedPtr stale_timer_;
 };

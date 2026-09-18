@@ -56,6 +56,40 @@ TEST(Ground, RailAndFloorMarkedObstacleKept) {
     EXPECT_GT(st.n_ground, 0u);
 }
 
+TEST(Ground, PlatformRailAtHalfMeterIsMasked) {
+    argus::CleanCloud cloud;
+    for (int i = 0; i < 40; ++i) {
+        cloud.x.push_back(1.36f);
+        cloud.y.push_back(-8.0f - 0.05f * static_cast<float>(i));
+        cloud.z.push_back(-0.70f);
+        cloud.intensity.push_back(4.0f);
+    }
+    for (int i = 0; i < 20; ++i) {
+        cloud.x.push_back(0.2f);
+        cloud.y.push_back(-16.9f);
+        cloud.z.push_back(0.47f);
+        cloud.intensity.push_back(20.0f);
+    }
+
+    argus::GroundParams gp;
+    gp.enabled = true;
+    gp.sensor_height = 1.2f;
+    gp.forward_axis = argus::ForwardAxis::NegY;
+    argus::GroundSegmenter seg(gp);
+    seg.apply(cloud);
+
+    uint32_t rail_hit = 0;
+    uint32_t box_hit = 0;
+    for (size_t i = 0; i < 40; ++i) {
+        rail_hit += cloud.ground_mask[i] != 0 ? 1u : 0u;
+    }
+    for (size_t i = 40; i < cloud.size(); ++i) {
+        box_hit += cloud.ground_mask[i] != 0 ? 1u : 0u;
+    }
+    EXPECT_EQ(rail_hit, 40u);
+    EXPECT_EQ(box_hit, 0u);
+}
+
 TEST(Ground, DisabledLeavesMaskZero) {
     argus::CleanCloud cloud;
     cloud.x = {0.0f, 1.0f};
