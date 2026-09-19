@@ -115,6 +115,7 @@ private:
     static constexpr uint32_t kSamplePeriod = 8;
     static constexpr uint32_t kSamplesPerBlock = 4;
     static constexpr uint32_t kBlockVolume = kVoxelBlock * kVoxelBlock * kVoxelBlock;
+    static constexpr uint32_t kStageVoxels = 32768;
 
     struct BlockKey {
         int32_t x = 0;
@@ -146,6 +147,15 @@ private:
 
     static_assert(sizeof(Voxel) == 24, "Voxel layout is serialized by TunnelModel::save");
 
+    static inline uint32_t voxel_slot(uint32_t lx, uint32_t ly, uint32_t lz) {
+        return (lz << 6) | (ly << 3) | lx;
+    }
+
+    static inline uint32_t slot_of(const VoxelKey& k) {
+        return voxel_slot(static_cast<uint32_t>(k.x) & 7u, static_cast<uint32_t>(k.y) & 7u,
+                          static_cast<uint32_t>(k.z) & 7u);
+    }
+
     static BlockKey block_of(const VoxelKey& k);
 
     static int32_t index_in_block(const VoxelKey& k);
@@ -173,6 +183,11 @@ private:
     void carve_free_space(const Eigen::Vector3f& start, const Eigen::Vector3f& end,
                           const VoxelKey& stop_key);
 
+    void carve_free_space_incremental(const Eigen::Vector3f& start, const Eigen::Vector3f& end,
+                                      const VoxelKey& stop_key);
+
+    void apply_carve_counters();
+
     bool carve_ray_selected(const CleanCloud& cloud, size_t i) const;
 
     TunnelModelParams p_;
@@ -184,6 +199,10 @@ private:
     std::vector<Voxel*> free_dirty_;
     std::unordered_map<BlockKey, GridMark, BlockKeyHash> grid_marks_;
     uint32_t sample_cursor_ = 0;
+    BlockMap carve_stage_;
+    std::vector<BlockKey> carve_stage_queue_;
+    std::unordered_map<BlockKey, uint32_t, BlockKeyHash> frame_generation_;
+    uint32_t carve_stage_count_ = 0;
 };
 
 } // namespace argus

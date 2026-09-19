@@ -191,6 +191,93 @@ void TunnelModel::carve_free_space(const Eigen::Vector3f& start, const Eigen::Ve
     }
 }
 
+void TunnelModel::carve_free_space_incremental(const Eigen::Vector3f& start,
+                                               const Eigen::Vector3f& end,
+                                               const VoxelKey& stop_key) {
+    if ((end - start).squaredNorm() <= 0.0f) {
+        return;
+    }
+    const VoxelKey first = key_at(start);
+    const VoxelKey last = key_at(end);
+    const int32_t dx = last.x - first.x;
+    const int32_t dy = last.y - first.y;
+    const int32_t dz = last.z - first.z;
+    const int32_t ax = std::abs(dx);
+    const int32_t ay = std::abs(dy);
+    const int32_t az = std::abs(dz);
+    const float occupancy_miss = p_.occupancy_miss_log_odds;
+    const float min_log_odds = p_.occupancy_min_log_odds;
+    const float max_log_odds = p_.occupancy_max_log_odds;
+    const uint32_t frame_id = static_cast<uint32_t>(frames_);
+
+    const int32_t n_steps = std::max({ax, ay, az, 1});
+    const float inv_steps = 1.0f / static_cast<float>(n_steps);
+    VoxelKey prev = first;
+    for (int32_t s = 1; s <= n_steps; ++s) {
+        const float t = static_cast<float>(s) * inv_steps;
+        const VoxelKey k = key_at(start + (end - start) * t);
+        if (k == stop_key) {
+            break;
+        }
+        if (s > 1 && k == prev) {
+            continue;
+        }
+        prev = k;
+        if (s == 1 && k == first) {
+            continue;
+        }
+        const BlockKey bk = block_of(k);
+        Block& staged = carve_stage_[bk];
+        if (frame_generation_[bk] != frame_id) {
+            frame_generation_[bk] = frame_id;
+            staged = Block{};
+            carve_stage_queue_.push_back(bk);
+        }
+        Voxel& v = staged[slot_of(k)];
+        if (v.occupancy_dirty == 0) {
+            v.occupancy_dirty = 1;
+            ++v.free_observations;
+            ++carve_stage_count_;
+        } else {
+            ++v.free_observations;
+        }
+        v.occupancy_log_odds =
+            clampf(v.occupancy_log_odds + occupancy_miss, min_log_odds, max_log_odds);
+        v.last_frame = frame_id;
+        if (carve_stage_count_ >= kStageVoxels) {
+            apply_carve_counters();
+        }
+    }
+}
+
+void TunnelModel::apply_carve_counters() {
+    if (carve_stage_queue_.empty()) {
+        return;
+    }
+    for (const BlockKey& bk : carve_stage_queue_) {
+        Block& staged = carve_stage_.at(bk);
+        Block& live = blocks_[bk];
+        for (uint32_t slot = 0; slot < kBlockVolume; ++slot) {
+            Voxel& sv = staged[slot];
+            if (sv.occupancy_dirty != 1) {
+                continue;
+            }
+            Voxel& lv = live[slot];
+            lv.free_observations += sv.free_observations;
+            lv.occupancy_log_odds = clampf(lv.occupancy_log_odds + sv.occupancy_log_odds,
+                                           p_.occupancy_min_log_odds, p_.occupancy_max_log_odds);
+            lv.last_frame = sv.last_frame;
+            lv.free_score = 1.0f - 1.0f / static_cast<float>(lv.free_observations);
+            sv.occupancy_dirty = 0;
+            sv.free_observations = 0;
+            sv.occupancy_log_odds = 0.0f;
+        }
+        frame_generation_.erase(bk);
+    }
+    carve_stage_queue_.clear();
+    carve_stage_count_ = 0;
+}
+
 bool TunnelModel::carve_ray_selected(const CleanCloud& cloud, size_t i) const {
     const uint32_t stride_az = std::max<uint32_t>(1, p_.carve_stride_az);
     const uint32_t stride_ring = std::max<uint32_t>(1, p_.carve_stride_ring);
@@ -235,6 +322,10 @@ void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& po
     const size_t stride = samples > 0 ? std::max<size_t>(1, cloud.size() / samples) : 1;
     sample_cursor_ = (sample_cursor_ + 1) % kSamplePeriod;
     const float sample_max_range = kSamplePeriod * max_range;
+    frame_generation_.clear();
+    carve_stage_.clear();
+    carve_stage_queue_.clear();
+    carve_stage_count_ = 0;
 
     for (size_t i = 0; i < cloud.size(); ++i) {
         if (stride > 1 && (i + sample_cursor_) % stride != 0) {
@@ -287,9 +378,9 @@ void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& po
             continue;
         }
         const Eigen::Vector3f dir = lidar / range;
-        carve_free_space(origin, to_world(dir * stop, pose), hit_key);
+        carve_free_space_incremental(origin, to_world(dir * stop, pose), hit_key);
     }
-
+    apply_carve_counters();
     for (const auto& kv : entries_) {
         kv.second.voxel->free_observations += kv.second.new_observations;
     }
@@ -464,6 +555,10 @@ void TunnelModel::clear() {
     blocks_.clear();
     entries_.clear();
     free_dirty_.clear();
+    carve_stage_.clear();
+    carve_stage_queue_.clear();
+    frame_generation_.clear();
+    carve_stage_count_ = 0;
     frames_ = 0;
     cells_carved_ = 0;
 }

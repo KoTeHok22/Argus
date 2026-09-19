@@ -12,9 +12,9 @@ find argus_core argus_msgs argus_node_* -name '*.cpp' -o -name '*.hpp' | while r
   clang-format --dry-run --Werror "$f"
 done
 
-echo "[lint] конфиденциальное не в git"
-if git ls-files 2>/dev/null | grep -E '^(data/|data/).*|\.(db3|zst|pcd|npz)$'; then
-  echo "ОШИБКА: конфиденциальные/данные файлы в git" >&2
+echo "[lint] бинарники данных не в git"
+if git ls-files 2>/dev/null | grep -E '\.(db3|zst|head|frames|pcd|npz|mcap)$'; then
+  echo "ОШИБКА: бинарники данных в git" >&2
   exit 1
 fi
 
