@@ -17,28 +17,28 @@ FusionPipeline::FusionPipeline(ClearanceGauge gauge, const FusionParams& params)
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     float dt, float train_speed_mps) {
-    return run(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps,
-               Eigen::Isometry3d::Identity(), false);
+    return update(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps,
+                  Eigen::Isometry3d::Identity(), false);
 }
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     float dt, float train_speed_mps,
                                     const Eigen::Isometry3d& pose) {
-    return run(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps, pose, false);
+    return update(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps, pose, false);
 }
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     const AnomalySet& free_space, float dt, float train_speed_mps,
                                     const Eigen::Isometry3d& pose) {
-    return run(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose, true);
+    return update(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose, true);
 }
 
-FusionResult FusionPipeline::run(const CleanCloud& cloud, const RangeImage& ri,
-                                 const AnomalySet& geometry, const AnomalySet& no_return,
-                                 const AnomalySet& free_space, float dt, float train_speed_mps,
-                                 const Eigen::Isometry3d& pose, bool caller_drives_model) {
+FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
+                                    const AnomalySet& geometry, const AnomalySet& no_return,
+                                    const AnomalySet& free_space, float dt, float train_speed_mps,
+                                    const Eigen::Isometry3d& pose, bool caller_drives_model) {
     FusionResult out;
     out.n_anom_points = static_cast<uint32_t>(geometry.indices.size());
     out.n_anom_cells = static_cast<uint32_t>(no_return.cells.size());

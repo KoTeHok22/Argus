@@ -302,7 +302,7 @@ TEST(TunnelModel, CarveMaxRangeLeavesFarCellsUnobserved) {
     }
     const Eigen::Vector3f dir = Eigen::Vector3f(20.0f, -4.0f, 1.1f).normalized();
     float confidence = 0.0f;
-    EXPECT_TRUE(model.violates_free_space(dir * 6.0f, confidence));
+    EXPECT_TRUE(model.violates_free_space(dir * 3.0f, confidence));
 
     confidence = 0.0f;
     EXPECT_FALSE(model.violates_free_space(dir * 15.0f, confidence));

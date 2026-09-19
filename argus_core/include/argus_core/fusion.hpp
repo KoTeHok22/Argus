@@ -72,16 +72,16 @@ public:
                         const AnomalySet& no_return, const AnomalySet& free_space, float dt,
                         float train_speed_mps, const Eigen::Isometry3d& pose);
 
+    FusionResult update(const CleanCloud& cloud, const RangeImage& ri, const AnomalySet& geometry,
+                        const AnomalySet& no_return, const AnomalySet& free_space, float dt,
+                        float train_speed_mps, const Eigen::Isometry3d& pose,
+                        bool caller_drives_model);
+
     const ClearanceGauge& gauge() const { return gauge_; }
 
     const TunnelModel& model() const { return model_; }
 
 private:
-    FusionResult run(const CleanCloud& cloud, const RangeImage& ri, const AnomalySet& geometry,
-                     const AnomalySet& no_return, const AnomalySet& free_space, float dt,
-                     float train_speed_mps, const Eigen::Isometry3d& pose,
-                     bool caller_drives_model);
-
     ClearanceGauge gauge_;
     FusionParams p_;
     ObstacleTracker tracker_;

@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -75,7 +77,7 @@ public:
 
     TunnelModelStats stats() const;
 
-    size_t voxel_count() const { return voxels_.size(); }
+    size_t voxel_count() const { return occupied_voxel_count(); }
 
     bool ready() const;
 
@@ -97,6 +99,8 @@ private:
         uint32_t free_observations = 0;
         uint32_t occupied_observations = 0;
         uint32_t last_frame = 0;
+        uint8_t occupancy_dirty = 0;
+        uint8_t reserved[3] = {};
     };
 
     struct VoxelKey {
@@ -106,14 +110,45 @@ private:
         bool operator==(const VoxelKey& o) const { return x == o.x && y == o.y && z == o.z; }
     };
 
-    struct VoxelKeyHash {
-        size_t operator()(const VoxelKey& k) const {
+    static constexpr uint32_t kVoxelBlock = 8;
+    static constexpr int32_t kBlockShift = 3;
+    static constexpr uint32_t kSamplePeriod = 8;
+    static constexpr uint32_t kSamplesPerBlock = 4;
+    static constexpr uint32_t kBlockVolume = kVoxelBlock * kVoxelBlock * kVoxelBlock;
+
+    struct BlockKey {
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t z = 0;
+        bool operator==(const BlockKey& o) const { return x == o.x && y == o.y && z == o.z; }
+    };
+
+    struct BlockKeyHash {
+        size_t operator()(const BlockKey& k) const {
             return static_cast<size_t>(k.x) * 73856093u ^ static_cast<size_t>(k.y) * 19349663u ^
                    static_cast<size_t>(k.z) * 83492791u;
         }
     };
 
-    using VoxelMap = std::unordered_map<VoxelKey, Voxel, VoxelKeyHash>;
+    using Block = std::array<Voxel, kBlockVolume>;
+    using BlockMap = std::unordered_map<BlockKey, Block, BlockKeyHash>;
+
+    struct Entry {
+        uintptr_t key = 0;
+        Voxel* voxel = nullptr;
+        uint32_t new_observations = 0;
+    };
+
+    struct GridMark {
+        uint32_t frame = 0;
+        uint32_t generation = 0;
+    };
+
+    static_assert(sizeof(Voxel) == 24, "Voxel layout is serialized by TunnelModel::save");
+
+    static BlockKey block_of(const VoxelKey& k);
+
+    static int32_t index_in_block(const VoxelKey& k);
 
     VoxelKey key_at(const Eigen::Vector3f& point) const;
 
@@ -125,6 +160,16 @@ private:
 
     Eigen::Vector3f to_world(const Eigen::Vector3f& lidar, const Eigen::Isometry3d& pose) const;
 
+    Voxel* find_voxel(const VoxelKey& k);
+
+    const Voxel* find_voxel(const VoxelKey& k) const;
+
+    Voxel& ensure_voxel(const VoxelKey& k);
+
+    size_t occupied_voxel_count() const;
+
+    void rebuild_grid();
+
     void carve_free_space(const Eigen::Vector3f& start, const Eigen::Vector3f& end,
                           const VoxelKey& stop_key);
 
@@ -134,7 +179,11 @@ private:
     float inv_voxel_ = 5.0f;
     uint64_t frames_ = 0;
     uint64_t cells_carved_ = 0;
-    VoxelMap voxels_;
+    BlockMap blocks_;
+    std::unordered_map<uintptr_t, Entry> entries_;
+    std::vector<Voxel*> free_dirty_;
+    std::unordered_map<BlockKey, GridMark, BlockKeyHash> grid_marks_;
+    uint32_t sample_cursor_ = 0;
 };
 
 } // namespace argus
