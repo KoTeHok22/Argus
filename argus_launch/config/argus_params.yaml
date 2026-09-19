@@ -107,8 +107,8 @@
 
     gauge:
       forward_axis: "-y"
-      half_width: 1.45
-      height: 3.60
+      half_width: 1.50
+      height: 2.10
       base_offset: 0.20
       chamfer: 0.20
       nose_offset: 0.00

@@ -137,7 +137,7 @@ void report(uint32_t frame, const argus::AnomalySet& set, const argus::RangeImag
 
 int main(int argc, char** argv) {
     std::string path;
-    std::string forward_axis = "x";
+    std::string forward_axis = "-y";
     uint32_t limit = 0;
     bool fusion_mode = false;
     bool odometry_mode = false;
@@ -148,10 +148,19 @@ int main(int argc, char** argv) {
     uint32_t carve_stride = 1;
     float carve_max_range = 90.0f;
     float carve_half_width = 3.0f;
+    float gauge_height = 2.10f;
+    float gauge_half_width = 1.50f;
+    float gauge_sensor_height = 1.20f;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
             limit = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--gauge-height" && i + 1 < argc) {
+            gauge_height = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-half-width" && i + 1 < argc) {
+            gauge_half_width = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-sensor-height" && i + 1 < argc) {
+            gauge_sensor_height = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--carve-stride" && i + 1 < argc) {
             carve_stride = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--carve-max-range" && i + 1 < argc) {
@@ -179,7 +188,8 @@ int main(int argc, char** argv) {
     if (path.empty()) {
         std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
-                     "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y]\n";
+                     "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
+                     "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M]\n";
         return 2;
     }
 
@@ -214,7 +224,9 @@ int main(int argc, char** argv) {
     }
     argus::ClearanceGaugeParams gauge_params;
     gauge_params.forward_axis = axis;
-    gauge_params.sensor_height = 1.2f;
+    gauge_params.height = gauge_height;
+    gauge_params.half_width = gauge_half_width;
+    gauge_params.sensor_height = gauge_sensor_height;
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size = 15;
     fusion_params.clustering.min_extent_m = 0.20f;
