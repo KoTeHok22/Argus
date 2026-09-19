@@ -51,7 +51,7 @@ public:
         p.max_accel_mps2 =
             static_cast<float>(declare_parameter<double>("odometry.max_accel_mps2", 2.0));
         p.max_iterations =
-            static_cast<uint32_t>(declare_parameter<int>("odometry.max_iterations", 8));
+            static_cast<uint32_t>(declare_parameter<int>("odometry.max_iterations", 4));
         p.max_correspondence_m =
             static_cast<float>(declare_parameter<double>("odometry.max_correspondence_m", 2.0));
         p.rest_translation_m =
@@ -85,19 +85,21 @@ private:
         const OdometryResult r = odom_->update(cloud, cloud.stamp_s);
         const float t_ms = ms_since(t0);
 
-        geometry_msgs::msg::PoseStamped pose;
-        pose.header.stamp = msg->header.stamp;
-        pose.header.frame_id = "odom";
-        const Eigen::Vector3d t = r.pose.translation();
-        pose.pose.position.x = t.x();
-        pose.pose.position.y = t.y();
-        pose.pose.position.z = t.z();
-        const Eigen::Quaterniond q(r.pose.rotation());
-        pose.pose.orientation.x = q.x();
-        pose.pose.orientation.y = q.y();
-        pose.pose.orientation.z = q.z();
-        pose.pose.orientation.w = q.w();
-        pub_pose_->publish(pose);
+        if (r.valid) {
+            geometry_msgs::msg::PoseStamped pose;
+            pose.header.stamp = msg->header.stamp;
+            pose.header.frame_id = "odom";
+            const Eigen::Vector3d t = r.pose.translation();
+            pose.pose.position.x = t.x();
+            pose.pose.position.y = t.y();
+            pose.pose.position.z = t.z();
+            const Eigen::Quaterniond q(r.pose.rotation());
+            pose.pose.orientation.x = q.x();
+            pose.pose.orientation.y = q.y();
+            pose.pose.orientation.z = q.z();
+            pose.pose.orientation.w = q.w();
+            pub_pose_->publish(pose);
+        }
 
         Diagnostics d;
         d.header = msg->header;

@@ -20,7 +20,7 @@ struct OdometryParams {
     float voxel_size = 0.5f;
     float max_speed_mps = 30.0f;
     float max_accel_mps2 = 2.0f;
-    uint32_t max_iterations = 8;
+    uint32_t max_iterations = 4;
     float max_correspondence_m = 2.0f;
     float rest_translation_m = 0.20f;
     bool keep_ground = true;

@@ -179,6 +179,11 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
     const float vs = std::max(p_.voxel_size, 0.05f);
     const float inv = 1.0f / vs;
     const VoxelMap prev_map = index_cloud(prev_, inv);
+    std::unordered_map<VoxelKey, Eigen::Vector3f, VoxelKeyHash> prev_normals;
+    prev_normals.reserve(prev_map.size());
+    for (const auto& kv : prev_map) {
+        prev_normals.emplace(kv.first, normal_at(kv.second, prev_map, inv));
+    }
     const float max_d2 = p_.max_correspondence_m * p_.max_correspondence_m;
     const int radius =
         std::max(1, std::min(3, static_cast<int>(std::ceil(p_.max_correspondence_m / vs))));
@@ -207,7 +212,9 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
             if (!nearest(q, prev_map, inv, radius, max_d2, tgt)) {
                 continue;
             }
-            const Eigen::Vector3f nrm = normal_at(tgt, prev_map, inv);
+            const auto n_it = prev_normals.find(key_of(tgt, inv));
+            const Eigen::Vector3f nrm =
+                n_it == prev_normals.end() ? Eigen::Vector3f::Zero() : n_it->second;
             if (nrm.squaredNorm() < 0.25f) {
                 continue;
             }
@@ -243,6 +250,9 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
             dz += x(3);
             const float z_lim = p_.voxel_size;
             dz = std::clamp(dz, -z_lim, z_lim);
+        }
+        if (std::fabs(x(0)) + std::fabs(x(1)) + std::fabs(x(2)) + std::fabs(x(3)) < 1e-4f) {
+            break;
         }
     }
 

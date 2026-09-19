@@ -252,8 +252,10 @@ TEST(Fusion, CleanFramesBuildTheTunnelModel) {
     p.model.min_observations = 2;
 
     argus::FusionPipeline pipe(gauge_neg_y(), p);
-    const argus::FusionResult clean = pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f);
+    const argus::FusionResult clean =
+        pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f, Eigen::Isometry3d::Identity());
     EXPECT_TRUE(clean.model_updated);
+    EXPECT_TRUE(clean.pose_used);
     EXPECT_GT(pipe.model().voxel_count(), 0u);
 }
 
@@ -270,7 +272,8 @@ TEST(Fusion, DirtyFramesStillCarveButDoNotRegisterHits) {
     argus::FusionPipeline pipe(gauge_neg_y(), p);
     const auto geometry = geometry_of_box(cloud);
     ASSERT_FALSE(geometry.indices.empty());
-    const argus::FusionResult dirty = pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    const argus::FusionResult dirty =
+        pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f, Eigen::Isometry3d::Identity());
     EXPECT_TRUE(dirty.alert);
     EXPECT_TRUE(dirty.model_updated);
 
@@ -293,7 +296,7 @@ TEST(Fusion, FreeSpaceVoteCountsOnlyProvidedViolations) {
 
     argus::FusionPipeline pipe(gauge_neg_y(), p);
     for (int i = 0; i < 3; ++i) {
-        pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f);
+        pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f, Eigen::Isometry3d::Identity());
     }
     ASSERT_TRUE(pipe.model().ready());
 
@@ -340,4 +343,37 @@ TEST(Fusion, FreeSpaceVoteIgnoredDuringWarmup) {
     EXPECT_EQ(r.n_free_space_points, 0u);
     EXPECT_TRUE(r.clusters.empty());
     EXPECT_FALSE(r.alert);
+}
+
+TEST(Fusion, MissingPoseSkipsFreeSpaceAndModel) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+
+    argus::FusionParams p = fusion_params();
+    p.use_free_space = true;
+    p.model.voxel_size = 0.5f;
+    p.model.min_observations = 1;
+    p.free_space_warmup_frames = 1;
+    p.free_space_min_points = 5;
+    p.free_space_min_cells = 5;
+
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+    argus::AnomalySet free_space;
+    free_space.source = "free_space";
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        if (cloud.y[i] <= -kBoxRange - 0.001f && cloud.y[i] > -18.0f) {
+            free_space.indices.push_back(static_cast<uint32_t>(i));
+        }
+    }
+
+    const argus::FusionResult no_pose = pipe.update(cloud, ri, {}, {}, 0.1f, 0.0f);
+    EXPECT_FALSE(no_pose.pose_used);
+    EXPECT_FALSE(no_pose.model_updated);
+    EXPECT_EQ(pipe.model().voxel_count(), 0u);
+
+    const argus::FusionResult with_pose = pipe.update(cloud, ri, {}, {}, free_space, 0.1f, 0.0f,
+                                                      Eigen::Isometry3d::Identity(), true, false);
+    EXPECT_FALSE(with_pose.pose_used);
+    EXPECT_EQ(with_pose.n_free_space_points, 0u);
+    EXPECT_FALSE(with_pose.model_updated);
 }

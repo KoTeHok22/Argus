@@ -24,7 +24,7 @@
       method: patchworkpp
       sensor_height: -1.20
       num_zones: 4
-      num_sectors: 54
+      num_sectors: 0
       enable_RNR: true
       enable_TGR: true
       rail_max_height: 0.55
@@ -46,7 +46,7 @@
       voxel_size: 0.5
       max_speed_mps: 30.0
       max_accel_mps2: 2.0
-      max_iterations: 8
+      max_iterations: 4
       max_correspondence_m: 2.0
       rest_translation_m: 0.20
       keep_ground: true

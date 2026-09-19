@@ -54,6 +54,8 @@ public:
             static_cast<float>(declare_parameter<double>("ground_segmentation.max_range", 80.0));
         gp.enable_RNR = declare_parameter<bool>("ground_segmentation.enable_RNR", true);
         gp.enable_TGR = declare_parameter<bool>("ground_segmentation.enable_TGR", true);
+        gp.num_zones = declare_parameter<int>("ground_segmentation.num_zones", 4);
+        gp.num_sectors = declare_parameter<int>("ground_segmentation.num_sectors", 0);
         const std::string axis_name =
             declare_parameter<std::string>("ground_segmentation.forward_axis", "-y");
         if (!parse_forward_axis(axis_name, gp.forward_axis)) {

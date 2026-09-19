@@ -78,3 +78,44 @@ TEST(Clustering, CleanCloudIndicesMapThroughRawIdx) {
     }
     EXPECT_NEAR(c.nearest_range, 16.9f, 1e-4f);
 }
+
+TEST(Clustering, AdjacentFringeMergesWithBox) {
+    const uint32_t w = 80, h = 8;
+    argus::CleanCloud cloud;
+    cloud.rings = h;
+    cloud.n_raw = w * h;
+    std::vector<uint32_t> seed;
+    for (uint32_t az = 0; az < w; ++az) {
+        for (uint32_t ring = 0; ring < h; ++ring) {
+            const uint32_t src = az * h + ring;
+            const bool in_box = az >= 20 && az <= 34 && ring >= 2 && ring <= 5;
+            const bool in_fringe = az >= 35 && az <= 37 && ring >= 2 && ring <= 5;
+            const float along = in_box ? 16.9f : (in_fringe ? 17.15f : 25.5f);
+            cloud.x.push_back(0.0f);
+            cloud.y.push_back(-along);
+            cloud.z.push_back(0.2f * static_cast<float>(ring));
+            cloud.intensity.push_back(1.0f);
+            cloud.raw_idx.push_back(src);
+            if (in_box || in_fringe) {
+                seed.push_back(static_cast<uint32_t>(cloud.size() - 1));
+            }
+        }
+    }
+
+    argus::RangeImageParams rp;
+    rp.rings_fallback = h;
+    const auto ri = argus::build_range_image(cloud, rp);
+    argus::AnomalySet merged;
+    merged.indices = seed;
+    argus::ClusteringParams p;
+    p.min_cluster_size = 10;
+    p.min_extent_m = 0.0f;
+    p.max_extent_m = 100.0f;
+    p.neighbor_distance = 0.35f;
+    p.adaptive_scaling = true;
+    p.reference_range = 50.0f;
+
+    const auto clusters = argus::cluster_anomalies(cloud, ri, merged, p);
+    ASSERT_EQ(clusters.size(), 1u);
+    EXPECT_EQ(clusters[0].point_count, seed.size());
+}

@@ -151,6 +151,8 @@ int main(int argc, char** argv) {
     float gauge_height = 2.10f;
     float gauge_half_width = 1.50f;
     float gauge_sensor_height = 1.20f;
+    float odom_max_range = 120.0f;
+    uint32_t odom_iterations = 4;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
@@ -161,6 +163,10 @@ int main(int argc, char** argv) {
             gauge_half_width = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--gauge-sensor-height" && i + 1 < argc) {
             gauge_sensor_height = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--odom-max-range" && i + 1 < argc) {
+            odom_max_range = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--odom-iterations" && i + 1 < argc) {
+            odom_iterations = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--carve-stride" && i + 1 < argc) {
             carve_stride = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--carve-max-range" && i + 1 < argc) {
@@ -189,7 +195,8 @@ int main(int argc, char** argv) {
         std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
-                     "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M]\n";
+                     "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
+                     "[--odom-max-range M] [--odom-iterations N]\n";
         return 2;
     }
 
@@ -247,6 +254,8 @@ int main(int argc, char** argv) {
     argus::GroundSegmenter ground(ground_params);
     argus::OdometryParams odom_params;
     odom_params.forward_axis = axis;
+    odom_params.max_range = odom_max_range;
+    odom_params.max_iterations = odom_iterations;
     argus::TunnelOdometry odom(odom_params);
 
     argus::TunnelProfileParams profile_params;
@@ -300,10 +309,11 @@ int main(int argc, char** argv) {
             const argus::OdometryResult o = odom.update(cloud, f.stamp_s);
             const argus::AnomalySet geom = geometry.detect(cloud, ri);
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
-            const argus::AnomalySet fs =
-                fusion.model().ready() ? free_space.detect(cloud, ri, o.pose) : argus::AnomalySet{};
+            const argus::AnomalySet fs = (fusion.model().ready() && o.valid)
+                                             ? free_space.detect(cloud, ri, o.pose)
+                                             : argus::AnomalySet{};
             const argus::FusionResult r =
-                fusion.update(cloud, ri, geom, nr, fs, 0.1f, 0.0f, o.pose);
+                fusion.update(cloud, ri, geom, nr, fs, 0.1f, 0.0f, o.pose, true, o.valid);
             profile.update(ri, !r.alert);
             const float profile_median = profile.median_deviation(ri);
             std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << (r.model_ready ? 1 : 0) << ','

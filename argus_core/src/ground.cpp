@@ -1,5 +1,6 @@
 #include "argus_core/ground.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -29,6 +30,13 @@ patchwork::Params make_pp_params(const GroundParams& p) {
     out.sensor_height = static_cast<double>(p.sensor_height);
     out.min_range = static_cast<double>(p.min_range);
     out.max_range = static_cast<double>(p.max_range);
+    if (p.num_zones > 0) {
+        out.num_zones = p.num_zones;
+    }
+    if (p.num_sectors > 0) {
+        out.num_sectors_each_zone.assign(static_cast<size_t>(std::max(p.num_zones, 4)),
+                                         p.num_sectors);
+    }
     return out;
 }
 

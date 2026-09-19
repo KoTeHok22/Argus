@@ -18,6 +18,8 @@ struct GroundParams {
     float max_range = 80.0f;
     bool enable_RNR = true;
     bool enable_TGR = true;
+    int num_zones = 4;
+    int num_sectors = 0;
     ForwardAxis forward_axis = ForwardAxis::NegY;
 };
 

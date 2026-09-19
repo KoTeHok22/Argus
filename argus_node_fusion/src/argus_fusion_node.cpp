@@ -237,16 +237,17 @@ private:
         const auto t0 = std::chrono::steady_clock::now();
         Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
         const auto pose_it = poses_.find(key);
-        if (pose_it != poses_.end()) {
+        const bool pose_valid = pose_it != poses_.end();
+        if (pose_valid) {
             pose = pose_it->second;
         }
         AnomalySet free_space;
-        if (slot.free_space) {
+        if (pose_valid && slot.free_space) {
             free_space = msg_to_set(*slot.free_space);
         }
-        const FusionResult result =
-            pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
-                              free_space, dt, static_cast<float>(train_speed_), pose);
+        const FusionResult result = pipeline_->update(
+            cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return), free_space, dt,
+            static_cast<float>(train_speed_), pose, true, pose_valid);
         const float processing_ms = ms_since(t0);
 
         publish_result(result, *slot.cloud, processing_ms);
@@ -275,6 +276,9 @@ private:
                 status = ObstacleArray::STATUS_WARNING;
             }
             out.obstacles.push_back(o);
+        }
+        if (!result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
+            status = ObstacleArray::STATUS_DEGRADED;
         }
         out.status = status;
         out.nearest_range_m = result.alert ? result.nearest_range_m : -1.0f;

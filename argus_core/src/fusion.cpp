@@ -18,7 +18,7 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     float dt, float train_speed_mps) {
     return update(cloud, ri, geometry, no_return, AnomalySet{}, dt, train_speed_mps,
-                  Eigen::Isometry3d::Identity(), false);
+                  Eigen::Isometry3d::Identity(), false, false);
 }
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
@@ -32,16 +32,27 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     const AnomalySet& free_space, float dt, float train_speed_mps,
                                     const Eigen::Isometry3d& pose) {
-    return update(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose, true);
+    return update(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose, true,
+                  true);
 }
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
                                     const AnomalySet& free_space, float dt, float train_speed_mps,
                                     const Eigen::Isometry3d& pose, bool caller_drives_model) {
+    return update(cloud, ri, geometry, no_return, free_space, dt, train_speed_mps, pose,
+                  caller_drives_model, true);
+}
+
+FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
+                                    const AnomalySet& geometry, const AnomalySet& no_return,
+                                    const AnomalySet& free_space, float dt, float train_speed_mps,
+                                    const Eigen::Isometry3d& pose, bool caller_drives_model,
+                                    bool pose_valid) {
     FusionResult out;
     out.n_anom_points = static_cast<uint32_t>(geometry.indices.size());
     out.n_anom_cells = static_cast<uint32_t>(no_return.cells.size());
+    out.pose_used = pose_valid;
 
     AnomalySet merged;
     merged.indices.reserve(geometry.indices.size());
@@ -65,7 +76,7 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     }
 
     const bool prior_ready =
-        model_.ready() && model_.frames_integrated() >= p_.free_space_warmup_frames;
+        pose_valid && model_.ready() && model_.frames_integrated() >= p_.free_space_warmup_frames;
     if (p_.use_free_space && prior_ready && !free_space.indices.empty()) {
         std::vector<uint8_t> already(cloud.size(), 0);
         for (uint32_t idx : merged.indices) {
@@ -189,13 +200,14 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         out.ttc_s = -1.0f;
     }
 
-    if (p_.update_model_with_clean_frames && (p_.use_free_space || caller_drives_model)) {
+    if (pose_valid && p_.update_model_with_clean_frames &&
+        (p_.use_free_space || caller_drives_model)) {
         const bool clean_frame = geometry.indices.empty();
         model_.integrate(cloud, pose, clean_frame);
         out.model_updated = true;
     }
     out.model_ready = model_.ready();
-    if (p_.compute_free_space_violation_rate) {
+    if (pose_valid && p_.compute_free_space_violation_rate) {
         const FreeSpaceCheck fs = model_.check(cloud, pose, p_.free_space_min_confidence);
         out.free_space_violation_rate = fs.violation_rate();
     }

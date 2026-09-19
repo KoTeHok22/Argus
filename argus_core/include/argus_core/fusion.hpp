@@ -52,6 +52,7 @@ struct FusionResult {
     float free_space_violation_rate = 0.0f;
     bool model_ready = false;
     bool model_updated = false;
+    bool pose_used = false;
     bool alert = false;
     float nearest_forward_m = -1.0f;
     float nearest_range_m = -1.0f;
@@ -76,6 +77,11 @@ public:
                         const AnomalySet& no_return, const AnomalySet& free_space, float dt,
                         float train_speed_mps, const Eigen::Isometry3d& pose,
                         bool caller_drives_model);
+
+    FusionResult update(const CleanCloud& cloud, const RangeImage& ri, const AnomalySet& geometry,
+                        const AnomalySet& no_return, const AnomalySet& free_space, float dt,
+                        float train_speed_mps, const Eigen::Isometry3d& pose,
+                        bool caller_drives_model, bool pose_valid);
 
     const ClearanceGauge& gauge() const { return gauge_; }
 
