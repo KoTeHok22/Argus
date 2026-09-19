@@ -33,6 +33,7 @@ struct FusionParams {
     uint32_t free_space_min_observations = 10;
     uint32_t free_space_warmup_frames = 60;
     bool update_model_with_clean_frames = true;
+    bool compute_free_space_violation_rate = false;
     TunnelModelParams model;
     ClusteringParams clustering;
     TrackingParams tracking;
@@ -78,7 +79,8 @@ public:
 private:
     FusionResult run(const CleanCloud& cloud, const RangeImage& ri, const AnomalySet& geometry,
                      const AnomalySet& no_return, const AnomalySet& free_space, float dt,
-                     float train_speed_mps, const Eigen::Isometry3d& pose);
+                     float train_speed_mps, const Eigen::Isometry3d& pose,
+                     bool caller_drives_model);
 
     ClearanceGauge gauge_;
     FusionParams p_;

@@ -59,22 +59,28 @@ Eigen::Vector3f TunnelModel::to_world(const Eigen::Vector3f& lidar,
 void TunnelModel::carve_free_space(const Eigen::Vector3f& start, const Eigen::Vector3f& end,
                                    const VoxelKey& stop_key) {
     const Eigen::Vector3f delta = end - start;
-    const float length = delta.norm();
-    if (length <= 0.0f) {
+    if (delta.squaredNorm() <= 0.0f) {
         return;
     }
-    const Eigen::Vector3f step_dir = delta / length;
-    const float step = std::max(0.5f * p_.voxel_size, 0.02f);
+    const VoxelKey first = key_at(start);
+    const VoxelKey last = key_at(end);
+    const int32_t dx = last.x - first.x;
+    const int32_t dy = last.y - first.y;
+    const int32_t dz = last.z - first.z;
+    const int32_t steps = std::max({std::abs(dx), std::abs(dy), std::abs(dz), 1});
+    const float inv = 1.0f / static_cast<float>(steps);
     VoxelKey prev;
-    bool have_prev = false;
-    for (float travelled = step; travelled < length; travelled += step) {
-        const VoxelKey k = key_at(start + step_dir * travelled);
-        if (have_prev && k == prev) {
+    for (int32_t s = 1; s <= steps; ++s) {
+        const float t = static_cast<float>(s) * inv;
+        const VoxelKey k = key_at(start + delta * t);
+        if (s > 1 && k == prev) {
             continue;
         }
         prev = k;
-        have_prev = true;
         if (k == stop_key) {
+            break;
+        }
+        if (s == 1 && k == first) {
             continue;
         }
         Voxel& v = voxels_[k];
@@ -85,6 +91,28 @@ void TunnelModel::carve_free_space(const Eigen::Vector3f& start, const Eigen::Ve
         v.last_frame = static_cast<uint32_t>(frames_);
         ++cells_carved_;
     }
+}
+
+bool TunnelModel::carve_ray_selected(const CleanCloud& cloud, size_t i) const {
+    const uint32_t stride_az = std::max<uint32_t>(1, p_.carve_stride_az);
+    const uint32_t stride_ring = std::max<uint32_t>(1, p_.carve_stride_ring);
+    if (stride_az == 1 && stride_ring == 1) {
+        return true;
+    }
+    uint32_t az = 0;
+    uint32_t ring = 0;
+    if (!cloud.azimuth_idx.empty() && !cloud.ring.empty() && i < cloud.azimuth_idx.size() &&
+        i < cloud.ring.size()) {
+        az = cloud.azimuth_idx[i];
+        ring = static_cast<uint32_t>(cloud.ring[i]);
+    } else if (cloud.rings > 1 && !cloud.raw_idx.empty() && i < cloud.raw_idx.size()) {
+        az = cloud.raw_idx[i] / cloud.rings;
+        ring = cloud.raw_idx[i] % cloud.rings;
+    } else {
+        return true;
+    }
+    const uint32_t frame = static_cast<uint32_t>(frames_);
+    return az % stride_az == frame % stride_az && ring % stride_ring == frame % stride_ring;
 }
 
 void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& pose) {
@@ -100,7 +128,10 @@ void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& po
 
     const float margin = std::max(0.0f, p_.free_space_margin);
     const float max_range = p_.max_range;
+    const float carve_range =
+        p_.carve_max_range > 0.0f ? std::min(p_.max_range, p_.carve_max_range) : p_.max_range;
     const Eigen::Vector3f origin = to_lidar(Eigen::Vector3f::Zero(), pose);
+    voxels_.reserve(voxels_.size() + cloud.size() / 4 + 1024);
 
     for (size_t i = 0; i < cloud.size(); ++i) {
         if (!cloud.ground_mask.empty() && i < cloud.ground_mask.size() &&
@@ -110,6 +141,9 @@ void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& po
         const Eigen::Vector3f lidar(cloud.x[i], cloud.y[i], cloud.z[i]);
         const float range = lidar.norm();
         if (!std::isfinite(range) || range < p_.voxel_size || range > max_range) {
+            continue;
+        }
+        if (!carve_ray_selected(cloud, i)) {
             continue;
         }
 
@@ -124,8 +158,12 @@ void TunnelModel::integrate(const CleanCloud& cloud, const Eigen::Isometry3d& po
             occupied.last_frame = static_cast<uint32_t>(frames_);
         }
 
-        const float stop = std::max(0.0f, range - margin - 0.5f * p_.voxel_size);
+        const float stop =
+            std::max(0.0f, std::min(range, carve_range) - margin - 0.5f * p_.voxel_size);
         if (stop <= 0.0f) {
+            continue;
+        }
+        if (p_.carve_half_width_m > 0.0f && std::fabs(lidar.x()) > p_.carve_half_width_m) {
             continue;
         }
         const Eigen::Vector3f dir = lidar / range;
@@ -201,17 +239,13 @@ FreeSpaceCheck TunnelModel::check(const CleanCloud& cloud, const Eigen::Isometry
             continue;
         }
         const auto it = voxels_.find(key_at(lidar, pose));
-        if (it == voxels_.end()) {
-            ++out.unknown;
-            continue;
-        }
-        const Voxel& v = it->second;
-        if (v.free_observations < p_.min_observations) {
+        if (it == voxels_.end() || it->second.free_observations == 0) {
             ++out.unknown;
             continue;
         }
         ++out.observed;
-        if (v.occupied_observations < p_.free_hits_to_clear && v.free_score >= min_confidence) {
+        if (it->second.occupied_observations < p_.free_hits_to_clear &&
+            it->second.free_score >= min_confidence) {
             ++out.empty;
         }
     }

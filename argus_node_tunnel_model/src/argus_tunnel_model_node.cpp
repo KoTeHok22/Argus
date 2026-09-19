@@ -132,6 +132,14 @@ private:
             static_cast<uint32_t>(declare_parameter<int>("tunnel_model.free_hits_to_clear", 2));
         model_params_.max_range =
             static_cast<float>(declare_parameter<double>("tunnel_model.max_range", 150.0));
+        model_params_.carve_max_range =
+            static_cast<float>(declare_parameter<double>("tunnel_model.carve_max_range", 0.0));
+        model_params_.carve_half_width_m =
+            static_cast<float>(declare_parameter<double>("tunnel_model.carve_half_width_m", 0.0));
+        model_params_.carve_stride_az = static_cast<uint32_t>(
+            std::max<int>(1, declare_parameter<int>("tunnel_model.carve_stride_az", 1)));
+        model_params_.carve_stride_ring = static_cast<uint32_t>(
+            std::max<int>(1, declare_parameter<int>("tunnel_model.carve_stride_ring", 1)));
         model_params_.enable_decay = declare_parameter<bool>("tunnel_model.enable_decay", false);
         model_params_.decay_after_frames =
             static_cast<uint32_t>(declare_parameter<int>("tunnel_model.decay_after_frames", 3000));

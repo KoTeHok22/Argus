@@ -19,6 +19,10 @@ struct TunnelModelParams {
     uint32_t min_observations = 3;
     uint32_t free_hits_to_clear = 2;
     float max_range = 150.0f;
+    float carve_max_range = 90.0f;
+    float carve_half_width_m = 0.0f;
+    uint32_t carve_stride_az = 1;
+    uint32_t carve_stride_ring = 1;
     float forget_ray_fraction = 0.02f;
     bool enable_decay = false;
     uint32_t decay_after_frames = 3000;
@@ -123,6 +127,8 @@ private:
 
     void carve_free_space(const Eigen::Vector3f& start, const Eigen::Vector3f& end,
                           const VoxelKey& stop_key);
+
+    bool carve_ray_selected(const CleanCloud& cloud, size_t i) const;
 
     TunnelModelParams p_;
     float inv_voxel_ = 5.0f;

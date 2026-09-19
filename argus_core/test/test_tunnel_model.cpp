@@ -211,3 +211,99 @@ TEST(TunnelModel, DisabledModelIntegratesNothing) {
     EXPECT_EQ(model.voxel_count(), 0u);
     EXPECT_FALSE(model.ready());
 }
+
+argus::CleanCloud make_indexed_tunnel(uint32_t w, uint32_t h) {
+    argus::CleanCloud c;
+    c.rings = h;
+    c.n_raw = w * h;
+    for (uint32_t az = 0; az < w; ++az) {
+        for (uint32_t ring = 0; ring < h; ++ring) {
+            const uint32_t raw = az * h + ring;
+            c.x.push_back(0.0f);
+            c.y.push_back(-kWallRange);
+            c.z.push_back(0.6f + 0.12f * static_cast<float>(ring));
+            c.intensity.push_back(1.0f);
+            c.ring.push_back(static_cast<uint16_t>(ring));
+            c.azimuth_idx.push_back(az);
+            c.raw_idx.push_back(raw);
+        }
+    }
+    return c;
+}
+
+TEST(TunnelModel, CarveStrideZeroIsTreatedAsFullCoverage) {
+    argus::TunnelModelParams p = make_params();
+    p.carve_stride_az = 0;
+    p.carve_stride_ring = 0;
+    argus::TunnelModel model(p);
+    const argus::CleanCloud cloud = make_indexed_tunnel(80, 8);
+    for (int i = 0; i < 5; ++i) {
+        model.integrate(cloud, Eigen::Isometry3d::Identity());
+    }
+    float confidence = 0.0f;
+    EXPECT_TRUE(model.violates_free_space(Eigen::Vector3f(0.0f, -10.0f, 0.75f), confidence));
+    EXPECT_GT(confidence, 0.5f);
+}
+
+TEST(TunnelModel, CarveStrideKeepsCoverageWhenStrideExceedsAzimuthCount) {
+    argus::TunnelModelParams p = make_params();
+    p.carve_stride_az = 4;
+    p.carve_stride_ring = 1;
+    argus::TunnelModel model(p);
+    const argus::CleanCloud cloud = make_indexed_tunnel(8, 8);
+    for (int i = 0; i < 5; ++i) {
+        model.integrate(cloud, Eigen::Isometry3d::Identity());
+    }
+    float confidence = 0.0f;
+    EXPECT_TRUE(model.violates_free_space(Eigen::Vector3f(0.0f, -10.0f, 0.75f), confidence));
+    EXPECT_GT(confidence, 0.5f);
+}
+
+TEST(TunnelModel, CarveStopsShortOfTheSurfaceCell) {
+    argus::TunnelModelParams p = make_params();
+    argus::TunnelModel model(p);
+    argus::CleanCloud cloud;
+    cloud.rings = 1;
+    cloud.n_raw = 1;
+    cloud.x = {20.0f};
+    cloud.y = {-4.0f};
+    cloud.z = {1.1f};
+    cloud.intensity = {1.0f};
+    cloud.ring = {0};
+    cloud.azimuth_idx = {0};
+    cloud.raw_idx = {0};
+    for (int i = 0; i < 6; ++i) {
+        model.integrate(cloud, Eigen::Isometry3d::Identity());
+    }
+    float confidence = 0.0f;
+    EXPECT_TRUE(model.violates_free_space(Eigen::Vector3f(19.75f, -3.75f, 1.25f), confidence));
+    EXPECT_GT(confidence, 0.5f);
+
+    confidence = 0.0f;
+    EXPECT_FALSE(model.violates_free_space(Eigen::Vector3f(20.25f, -3.75f, 1.25f), confidence));
+}
+
+TEST(TunnelModel, CarveMaxRangeLeavesFarCellsUnobserved) {
+    argus::TunnelModelParams p = make_params();
+    p.carve_max_range = 8.0f;
+    argus::TunnelModel model(p);
+    argus::CleanCloud cloud;
+    cloud.rings = 1;
+    cloud.n_raw = 1;
+    cloud.x = {20.0f};
+    cloud.y = {-4.0f};
+    cloud.z = {1.1f};
+    cloud.intensity = {1.0f};
+    cloud.ring = {0};
+    cloud.azimuth_idx = {0};
+    cloud.raw_idx = {0};
+    for (int i = 0; i < 6; ++i) {
+        model.integrate(cloud, Eigen::Isometry3d::Identity());
+    }
+    const Eigen::Vector3f dir = Eigen::Vector3f(20.0f, -4.0f, 1.1f).normalized();
+    float confidence = 0.0f;
+    EXPECT_TRUE(model.violates_free_space(dir * 6.0f, confidence));
+
+    confidence = 0.0f;
+    EXPECT_FALSE(model.violates_free_space(dir * 15.0f, confidence));
+}

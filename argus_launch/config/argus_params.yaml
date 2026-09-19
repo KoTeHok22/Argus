@@ -59,6 +59,10 @@
       min_observations: 3
       free_hits_to_clear: 2
       max_range: 150.0
+      carve_max_range: 90.0
+      carve_half_width_m: 3.0
+      carve_stride_az: 1
+      carve_stride_ring: 1
       enable_decay: false
       decay_after_frames: 3000
       forget_ray_fraction: 0.02

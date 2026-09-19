@@ -145,10 +145,19 @@ int main(int argc, char** argv) {
     bool debug_clusters = false;
     uint32_t warmup_frames = 10;
     bool free_space_vote = false;
+    uint32_t carve_stride = 1;
+    float carve_max_range = 90.0f;
+    float carve_half_width = 3.0f;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
             limit = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--carve-stride" && i + 1 < argc) {
+            carve_stride = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--carve-max-range" && i + 1 < argc) {
+            carve_max_range = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--carve-half-width" && i + 1 < argc) {
+            carve_half_width = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--warmup" && i + 1 < argc) {
             warmup_frames = static_cast<uint32_t>(std::atoi(argv[++i]));
         } else if (a == "--free-space-vote") {
@@ -169,8 +178,8 @@ int main(int argc, char** argv) {
     }
     if (path.empty()) {
         std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
-                     "[--tunnel] [--warmup N] [--free-space-vote] "
-                     "[--forward-axis x|-x|y|-y]\n";
+                     "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
+                     "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y]\n";
         return 2;
     }
 
@@ -214,6 +223,11 @@ int main(int argc, char** argv) {
     fusion_params.use_free_space = free_space_vote;
     fusion_params.free_space_warmup_frames = warmup_frames;
     fusion_params.model.min_observations = std::max<uint32_t>(1, warmup_frames / 10);
+    fusion_params.model.carve_stride_az = carve_stride;
+    fusion_params.model.carve_stride_ring = carve_stride;
+    fusion_params.model.carve_max_range = carve_max_range;
+    fusion_params.model.carve_half_width_m = carve_half_width;
+    fusion_params.compute_free_space_violation_rate = true;
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
     argus::GroundParams ground_params;
     ground_params.sensor_height = 1.2f;
