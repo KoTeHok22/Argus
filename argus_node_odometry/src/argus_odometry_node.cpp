@@ -58,6 +58,9 @@ public:
         p.rest_translation_m =
             static_cast<float>(declare_parameter<double>("odometry.rest_translation_m", 0.20));
         p.keep_ground = declare_parameter<bool>("odometry.keep_ground", true);
+        p.max_fitness = static_cast<float>(declare_parameter<double>("odometry.max_fitness", 0.05));
+        p.min_correspondences_quality = static_cast<uint32_t>(
+            declare_parameter<int>("odometry.min_correspondences_quality", 100));
         const std::string axis_name = declare_parameter<std::string>("odometry.forward_axis", "-y");
         if (!parse_forward_axis(axis_name, p.forward_axis)) {
             p.forward_axis = ForwardAxis::NegY;
@@ -92,7 +95,7 @@ private:
         const OdometryResult r = odom_->update(cloud, cloud.stamp_s);
         const float t_ms = ms_since(t0);
 
-        if (r.valid) {
+        if (r.valid && r.quality_ok) {
             geometry_msgs::msg::PoseStamped pose;
             pose.header.stamp = msg->header.stamp;
             pose.header.frame_id = "odom";
@@ -111,10 +114,13 @@ private:
         Diagnostics d;
         d.header = msg->header;
         d.t_odometry_ms = t_ms;
-        d.model_ready = r.valid;
+        d.model_ready = r.valid && r.quality_ok;
         d.frames_processed = r.frames;
         d.n_points_valid = r.n_downsampled;
         d.n_points_rejected = r.valid ? 0u : 1u;
+        d.odom_fitness = r.fitness;
+        d.odom_correspondences = r.n_correspondences;
+        d.odom_quality_ok = r.quality_ok;
         d.fps = (t_prev_ms_ > 0.0f) ? 1000.0f / t_prev_ms_ : 0.0f;
         pub_diag_->publish(d);
         t_prev_ms_ = t_ms;

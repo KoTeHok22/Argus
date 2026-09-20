@@ -169,3 +169,38 @@ TEST(Odometry, ExpandingNearestMatchesFullRadiusCube) {
         }
     }
 }
+
+TEST(Odometry, QualityNotOkWhenInvalid) {
+    argus::OdometryParams p;
+    argus::TunnelOdometry odom(p);
+    const auto cloud = make_wall_cloud(0.0f);
+    odom.update(cloud, 0.0);
+    argus::CleanCloud empty;
+    const auto r = odom.update(empty, 0.1);
+    EXPECT_FALSE(r.valid);
+    EXPECT_FALSE(r.quality_ok);
+}
+
+TEST(Odometry, QualityGateRejectsFewCorrespondences) {
+    argus::OdometryParams p;
+    p.max_fitness = 1000.0f;
+    p.min_correspondences_quality = 100000;
+    argus::TunnelOdometry odom(p);
+    const auto cloud = make_wall_cloud(0.0f);
+    odom.update(cloud, 0.0);
+    const auto r = odom.update(cloud, 0.1);
+    EXPECT_TRUE(r.valid);
+    EXPECT_FALSE(r.quality_ok);
+}
+
+TEST(Odometry, QualityOkOnCleanStaticCloud) {
+    argus::OdometryParams p;
+    p.max_fitness = 1.0f;
+    p.min_correspondences_quality = 20;
+    argus::TunnelOdometry odom(p);
+    const auto cloud = make_wall_cloud(0.0f);
+    odom.update(cloud, 0.0);
+    const auto r = odom.update(cloud, 0.1);
+    EXPECT_TRUE(r.valid);
+    EXPECT_TRUE(r.quality_ok);
+}

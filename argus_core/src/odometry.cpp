@@ -193,17 +193,25 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
     out.frames = last_.frames + 1;
     if (!p_.enabled) {
         out.valid = true;
+        out.quality_ok = true;
         last_ = out;
         return out;
     }
 
     std::vector<Eigen::Vector3f> cur = downsample(cloud, p_);
     out.n_downsampled = static_cast<uint32_t>(cur.size());
-    if (!have_prev_ || prev_.empty() || cur.size() < 20) {
+    if (!have_prev_ || prev_.empty()) {
         prev_ = std::move(cur);
         prev_stamp_s_ = stamp_s;
         have_prev_ = true;
         out.valid = true;
+        out.quality_ok = true;
+        last_ = out;
+        return out;
+    }
+    if (cur.size() < 20) {
+        out.valid = false;
+        out.quality_ok = false;
         last_ = out;
         return out;
     }
@@ -299,6 +307,8 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
     out.speed_mps = speed;
     out.accel_mps2 = accel;
     out.valid = speed <= p_.max_speed_mps && out.n_correspondences >= 20;
+    out.quality_ok = out.valid && out.fitness <= p_.max_fitness &&
+                     out.n_correspondences >= p_.min_correspondences_quality;
 
     if (out.valid && !rest) {
         Eigen::Isometry3d delta = Eigen::Isometry3d::Identity();
