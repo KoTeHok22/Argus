@@ -500,7 +500,7 @@ private:
         out.processing_ms = processing_ms;
         out.fps = fps_;
         out.model_ready = false;
-        out.explain = explain_text(result, out, clean.header.frame_id);
+        out.explain = explain_text(result, out, cloud, clean.header.frame_id);
         pub_obstacles_->publish(out);
         publish_gauge_state(out, cloud);
 
@@ -537,7 +537,7 @@ private:
     }
 
     std::string explain_text(const FusionResult& result, const ObstacleArray& out,
-                             const std::string& frame_id) const {
+                             const CleanCloud& cloud, const std::string& frame_id) const {
         std::string text;
         text += "frame " + frame_id + "\n";
         if (!result.tracks.empty()) {
@@ -561,15 +561,23 @@ private:
             text += format_clear(frames_processed_, fps_);
             text += "\n";
         }
-        char tail[256];
+        char tail[320];
         const FrameSyncStats& ss = sync_->stats();
+        const float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
         std::snprintf(
             tail, sizeof(tail),
             "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n"
+            "supervision: clear=%.1f m limit=%.2f m/s speed=%.2f m/s\n"
             "sync: arrivals=%llu snapped=%llu expired=%llu (нет cloud=%llu geom=%llu nr=%llu)\n",
             status_name(out.status).c_str(), out.obstacles_detected,
             static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms),
-            static_cast<unsigned long long>(ss.arrivals),
+            static_cast<double>(clear_range),
+            static_cast<double>(speed_limit_for_visibility_mps(
+                out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f
+                    ? std::min(clear_range, out.nearest_range_m)
+                    : clear_range,
+                braking_, visibility_margin_m_)),
+            static_cast<double>(current_speed()), static_cast<unsigned long long>(ss.arrivals),
             static_cast<unsigned long long>(ss.snapped),
             static_cast<unsigned long long>(ss.expired),
             static_cast<unsigned long long>(ss.expired_missing_cloud),
