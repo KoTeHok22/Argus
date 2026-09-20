@@ -32,7 +32,10 @@ add_library(${PROJECT_NAME} SHARED
   src/tracking.cpp
   src/fusion.cpp
   src/explain.cpp
-  src/anomaly.cpp
+  src/anomaly_no_return.cpp
+  src/anomaly_geometry.cpp
+  src/anomaly_temporal.cpp
+  src/anomaly_free_space.cpp
   src/ground.cpp
   src/odometry.cpp
   src/tunnel_model.cpp
