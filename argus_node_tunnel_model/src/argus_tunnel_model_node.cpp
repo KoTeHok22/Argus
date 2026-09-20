@@ -70,6 +70,16 @@ public:
         profile_ = std::make_unique<TunnelProfile>(profile_params_);
         free_space_ = std::make_unique<FreeSpaceDetector>(model_.get(), free_space_params_);
 
+        if (!prior_map_path_.empty()) {
+            if (model_->load(prior_map_path_)) {
+                RCLCPP_INFO(get_logger(), "prior map загружена: %s (вокселей %zu)",
+                            prior_map_path_.c_str(), model_->voxel_count());
+            } else {
+                RCLCPP_ERROR(get_logger(), "prior map не загружена: %s — модель стартует с нуля",
+                             prior_map_path_.c_str());
+            }
+        }
+
         auto qos = rclcpp::QoS(10);
         sub_clean_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
@@ -181,6 +191,7 @@ private:
 
         free_space_warmup_frames_ =
             static_cast<uint32_t>(declare_parameter<int>("detector_free_space.warmup_frames", 60));
+        prior_map_path_ = declare_parameter<std::string>("tunnel_model.prior_map_path", "");
         process_period_s_ = declare_parameter<double>("tunnel_model.process_period_s", 0.05);
         pose_timeout_s_ = declare_parameter<double>("tunnel_model.pose_timeout_s", 1.0);
         publish_model_points_ = declare_parameter<bool>("tunnel_model.publish_points", true);
@@ -362,6 +373,7 @@ private:
     TunnelProfileParams profile_params_;
     FreeSpaceParams free_space_params_;
     uint32_t free_space_warmup_frames_ = 60;
+    std::string prior_map_path_;
     double process_period_s_ = 0.05;
     double pose_timeout_s_ = 1.0;
     bool publish_model_points_ = true;
