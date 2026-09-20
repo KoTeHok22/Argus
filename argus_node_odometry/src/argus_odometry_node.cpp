@@ -4,6 +4,7 @@
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
@@ -68,6 +69,12 @@ public:
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
         pub_pose_ = create_publisher<geometry_msgs::msg::PoseStamped>("/argus/pose", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_odometry", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
 
         RCLCPP_INFO(get_logger(), "argus_odometry: 4DoF ICP, ось '%s'", axis_name.c_str());
     }
@@ -118,6 +125,8 @@ private:
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus

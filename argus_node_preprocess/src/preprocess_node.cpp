@@ -7,6 +7,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
@@ -75,6 +76,12 @@ public:
         pub_clean_ = create_publisher<CleanCloudMsg>("/argus/clean", qos);
         pub_cloud_ = create_publisher<PointCloud2>("/argus/cloud", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
 
         RCLCPP_INFO(get_logger(), "argus_preprocess подписан на '%s'", input_topic_.c_str());
     }
@@ -204,6 +211,8 @@ private:
     rclcpp::Publisher<CleanCloudMsg>::SharedPtr pub_clean_;
     rclcpp::Publisher<PointCloud2>::SharedPtr pub_cloud_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus

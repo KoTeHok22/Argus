@@ -4,6 +4,7 @@
 #include <string>
 
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
@@ -107,6 +108,12 @@ public:
         pub_temporal_ = create_publisher<AnomalySetMsg>("/argus/anom_temporal", qos);
         pub_no_return_ = create_publisher<AnomalySetMsg>("/argus/anom_nr", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_detector", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
 
         no_return_ = std::make_unique<NoReturnDetector>(nr);
         geometry_ = std::make_unique<GeometryResidualDetector>(geom);
@@ -200,6 +207,8 @@ private:
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_temporal_;
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_no_return_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus

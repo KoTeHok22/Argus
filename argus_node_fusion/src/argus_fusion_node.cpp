@@ -173,6 +173,21 @@ public:
         if (publish_markers_) {
             pub_markers_ = create_publisher<MarkerArray>("/argus/markers", qos);
         }
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
+        sub_health_ = create_subscription<std_msgs::msg::String>(
+            "/argus/system_health", qos, [this](std_msgs::msg::String::ConstSharedPtr msg) {
+                system_ok_ = msg->data == "OK";
+                if (!system_ok_ && msg->data.rfind("DEAD:", 0) == 0) {
+                    dead_nodes_ = msg->data.substr(5);
+                } else {
+                    dead_nodes_.clear();
+                }
+            });
 
         const auto timer_period = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::duration<double>(stale_timeout_));
@@ -422,6 +437,9 @@ private:
         if (pose_required && !result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
+        if (!system_ok_ && status == ObstacleArray::STATUS_CLEAR) {
+            status = ObstacleArray::STATUS_DEGRADED;
+        }
         out.status = status;
         out.nearest_range_m = result.alert ? result.nearest_range_m : -1.0f;
         out.obstacles_detected = static_cast<uint32_t>(out.obstacles.size());
@@ -458,7 +476,11 @@ private:
                 static_cast<uint8_t>(t.votes_free_space + t.votes_no_return + t.votes_geometry);
             text += format_alert(t, reason);
         } else if (out.status == ObstacleArray::STATUS_DEGRADED) {
-            text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
+            if (!system_ok_) {
+                text += "DEGRADED: молчат критические узлы: " + dead_nodes_ + "\n";
+            } else {
+                text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
+            }
         } else {
             text += format_clear(frames_processed_, fps_);
             text += "\n";
@@ -818,7 +840,12 @@ private:
     rclcpp::Publisher<ObstacleArray>::SharedPtr pub_obstacles_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_explain_;
     rclcpp::Publisher<MarkerArray>::SharedPtr pub_markers_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_health_;
     rclcpp::TimerBase::SharedPtr stale_timer_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+    bool system_ok_ = true;
+    std::string dead_nodes_;
 };
 
 } // namespace argus

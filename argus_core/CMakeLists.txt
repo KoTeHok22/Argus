@@ -39,6 +39,7 @@ add_library(${PROJECT_NAME} SHARED
   src/tunnel_profile.cpp
   src/track_corridor.cpp
   src/frame_sync.cpp
+  src/health_monitor.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -113,6 +114,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_track_corridor ${PROJECT_NAME})
   ament_add_gtest(test_frame_sync test/test_frame_sync.cpp)
   target_link_libraries(test_frame_sync ${PROJECT_NAME})
+  ament_add_gtest(test_health_monitor test/test_health_monitor.cpp)
+  target_link_libraries(test_health_monitor ${PROJECT_NAME})
 endif()
 
 ament_package()

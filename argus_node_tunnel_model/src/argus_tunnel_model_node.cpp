@@ -12,6 +12,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
@@ -91,6 +92,12 @@ public:
 
         pub_free_space_ = create_publisher<AnomalySetMsg>("/argus/anom_fs", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_model", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
         if (publish_model_points_) {
             pub_model_ = create_publisher<sensor_msgs::msg::PointCloud2>("/argus/model", qos);
         }
@@ -378,7 +385,9 @@ private:
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_free_space_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_model_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus
