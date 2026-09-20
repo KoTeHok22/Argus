@@ -27,6 +27,21 @@ docker run --rm --shm-size=256m \
 
 Выход: строки `ALERT BLOCKED` с дистанции и в конце `frames=… blocked_alerts=…`.
 
+## Панель в браузере
+
+```bash
+docker run --rm --shm-size=256m -p 8080:8080 \
+    -v "$PWD/data":/data \
+    -v "$PWD/results":/ws/results \
+    argus ui
+```
+
+Или `docker compose -f docker/docker-compose.yml up ui`. Открыть `http://localhost:8080`.
+
+На экране «Запись» можно положить `.zst` или выбрать уже распакованный bag. «Эфир» рисует облако из sqlite bag, без ROS. «Прогнать» запускает тот же `detect`, отчёт появляется из CSV.
+
+Без Docker: `./scripts/run_ui.sh` (нужны Python 3 и numpy).
+
 ## С визуализацией
 
 ```bash

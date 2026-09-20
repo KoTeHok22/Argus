@@ -18,6 +18,27 @@ docker run --rm --shm-size=256m \
 
 `--shm-size=256m` обязателен. Кадр Hesai ~24 МБ; без флага Fast-DDS не отдаёт `PointCloud2`, fusion уходит в `STATUS_DEGRADED` и тревоги нет.
 
+Панель в браузере (загрузка `.zst`, эфир облака, отчёт):
+
+```bash
+docker run --rm --shm-size=256m -p 8080:8080 \
+    -v "$PWD/data":/data \
+    -v "$PWD/results":/ws/results \
+    argus ui
+```
+
+Открыть `http://localhost:8080`. Без Docker:
+
+```bash
+./scripts/run_ui.sh
+```
+
+Windows:
+
+```powershell
+$env:PYTHONPATH="argus_web"; python -m argus_web
+```
+
 Ожидаемый лог на `doubleT_obstacle`: `ALERT BLOCKED` около 16.9 м. Топик лидара читается из `metadata.yaml` (у этого бэга он не `/lidar_points`).
 
 ```bash

@@ -56,6 +56,16 @@ case "$MODE" in
     exec ros2 run argus_eval run_eval.py --bag "$BAG" --report
     ;;
 
+  ui)
+    export ARGUS_ROOT="${ARGUS_ROOT:-/ws}"
+    export ARGUS_DATA="${ARGUS_DATA:-/data}"
+    export ARGUS_RESULTS="${ARGUS_RESULTS:-/ws/results}"
+    export ARGUS_UI_ROOT="${ARGUS_UI_ROOT:-/ws/data/ui}"
+    mkdir -p "$ARGUS_RESULTS" "$ARGUS_UI_ROOT"
+    export PYTHONPATH="/ws/argus_web${PYTHONPATH:+:$PYTHONPATH}"
+    exec python3 -m argus_web --host 0.0.0.0 --port "${ARGUS_WEB_PORT:-8080}"
+    ;;
+
   shell)
     exec bash
     ;;
@@ -70,6 +80,7 @@ Argus — препятствие в габарите поезда по 3D-лид
   detect  прогон bag, печать /argus/obstacles, выход после конца записи
   demo    то же плюс RViz2 (нужен DISPLAY)
   eval    каркас отчёта
+  ui      панель: загрузка записи, эфир, отчёт (порт 8080)
   shell   оболочка внутри образа
 
 rate по умолчанию 1 (реальное время). --shm-size=256m обязателен: кадр ~24 МБ.
@@ -79,6 +90,9 @@ rate по умолчанию 1 (реальное время). --shm-size=256m о
   docker run --rm --shm-size=256m \
       -v "$PWD/data/recordings":/data argus \
       detect /data/doubleT_obstacle 0
+
+  docker run --rm --shm-size=256m -p 8080:8080 \
+      -v "$PWD/data":/data argus ui
 EOF
     ;;
 esac

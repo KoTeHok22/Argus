@@ -10,4 +10,20 @@ services:
       - ../data/recordings:/data:ro
       - ../results:/ws/results
     working_dir: /ws
+    shm_size: 256m
     command: ["help"]
+
+  ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: argus
+    shm_size: 256m
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../data:/data:ro
+      - ../results:/ws/results
+      - ../data/ui:/ws/data/ui
+    working_dir: /ws
+    command: ["ui"]

@@ -14,6 +14,8 @@
 *.head
 *.frames
 
+data/ui/
+
 # --- Артефакты сборки ROS 2 ---
 build/
 install/

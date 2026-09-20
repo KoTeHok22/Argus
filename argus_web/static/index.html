@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Argus — контроль габарита</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <strong>ARGUS</strong>
+          <span>контроль габарита поезда</span>
+        </div>
+      </div>
+      <p id="system-pill" class="pill">Система ожидает</p>
+      <time id="clock" datetime="">00:00:00</time>
+    </header>
+    <aside class="nav">
+      <a href="#/" data-route="/" class="active">Обзор</a>
+      <a href="#/zapis" data-route="/zapis">Запись</a>
+      <a href="#/efir" data-route="/efir">Эфир</a>
+      <a href="#/otchet" data-route="/otchet">Отчёт</a>
+      <a href="#/parametry" data-route="/parametry">Параметры</a>
+    </aside>
+    <main id="view" class="view"></main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
