@@ -11,3 +11,5 @@ geometry_msgs/Polygon profile_2d
 
 float32 train_speed_mps
 float32 braking_distance_m
+float32 clear_range_m
+float32 speed_limit_mps

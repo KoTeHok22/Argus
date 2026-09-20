@@ -30,6 +30,7 @@
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
 #include "argus_core/range_image.hpp"
+#include "argus_core/supervision.hpp"
 #include "fusion_markers.hpp"
 
 namespace argus {
@@ -129,6 +130,14 @@ public:
             throw std::invalid_argument("vehicle.speed_stale_s must be > 0");
         }
         dynamic_envelope_ = declare_parameter<bool>("vehicle.dynamic_envelope", true);
+        visibility_.min_z_rel_m = static_cast<float>(
+            declare_parameter<double>("vehicle.visibility_min_z_rel_m", visibility_.min_z_rel_m));
+        visibility_.half_angle_deg = static_cast<float>(declare_parameter<double>(
+            "vehicle.visibility_half_angle_deg", visibility_.half_angle_deg));
+        visibility_.max_range_m = static_cast<float>(
+            declare_parameter<double>("vehicle.visibility_max_range_m", visibility_.max_range_m));
+        visibility_margin_m_ =
+            static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
         publish_markers_ = declare_parameter<bool>("fusion.publish_markers", true);
         marker_max_range_ =
             static_cast<float>(declare_parameter<double>("fusion.marker_max_range_m", 60.0));
@@ -404,7 +413,7 @@ private:
         const float processing_ms = ms_since(t0);
         ++frames_processed_;
 
-        publish_result(result, *slot.cloud, processing_ms);
+        publish_result(result, *slot.cloud, cloud, processing_ms);
 
         sync_->release(key);
         slots_.erase(key);
@@ -438,7 +447,7 @@ private:
     }
 
     void publish_result(const FusionResult& result, const CleanCloudMsg& clean,
-                        float processing_ms) {
+                        const CleanCloud& cloud, float processing_ms) {
         ObstacleArray out;
         out.header.stamp = clean.header.stamp;
         out.header.frame_id = clean.header.frame_id;
@@ -493,7 +502,7 @@ private:
         out.model_ready = false;
         out.explain = explain_text(result, out, clean.header.frame_id);
         pub_obstacles_->publish(out);
-        publish_gauge_state(out);
+        publish_gauge_state(out, cloud);
 
         publish_explain(out);
         if (pub_markers_) {
@@ -508,7 +517,7 @@ private:
         }
     }
 
-    void publish_gauge_state(const ObstacleArray& out) {
+    void publish_gauge_state(const ObstacleArray& out, const CleanCloud& cloud) {
         GaugeState gs;
         gs.header = out.header;
         gs.half_width = gauge_params_.half_width;
@@ -517,6 +526,13 @@ private:
         gs.max_range = gauge_params_.max_range;
         gs.train_speed_mps = current_speed();
         gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
+        if (out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f) {
+            clear_range = std::min(clear_range, out.nearest_range_m);
+        }
+        gs.clear_range_m = clear_range;
+        gs.speed_limit_mps =
+            speed_limit_for_visibility_mps(clear_range, braking_, visibility_margin_m_);
         pub_gauge_state_->publish(gs);
     }
 
@@ -739,6 +755,8 @@ private:
     bool dynamic_envelope_ = true;
     bool speed_live_ = false;
     BrakingParams braking_;
+    VisibilityParams visibility_;
+    float visibility_margin_m_ = 10.0f;
     std::chrono::steady_clock::time_point last_speed_at_{};
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
     rclcpp::Subscription<DiagnosticsMsg>::SharedPtr sub_sensor_;

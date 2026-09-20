@@ -206,6 +206,10 @@
       reaction_s: 0.5
       braking_margin_m: 10.0
       dynamic_envelope: true
+      visibility_min_z_rel_m: 0.30
+      visibility_half_angle_deg: 20.0
+      visibility_max_range_m: 300.0
+      visibility_margin_m: 10.0
 
     watchdog:
       heartbeat_timeout_s: 2.0
