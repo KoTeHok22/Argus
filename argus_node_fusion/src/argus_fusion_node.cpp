@@ -25,6 +25,7 @@
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
 
+#include "argus_core/classification.hpp"
 #include "argus_core/explain.hpp"
 #include "argus_core/frame_sync.hpp"
 #include "argus_core/fusion.hpp"
@@ -138,6 +139,19 @@ public:
             declare_parameter<double>("vehicle.visibility_max_range_m", visibility_.max_range_m));
         visibility_margin_m_ =
             static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
+        classification_.person_min_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_min_height_m", classification_.person_min_height_m));
+        classification_.person_max_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_max_height_m", classification_.person_max_height_m));
+        classification_.person_max_footprint_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_max_footprint_m", classification_.person_max_footprint_m));
+        classification_.person_min_points = static_cast<uint32_t>(
+            declare_parameter<int>("classification.person_min_points",
+                                   static_cast<int>(classification_.person_min_points)));
+        classification_.debris_max_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.debris_max_height_m", classification_.debris_max_height_m));
+        classification_.equipment_min_footprint_m = static_cast<float>(declare_parameter<double>(
+            "classification.equipment_min_footprint_m", classification_.equipment_min_footprint_m));
         publish_markers_ = declare_parameter<bool>("fusion.publish_markers", true);
         marker_max_range_ =
             static_cast<float>(declare_parameter<double>("fusion.marker_max_range_m", 60.0));
@@ -640,6 +654,10 @@ private:
         o.point_count = t.point_count;
         o.severity = severity_of(t);
         o.reason = reason_of(t);
+        const Classification cls =
+            classify_object(t.extent(0), t.extent(1), t.extent(2), t.point_count, classification_);
+        o.object_class = static_cast<uint8_t>(cls.object_class);
+        o.class_reason = cls.reason;
         return o;
     }
 
@@ -765,6 +783,7 @@ private:
     BrakingParams braking_;
     VisibilityParams visibility_;
     float visibility_margin_m_ = 10.0f;
+    ClassificationParams classification_;
     std::chrono::steady_clock::time_point last_speed_at_{};
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
     rclcpp::Subscription<DiagnosticsMsg>::SharedPtr sub_sensor_;

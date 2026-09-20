@@ -45,6 +45,7 @@ add_library(${PROJECT_NAME} SHARED
   src/health_monitor.cpp
   src/sensor_health.cpp
   src/supervision.cpp
+  src/classification.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -125,6 +126,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_sensor_health ${PROJECT_NAME})
   ament_add_gtest(test_supervision test/test_supervision.cpp)
   target_link_libraries(test_supervision ${PROJECT_NAME})
+  ament_add_gtest(test_classification test/test_classification.cpp)
+  target_link_libraries(test_classification ${PROJECT_NAME})
 endif()
 
 ament_package()

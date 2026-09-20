@@ -211,6 +211,14 @@
       visibility_max_range_m: 300.0
       visibility_margin_m: 10.0
 
+    classification:
+      person_min_height_m: 1.10
+      person_max_height_m: 2.30
+      person_max_footprint_m: 1.00
+      person_min_points: 4
+      debris_max_height_m: 0.60
+      equipment_min_footprint_m: 1.60
+
     watchdog:
       heartbeat_timeout_s: 2.0
       eval_period_s: 0.5
