@@ -30,6 +30,7 @@
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
 #include "argus_core/range_image.hpp"
+#include "fusion_markers.hpp"
 
 namespace argus {
 
@@ -582,177 +583,16 @@ private:
     }
 
     void publish_markers(const ObstacleArray& out, const FusionResult& result) {
-        MarkerArray markers;
-
-        Marker gauge;
-        gauge.header = out.header;
-        gauge.ns = "gauge";
-        gauge.id = 0;
-        gauge.type = Marker::LINE_LIST;
-        gauge.action = Marker::ADD;
-        gauge.pose.orientation.w = 1.0;
-        gauge.scale.x = 0.06;
-        gauge.color.r = 0.25f;
-        gauge.color.g = 0.80f;
-        gauge.color.b = 1.0f;
-        gauge.color.a = 0.9f;
-        gauge.frame_locked = true;
         std::vector<Eigen::Vector3f> vertices;
         std::vector<uint32_t> indices;
         pipeline_->gauge().to_mesh(marker_max_range_, vertices, indices);
-        if (indices.empty() && vertices.size() >= 12) {
-            const size_t n_ring = vertices.size() / 2;
-            for (size_t i = 0; i < n_ring; ++i) {
-                const size_t j = (i + 1) % n_ring;
-                append_point(gauge, vertices[i]);
-                append_point(gauge, vertices[j]);
-                append_point(gauge, vertices[i + n_ring]);
-                append_point(gauge, vertices[j + n_ring]);
-                append_point(gauge, vertices[i]);
-                append_point(gauge, vertices[i + n_ring]);
-            }
-        } else {
-            for (size_t i = 0; i + 1 < indices.size(); i += 2) {
-                append_point(gauge, vertices[indices[i]]);
-                append_point(gauge, vertices[indices[i + 1]]);
-            }
+        std::vector<uint8_t> severities;
+        severities.reserve(result.tracks.size());
+        for (const Track& t : result.tracks) {
+            severities.push_back(severity_of(t));
         }
-        markers.markers.push_back(gauge);
-
-        const size_t n = std::min(result.tracks.size(), marker_max_obstacles_);
-        std::vector<uint32_t> visible_ids;
-        visible_ids.reserve(n);
-        for (size_t i = 0; i < n; ++i) {
-            const Track& t = result.tracks[i];
-            const uint8_t severity = severity_of(t);
-            markers.markers.push_back(box_marker(out.header, t, severity));
-            markers.markers.push_back(edge_marker(out.header, t, severity));
-            markers.markers.push_back(label_marker(out.header, t, severity));
-            visible_ids.push_back(t.id);
-        }
-        for (uint32_t id : tracked_ids_) {
-            if (std::find(visible_ids.begin(), visible_ids.end(), id) != visible_ids.end()) {
-                continue;
-            }
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_box", static_cast<int32_t>(id)));
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_edges", static_cast<int32_t>(id)));
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_label", static_cast<int32_t>(id)));
-        }
-        tracked_ids_ = visible_ids;
-
-        pub_markers_->publish(markers);
-    }
-
-    static void append_point(Marker& marker, const Eigen::Vector3f& p) {
-        geometry_msgs::msg::Point point;
-        point.x = p.x();
-        point.y = p.y();
-        point.z = p.z();
-        marker.points.push_back(point);
-    }
-
-    static void marker_colour(Marker& marker, uint8_t severity) {
-        if (severity == Obstacle::SEVERITY_CRITICAL) {
-            marker.color.r = 1.0f;
-            marker.color.g = 0.20f;
-            marker.color.b = 0.20f;
-        } else if (severity == Obstacle::SEVERITY_WARNING) {
-            marker.color.r = 1.0f;
-            marker.color.g = 0.65f;
-            marker.color.b = 0.10f;
-        } else {
-            marker.color.r = 0.95f;
-            marker.color.g = 0.90f;
-            marker.color.b = 0.30f;
-        }
-    }
-
-    static Marker box_marker(const std_msgs::msg::Header& header, const Track& t,
-                             uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_box";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::CUBE;
-        m.action = Marker::ADD;
-        m.pose.position.x = t.state(0);
-        m.pose.position.y = t.state(1);
-        m.pose.position.z = t.state(2);
-        m.pose.orientation.w = 1.0;
-        m.scale.x = std::max(t.extent(0), 0.10f);
-        m.scale.y = std::max(t.extent(1), 0.10f);
-        m.scale.z = std::max(t.extent(2), 0.10f);
-        marker_colour(m, severity);
-        m.color.a = 0.18f;
-        m.frame_locked = true;
-        return m;
-    }
-
-    static Marker edge_marker(const std_msgs::msg::Header& header, const Track& t,
-                              uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_edges";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::LINE_LIST;
-        m.action = Marker::ADD;
-        m.pose.orientation.w = 1.0;
-        m.scale.x = 0.05;
-        marker_colour(m, severity);
-        m.color.a = 0.95f;
-        m.frame_locked = true;
-
-        const float hx = std::max(t.extent(0), 0.10f) * 0.5f;
-        const float hy = std::max(t.extent(1), 0.10f) * 0.5f;
-        const float hz = std::max(t.extent(2), 0.10f) * 0.5f;
-        const Eigen::Vector3f c = t.state.head<3>();
-        const Eigen::Vector3f corner[8] = {
-            c + Eigen::Vector3f(-hx, -hy, -hz), c + Eigen::Vector3f(hx, -hy, -hz),
-            c + Eigen::Vector3f(hx, hy, -hz),   c + Eigen::Vector3f(-hx, hy, -hz),
-            c + Eigen::Vector3f(-hx, -hy, hz),  c + Eigen::Vector3f(hx, -hy, hz),
-            c + Eigen::Vector3f(hx, hy, hz),    c + Eigen::Vector3f(-hx, hy, hz)};
-        const int edge[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
-                                 {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
-        for (const auto& e : edge) {
-            append_point(m, corner[e[0]]);
-            append_point(m, corner[e[1]]);
-        }
-        return m;
-    }
-
-    static Marker label_marker(const std_msgs::msg::Header& header, const Track& t,
-                               uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_label";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::TEXT_VIEW_FACING;
-        m.action = Marker::ADD;
-        m.pose.position.x = t.state(0);
-        m.pose.position.y = t.state(1);
-        m.pose.position.z = t.state(2) + std::max(t.extent(2), 0.10f) * 0.5f + 0.4f;
-        m.pose.orientation.w = 1.0;
-        m.scale.z = 0.7;
-        marker_colour(m, severity);
-        m.color.a = 1.0f;
-        m.frame_locked = true;
-        char buf[48];
-        std::snprintf(buf, sizeof(buf), "%.1f m", static_cast<double>(t.nearest_range));
-        m.text = buf;
-        return m;
-    }
-
-    static Marker delete_marker(const std_msgs::msg::Header& header, const std::string& ns,
-                                int32_t id) {
-        Marker m;
-        m.header = header;
-        m.ns = ns;
-        m.id = id;
-        m.action = Marker::DELETE;
-        return m;
+        pub_markers_->publish(build_frame_markers(out.header, vertices, indices, result.tracks,
+                                                  severities, marker_max_obstacles_, tracked_ids_));
     }
 
     Obstacle to_obstacle(const Track& t) {

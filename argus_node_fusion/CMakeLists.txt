@@ -19,7 +19,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(argus_core REQUIRED)
 find_package(argus_msgs REQUIRED)
 
-add_executable(argus_fusion_node src/argus_fusion_node.cpp)
+add_executable(argus_fusion_node src/argus_fusion_node.cpp src/fusion_markers.cpp)
 target_compile_features(argus_fusion_node PUBLIC cxx_std_17)
 ament_target_dependencies(argus_fusion_node
   rclcpp sensor_msgs std_msgs geometry_msgs visualization_msgs argus_core argus_msgs)
