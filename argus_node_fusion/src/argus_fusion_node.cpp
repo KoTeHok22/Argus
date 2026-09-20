@@ -746,9 +746,23 @@ private:
         out.obstacles_detected = 0;
         out.fps = 0.0f;
         out.model_ready = false;
+        out.explain = "DEGRADED: полные кадры не поступают\n";
         pub_obstacles_->publish(out);
+
+        GaugeState gs;
+        gs.header = out.header;
+        gs.half_width = gauge_params_.half_width;
+        gs.height = gauge_params_.height;
+        gs.nose_offset = gauge_params_.nose_offset;
+        gs.max_range = gauge_params_.max_range;
+        gs.train_speed_mps = current_speed();
+        gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        gs.clear_range_m = 0.0f;
+        gs.speed_limit_mps = 0.0f;
+        pub_gauge_state_->publish(gs);
+
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-                             "полные кадры не поступают, STATUS_DEGRADED");
+                             "полные кадры не поступают, STATUS_DEGRADED (лимит скорости 0)");
     }
 
     struct FrameSlot {
