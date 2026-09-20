@@ -61,7 +61,7 @@ scripts/ci/all.sh      # lint + build + test
 |---|---|
 | `argus_core` | Алгоритмы, C++ тесты, CLI `offline_detector` |
 | `argus_msgs` | Сообщения ROS 2 |
-| `argus_node_*` | Ноды обработки |
+| `argus_node_*` | Ноды обработки и watchdog живости |
 | `argus_launch` | Launch-файлы и конфиги |
 | `argus_eval` | Метрики и оценка |
 | `argus_web` | Панель в браузере |
