@@ -81,6 +81,11 @@ def generate_launch_description():
             name='argus_watchdog', output='screen',
             parameters=[params_file],
         ),
+        Node(
+            package='argus_node_recorder', executable='argus_recorder_node',
+            name='argus_recorder', output='screen',
+            parameters=[params_file],
+        ),
     ]
 
     bag_with_loop = PythonExpression(

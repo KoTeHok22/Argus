@@ -211,3 +211,9 @@
       heartbeat_timeout_s: 2.0
       eval_period_s: 0.5
       critical_nodes: [argus_preprocess, argus_detector, argus_fusion]
+
+    recorder:
+      output_dir: /tmp/argus_events
+      max_file_mb: 64
+      max_files: 24
+      flush_period_s: 1.0
