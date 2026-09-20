@@ -20,6 +20,7 @@
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/candidate.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
+#include <argus_msgs/msg/diagnostics.hpp>
 #include <argus_msgs/msg/gauge_state.hpp>
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
@@ -34,6 +35,7 @@ namespace argus {
 
 using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using AnomalySetMsg = argus_msgs::msg::AnomalySet;
+using DiagnosticsMsg = argus_msgs::msg::Diagnostics;
 using GaugeState = argus_msgs::msg::GaugeState;
 using Obstacle = argus_msgs::msg::Obstacle;
 using ObstacleArray = argus_msgs::msg::ObstacleArray;
@@ -208,6 +210,11 @@ public:
                 } else {
                     dead_nodes_.clear();
                 }
+            });
+        sub_sensor_ = create_subscription<DiagnosticsMsg>(
+            "/argus/diagnostics", qos, [this](DiagnosticsMsg::ConstSharedPtr msg) {
+                sensor_ok_ = msg->sensor_ok;
+                last_sensor_diag_at_ = std::chrono::steady_clock::now();
             });
         if (!speed_topic_.empty()) {
             sub_speed_ = create_subscription<std_msgs::msg::Float32>(
@@ -474,6 +481,9 @@ private:
         if (!system_ok_ && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
+        if (!sensor_ok_ && status == ObstacleArray::STATUS_CLEAR) {
+            status = ObstacleArray::STATUS_DEGRADED;
+        }
         out.status = status;
         out.nearest_range_m = result.alert ? result.nearest_range_m : -1.0f;
         out.obstacles_detected = static_cast<uint32_t>(out.obstacles.size());
@@ -523,7 +533,9 @@ private:
                 static_cast<uint8_t>(t.votes_free_space + t.votes_no_return + t.votes_geometry);
             text += format_alert(t, reason);
         } else if (out.status == ObstacleArray::STATUS_DEGRADED) {
-            if (!system_ok_) {
+            if (!sensor_ok_) {
+                text += "DEGRADED: сенсор неисправен (загрязнение/перекрытие окна)\n";
+            } else if (!system_ok_) {
                 text += "DEGRADED: молчат критические узлы: " + dead_nodes_ + "\n";
             } else {
                 text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
@@ -889,7 +901,10 @@ private:
     BrakingParams braking_;
     std::chrono::steady_clock::time_point last_speed_at_{};
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
+    rclcpp::Subscription<DiagnosticsMsg>::SharedPtr sub_sensor_;
     rclcpp::Publisher<GaugeState>::SharedPtr pub_gauge_state_;
+    bool sensor_ok_ = true;
+    std::chrono::steady_clock::time_point last_sensor_diag_at_{};
     bool publish_markers_ = true;
     float marker_max_range_ = 60.0f;
     size_t marker_max_obstacles_ = 16;

@@ -79,6 +79,14 @@
       alpha_steady: 0.02
       warmup_frames: 200
 
+    sensor_health:
+      max_no_return_ratio: 0.6
+      min_valid_ratio: 0.10
+      valid_drop_factor: 0.5
+      warmup_frames: 30
+      bad_frames_to_raise: 20
+      good_frames_to_clear: 20
+
     detector_no_return:
       enabled: true
       min_missing_run: 8

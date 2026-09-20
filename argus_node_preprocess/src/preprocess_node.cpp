@@ -15,6 +15,7 @@
 #include "argus_core/cloud_filter.hpp"
 #include "argus_core/ground.hpp"
 #include "argus_core/range_image.hpp"
+#include "argus_core/sensor_health.hpp"
 
 namespace argus {
 
@@ -69,6 +70,21 @@ public:
             gp.forward_axis = ForwardAxis::NegY;
         }
         ground_ = std::make_unique<GroundSegmenter>(gp);
+
+        SensorHealthParams shp;
+        shp.max_no_return_ratio =
+            static_cast<float>(declare_parameter<double>("sensor_health.max_no_return_ratio", 0.6));
+        shp.min_valid_ratio =
+            static_cast<float>(declare_parameter<double>("sensor_health.min_valid_ratio", 0.10));
+        shp.valid_drop_factor =
+            static_cast<float>(declare_parameter<double>("sensor_health.valid_drop_factor", 0.5));
+        shp.warmup_frames =
+            static_cast<uint32_t>(declare_parameter<int>("sensor_health.warmup_frames", 30));
+        shp.bad_frames_to_raise =
+            static_cast<uint32_t>(declare_parameter<int>("sensor_health.bad_frames_to_raise", 20));
+        shp.good_frames_to_clear =
+            static_cast<uint32_t>(declare_parameter<int>("sensor_health.good_frames_to_clear", 20));
+        sensor_health_ = std::make_unique<SensorHealthMonitor>(shp);
 
         auto qos = rclcpp::QoS(10);
         sub_ = create_subscription<PointCloud2>(
@@ -169,6 +185,16 @@ private:
         pub_clean_->publish(make_clean_msg(cloud, ri, stamp));
         pub_cloud_->publish(make_cloud_pc2(cloud, stamp));
 
+        const SensorHealthStatus sh = sensor_health_->update(
+            stats.n_raw, stats.n_valid, static_cast<uint64_t>(cloud.no_return_raw.size()));
+        if (!sh.ok && !sensor_alarm_logged_) {
+            RCLCPP_ERROR(get_logger(), "СЕНСОР НЕИСПРАВЕН: no_return=%.2f valid=%.2f baseline=%.0f",
+                         sh.no_return_ratio, sh.valid_ratio, sh.baseline_valid);
+            sensor_alarm_logged_ = true;
+        } else if (sh.ok) {
+            sensor_alarm_logged_ = false;
+        }
+
         Diagnostics d;
         d.header.stamp = stamp;
         d.header.frame_id = cloud.frame_id;
@@ -189,6 +215,9 @@ private:
         d.t_ground_ms = t_ground_ms;
         d.fps = (t_total_ms_prev_ > 0.0f) ? 1000.0f / t_total_ms_prev_ : 0.0f;
         d.frames_processed = ++frames_processed_;
+        d.sensor_ok = sh.ok;
+        d.no_return_ratio = sh.no_return_ratio;
+        d.valid_ratio = sh.valid_ratio;
         pub_diag_->publish(d);
 
         t_total_ms_prev_ = ms_since(t_start);
@@ -204,6 +233,8 @@ private:
     FilterParams params_;
     RangeImageParams ri_params_;
     std::unique_ptr<GroundSegmenter> ground_;
+    std::unique_ptr<SensorHealthMonitor> sensor_health_;
+    bool sensor_alarm_logged_ = false;
     bool layout_error_logged_ = false;
     uint64_t frames_processed_ = 0;
     float t_total_ms_prev_ = 0.0f;
