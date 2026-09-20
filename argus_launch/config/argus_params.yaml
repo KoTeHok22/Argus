@@ -119,6 +119,7 @@
       residual_threshold_m: 0.5
       min_range_m: 4.0
       max_range_m: 45.0
+      max_frame_gap_s: 0.5
 
     detector_free_space:
       enabled: true

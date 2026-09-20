@@ -97,6 +97,8 @@ public:
             "detector_temporal.min_range_m", temporal_params.min_range_m));
         temporal_params.max_range_m = static_cast<float>(declare_parameter<double>(
             "detector_temporal.max_range_m", temporal_params.max_range_m));
+        temporal_params.max_frame_gap_s = declare_parameter<double>(
+            "detector_temporal.max_frame_gap_s", temporal_params.max_frame_gap_s);
 
         free_space_enabled_ = declare_parameter<bool>("detector_free_space.enabled", false);
         geom_enabled_ = declare_parameter<bool>("detector_geometry.enabled", true);

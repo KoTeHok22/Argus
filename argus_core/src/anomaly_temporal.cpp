@@ -15,6 +15,7 @@ void TemporalResidualDetector::reset() {
     history_.clear();
     width_ = 0;
     height_ = 0;
+    last_stamp_s_ = -1.0;
 }
 
 AnomalySet TemporalResidualDetector::detect(const CleanCloud& cloud, const RangeImage& ri) {
@@ -23,6 +24,15 @@ AnomalySet TemporalResidualDetector::detect(const CleanCloud& cloud, const Range
     if (!ri.valid() || params_.window_frames == 0) {
         reset();
         return out;
+    }
+    if (cloud.stamp_s > 0.0 && last_stamp_s_ > 0.0) {
+        const double gap = cloud.stamp_s - last_stamp_s_;
+        if (gap < 0.0 || gap > params_.max_frame_gap_s) {
+            history_.clear();
+        }
+    }
+    if (cloud.stamp_s > 0.0) {
+        last_stamp_s_ = cloud.stamp_s;
     }
     if (width_ != ri.width || height_ != ri.height) {
         history_.clear();
