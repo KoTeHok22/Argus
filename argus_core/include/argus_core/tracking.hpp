@@ -61,4 +61,12 @@ private:
 
 float compute_ttc(const Track& t, float train_speed_mps);
 
+struct BrakingParams {
+    float decel_mps2 = 1.3f;
+    float reaction_s = 0.5f;
+    float margin_m = 10.0f;
+};
+
+float braking_distance_m(float speed_mps, const BrakingParams& p);
+
 } // namespace argus

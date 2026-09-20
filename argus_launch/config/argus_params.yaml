@@ -192,7 +192,11 @@
     vehicle:
       speed_topic: ""
       default_speed_mps: 0.0
+      speed_stale_s: 1.0
       braking_decel_mps2: 1.3
+      reaction_s: 0.5
+      braking_margin_m: 10.0
+      dynamic_envelope: true
 
     watchdog:
       heartbeat_timeout_s: 2.0

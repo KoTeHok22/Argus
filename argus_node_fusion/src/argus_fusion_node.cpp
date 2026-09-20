@@ -1,6 +1,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
@@ -14,9 +15,12 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include <std_msgs/msg/float32.hpp>
+
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/candidate.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
+#include <argus_msgs/msg/gauge_state.hpp>
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
 
@@ -30,6 +34,7 @@ namespace argus {
 
 using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using AnomalySetMsg = argus_msgs::msg::AnomalySet;
+using GaugeState = argus_msgs::msg::GaugeState;
 using Obstacle = argus_msgs::msg::Obstacle;
 using ObstacleArray = argus_msgs::msg::ObstacleArray;
 using Candidate = argus_msgs::msg::Candidate;
@@ -104,7 +109,23 @@ public:
         if (max_pending_ == 0) {
             throw std::invalid_argument("fusion.max_pending_frames must be > 0");
         }
-        train_speed_ = declare_parameter<double>("vehicle.default_speed_mps", 0.0);
+        default_speed_ = declare_parameter<double>("vehicle.default_speed_mps", 0.0);
+        train_speed_ = default_speed_;
+        speed_topic_ = declare_parameter<std::string>("vehicle.speed_topic", "");
+        speed_stale_s_ = declare_parameter<double>("vehicle.speed_stale_s", 1.0);
+        braking_.decel_mps2 =
+            static_cast<float>(declare_parameter<double>("vehicle.braking_decel_mps2", 1.3));
+        braking_.reaction_s =
+            static_cast<float>(declare_parameter<double>("vehicle.reaction_s", 0.5));
+        braking_.margin_m =
+            static_cast<float>(declare_parameter<double>("vehicle.braking_margin_m", 10.0));
+        if (braking_.decel_mps2 <= 0.0f) {
+            throw std::invalid_argument("vehicle.braking_decel_mps2 must be > 0");
+        }
+        if (speed_stale_s_ <= 0.0) {
+            throw std::invalid_argument("vehicle.speed_stale_s must be > 0");
+        }
+        dynamic_envelope_ = declare_parameter<bool>("vehicle.dynamic_envelope", true);
         publish_markers_ = declare_parameter<bool>("fusion.publish_markers", true);
         marker_max_range_ =
             static_cast<float>(declare_parameter<double>("fusion.marker_max_range_m", 60.0));
@@ -188,6 +209,18 @@ public:
                     dead_nodes_.clear();
                 }
             });
+        if (!speed_topic_.empty()) {
+            sub_speed_ = create_subscription<std_msgs::msg::Float32>(
+                speed_topic_, qos, [this](std_msgs::msg::Float32::ConstSharedPtr msg) {
+                    if (std::isfinite(msg->data) && msg->data >= 0.0f) {
+                        train_speed_ = msg->data;
+                        last_speed_at_ = std::chrono::steady_clock::now();
+                        speed_live_ = true;
+                    }
+                });
+            RCLCPP_INFO(get_logger(), "скорость поезда: топик '%s'", speed_topic_.c_str());
+        }
+        pub_gauge_state_ = create_publisher<GaugeState>("/argus/gauge_state", qos);
 
         const auto timer_period = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::duration<double>(stale_timeout_));
@@ -355,10 +388,11 @@ private:
         if (pose_valid && slot.free_space) {
             free_space = msg_to_set(*slot.free_space);
         }
+        const float speed_mps = current_speed();
         const FusionResult result =
             pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
                               slot.temporal ? msg_to_set(*slot.temporal) : AnomalySet{}, free_space,
-                              dt, static_cast<float>(train_speed_), pose, true, pose_valid);
+                              dt, speed_mps, pose, true, pose_valid);
         const float processing_ms = ms_since(t0);
         ++frames_processed_;
 
@@ -448,6 +482,7 @@ private:
         out.model_ready = false;
         out.explain = explain_text(result, out, clean.header.frame_id);
         pub_obstacles_->publish(out);
+        publish_gauge_state(out);
 
         publish_explain(out);
         if (pub_markers_) {
@@ -460,6 +495,18 @@ private:
                         out.obstacles_detected, result.nearest_forward_m, result.nearest_range_m,
                         result.ttc_s);
         }
+    }
+
+    void publish_gauge_state(const ObstacleArray& out) {
+        GaugeState gs;
+        gs.header = out.header;
+        gs.half_width = gauge_params_.half_width;
+        gs.height = gauge_params_.height;
+        gs.nose_offset = gauge_params_.nose_offset;
+        gs.max_range = gauge_params_.max_range;
+        gs.train_speed_mps = current_speed();
+        gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        pub_gauge_state_->publish(gs);
     }
 
     std::string explain_text(const FusionResult& result, const ObstacleArray& out,
@@ -720,9 +767,29 @@ private:
         return o;
     }
 
+    float effective_critical_range() const {
+        if (!dynamic_envelope_) {
+            return params_.critical_range_m;
+        }
+        return std::max(params_.critical_range_m, braking_distance_m(current_speed(), braking_));
+    }
+
+    float current_speed() const {
+        if (speed_live_) {
+            const double idle =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - last_speed_at_)
+                    .count();
+            if (idle <= speed_stale_s_) {
+                return static_cast<float>(train_speed_);
+            }
+        }
+        return static_cast<float>(default_speed_);
+    }
+
     uint8_t severity_of(const Track& t) {
-        const bool critical = t.nearest_range < params_.critical_range_m ||
-                              (t.ttc >= 0.0f && t.ttc < params_.critical_ttc_s);
+        const float critical_range = effective_critical_range();
+        const bool critical =
+            t.nearest_range < critical_range || (t.ttc >= 0.0f && t.ttc < params_.critical_ttc_s);
         if (critical) {
             return Obstacle::SEVERITY_CRITICAL;
         }
@@ -814,6 +881,15 @@ private:
     double default_dt_ = 0.1;
     double stale_timeout_ = 1.0;
     double train_speed_ = 0.0;
+    double default_speed_ = 0.0;
+    std::string speed_topic_;
+    double speed_stale_s_ = 1.0;
+    bool dynamic_envelope_ = true;
+    bool speed_live_ = false;
+    BrakingParams braking_;
+    std::chrono::steady_clock::time_point last_speed_at_{};
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
+    rclcpp::Publisher<GaugeState>::SharedPtr pub_gauge_state_;
     bool publish_markers_ = true;
     float marker_max_range_ = 60.0f;
     size_t marker_max_obstacles_ = 16;
