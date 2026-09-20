@@ -71,7 +71,7 @@ std::vector<Cluster> merge_temporal_clusters(std::vector<Cluster> clusters,
     return merged;
 }
 
-}
+} // namespace
 
 FusionParams default_fusion_params() {
     return FusionParams{};

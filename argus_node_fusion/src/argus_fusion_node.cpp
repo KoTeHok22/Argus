@@ -21,6 +21,7 @@
 #include <argus_msgs/msg/obstacle_array.hpp>
 
 #include "argus_core/explain.hpp"
+#include "argus_core/frame_sync.hpp"
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
 #include "argus_core/range_image.hpp"
@@ -113,31 +114,47 @@ public:
             throw std::invalid_argument("fusion.marker_max_range_m must be > 0");
         }
 
+        sync_tolerance_ns_ = static_cast<uint64_t>(std::max<int>(
+                                 declare_parameter<int>("fusion.sync_tolerance_ms", 30), 1)) *
+                             1000000ULL;
+        pose_tolerance_ns_ = static_cast<uint64_t>(std::max<int>(
+                                 declare_parameter<int>("fusion.pose_tolerance_ms", 100), 1)) *
+                             1000000ULL;
+
         pipeline_ = std::make_unique<FusionPipeline>(ClearanceGauge(gauge_params_), params_);
+
+        FrameSyncParams sync_params;
+        sync_params.tolerance_ns = sync_tolerance_ns_;
+        sync_params.max_pending = max_pending_;
+        sync_params.require_temporal = params_.use_temporal_candidates;
+        sync_ = std::make_unique<FrameSynchronizer>(sync_params);
 
         auto qos = rclcpp::QoS(10);
         sub_clean_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key = sync_->add(FrameChannel::cloud, stamp_ns(msg->header.stamp));
                 slots_[key].cloud = msg;
                 try_process(key);
             });
         sub_geometry_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_g", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key =
+                    sync_->add(FrameChannel::geometry, stamp_ns(msg->header.stamp));
                 slots_[key].geometry = msg;
                 try_process(key);
             });
         sub_no_return_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_nr", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key =
+                    sync_->add(FrameChannel::no_return, stamp_ns(msg->header.stamp));
                 slots_[key].no_return = msg;
                 try_process(key);
             });
         if (params_.use_temporal_candidates) {
             sub_temporal_ = create_subscription<AnomalySetMsg>(
                 "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                    const uint64_t key = stamp_ns(msg->header.stamp);
+                    const uint64_t key =
+                        sync_->add(FrameChannel::temporal, stamp_ns(msg->header.stamp));
                     slots_[key].temporal = msg;
                     try_process(key);
                 });
@@ -272,16 +289,23 @@ private:
         return p;
     }
 
+    void drop_expired_slots() {
+        for (const uint64_t key : sync_->take_expired()) {
+            slots_.erase(key);
+            poses_.erase(key);
+        }
+    }
+
     void try_process(uint64_t key) {
+        drop_expired_slots();
         const auto it = slots_.find(key);
         if (it == slots_.end()) {
             return;
         }
-        const FrameSlot& slot = it->second;
-        if (!slot.cloud || !slot.geometry || !slot.no_return ||
-            (params_.use_temporal_candidates && !slot.temporal)) {
+        if (!sync_->complete(key)) {
             return;
         }
+        const FrameSlot& slot = it->second;
 
         const CleanCloud cloud = msg_to_cloud(*slot.cloud);
         RangeImageParams ri_params;
@@ -307,7 +331,7 @@ private:
 
         const auto t0 = std::chrono::steady_clock::now();
         Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
-        const auto pose_it = poses_.find(key);
+        const auto pose_it = nearest_pose(key);
         const bool pose_valid = pose_it != poses_.end();
         if (pose_valid) {
             pose = pose_it->second;
@@ -325,12 +349,35 @@ private:
 
         publish_result(result, *slot.cloud, processing_ms);
 
-        slots_.erase(slots_.begin(), slots_.upper_bound(key));
+        sync_->release(key);
+        slots_.erase(key);
         poses_.erase(poses_.begin(), poses_.upper_bound(key));
-        while (slots_.size() > max_pending_) {
-            slots_.erase(slots_.begin());
-        }
         last_output_ = std::chrono::steady_clock::now();
+    }
+
+    std::map<uint64_t, Eigen::Isometry3d>::const_iterator nearest_pose(uint64_t key) const {
+        if (poses_.empty()) {
+            return poses_.end();
+        }
+        auto it = poses_.lower_bound(key);
+        auto best = poses_.end();
+        uint64_t best_dist = UINT64_MAX;
+        if (it != poses_.end()) {
+            best = it;
+            best_dist = it->first - key;
+        }
+        if (it != poses_.begin()) {
+            auto prev = std::prev(it);
+            const uint64_t dist = key - prev->first;
+            if (dist < best_dist) {
+                best = prev;
+                best_dist = dist;
+            }
+        }
+        if (best != poses_.end() && best_dist <= pose_tolerance_ns_) {
+            return best;
+        }
+        return poses_.end();
     }
 
     void publish_result(const FusionResult& result, const CleanCloudMsg& clean,
@@ -367,12 +414,12 @@ private:
             candidate.votes_no_return = c.votes_no_return;
             candidate.votes_geometry = c.votes_geometry;
             candidate.votes_temporal = c.votes_temporal;
-            candidate.votes_temporal = c.votes_temporal;
             candidate.point_count = c.point_count;
             candidate.reason = reason_of(c);
             out.candidates.push_back(candidate);
         }
-        if (!result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
+        const bool pose_required = params_.use_free_space;
+        if (pose_required && !result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
         out.status = status;
@@ -411,16 +458,25 @@ private:
                 static_cast<uint8_t>(t.votes_free_space + t.votes_no_return + t.votes_geometry);
             text += format_alert(t, reason);
         } else if (out.status == ObstacleArray::STATUS_DEGRADED) {
-            text += "DEGRADED: нет валидной позы одометрии, свободное пространство не проверено\n";
+            text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
         } else {
             text += format_clear(frames_processed_, fps_);
             text += "\n";
         }
-        char tail[160];
+        char tail[256];
+        const FrameSyncStats& ss = sync_->stats();
         std::snprintf(
-            tail, sizeof(tail), "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n",
+            tail, sizeof(tail),
+            "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n"
+            "sync: arrivals=%llu snapped=%llu expired=%llu (нет cloud=%llu geom=%llu nr=%llu)\n",
             status_name(out.status).c_str(), out.obstacles_detected,
-            static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms));
+            static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms),
+            static_cast<unsigned long long>(ss.arrivals),
+            static_cast<unsigned long long>(ss.snapped),
+            static_cast<unsigned long long>(ss.expired),
+            static_cast<unsigned long long>(ss.expired_missing_cloud),
+            static_cast<unsigned long long>(ss.expired_missing_geometry),
+            static_cast<unsigned long long>(ss.expired_missing_no_return));
         text += tail;
         return text;
     }
@@ -744,6 +800,9 @@ private:
     size_t max_pending_ = 16;
 
     std::unique_ptr<FusionPipeline> pipeline_;
+    std::unique_ptr<FrameSynchronizer> sync_;
+    uint64_t sync_tolerance_ns_ = 30000000;
+    uint64_t pose_tolerance_ns_ = 100000000;
     std::map<uint64_t, FrameSlot> slots_;
     std::map<uint64_t, Eigen::Isometry3d> poses_;
     uint64_t last_stamp_ns_ = 0;
