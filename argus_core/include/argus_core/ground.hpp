@@ -8,8 +8,11 @@
 
 namespace argus {
 
+enum class GroundMethod { PatchworkPp, ZThreshold };
+
 struct GroundParams {
     bool enabled = true;
+    GroundMethod method = GroundMethod::ZThreshold;
     float sensor_height = 1.20f;
     float rail_zone_m = 2.0f;
     float rail_max_height = 0.55f;
@@ -42,6 +45,8 @@ public:
     void apply(CleanCloud& cloud, GroundStats* stats = nullptr);
 
 private:
+    void apply_z_threshold(CleanCloud& cloud, GroundStats& stats);
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

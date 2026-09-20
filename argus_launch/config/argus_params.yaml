@@ -21,7 +21,7 @@
 
     ground_segmentation:
       enabled: true
-      method: patchworkpp
+      method: z_threshold
       sensor_height: -1.20
       num_zones: 4
       num_sectors: 0

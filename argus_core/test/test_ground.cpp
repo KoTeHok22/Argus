@@ -29,6 +29,7 @@ TEST(Ground, RailAndFloorMarkedObstacleKept) {
 
     argus::GroundParams gp;
     gp.enabled = true;
+    gp.method = argus::GroundMethod::PatchworkPp;
     gp.sensor_height = 1.2f;
     gp.forward_axis = argus::ForwardAxis::NegY;
     gp.min_range = 0.5f;
@@ -73,6 +74,7 @@ TEST(Ground, PlatformRailAtHalfMeterIsMasked) {
 
     argus::GroundParams gp;
     gp.enabled = true;
+    gp.method = argus::GroundMethod::PatchworkPp;
     gp.sensor_height = 1.2f;
     gp.forward_axis = argus::ForwardAxis::NegY;
     argus::GroundSegmenter seg(gp);
@@ -105,6 +107,54 @@ TEST(Ground, DisabledLeavesMaskZero) {
     EXPECT_EQ(cloud.ground_mask[0], 0);
     EXPECT_EQ(cloud.ground_mask[1], 0);
     EXPECT_EQ(st.n_nonground, 2u);
+}
+
+TEST(Ground, ZThresholdMasksRailKeepsObstacle) {
+    argus::CleanCloud cloud;
+    for (int i = 0; i < 40; ++i) {
+        cloud.x.push_back(-1.4f);
+        cloud.y.push_back(-4.0f - 0.1f * static_cast<float>(i));
+        cloud.z.push_back(-1.05f);
+        cloud.intensity.push_back(8.0f);
+    }
+    for (int i = 0; i < 20; ++i) {
+        cloud.x.push_back(0.2f);
+        cloud.y.push_back(-16.9f);
+        cloud.z.push_back(0.47f);
+        cloud.intensity.push_back(20.0f);
+    }
+    for (int i = 0; i < 10; ++i) {
+        cloud.x.push_back(6.0f);
+        cloud.y.push_back(-8.0f);
+        cloud.z.push_back(-0.9f);
+        cloud.intensity.push_back(5.0f);
+    }
+
+    argus::GroundParams gp;
+    gp.enabled = true;
+    gp.method = argus::GroundMethod::ZThreshold;
+    gp.sensor_height = 1.2f;
+    gp.forward_axis = argus::ForwardAxis::NegY;
+    argus::GroundSegmenter seg(gp);
+    argus::GroundStats st;
+    seg.apply(cloud, &st);
+
+    uint32_t rail_hit = 0;
+    uint32_t box_hit = 0;
+    uint32_t wall_hit = 0;
+    for (size_t i = 0; i < 40; ++i) {
+        rail_hit += cloud.ground_mask[i] != 0 ? 1u : 0u;
+    }
+    for (size_t i = 40; i < 60; ++i) {
+        box_hit += cloud.ground_mask[i] != 0 ? 1u : 0u;
+    }
+    for (size_t i = 60; i < cloud.size(); ++i) {
+        wall_hit += cloud.ground_mask[i] != 0 ? 1u : 0u;
+    }
+    EXPECT_EQ(rail_hit, 40u);
+    EXPECT_EQ(box_hit, 0u);
+    EXPECT_EQ(wall_hit, 0u);
+    EXPECT_EQ(st.n_rail_fallback, 40u);
 }
 
 TEST(Fusion, GroundMaskDropsRailsWithoutFallbackFilter) {

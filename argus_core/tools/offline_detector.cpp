@@ -153,6 +153,7 @@ int main(int argc, char** argv) {
     float gauge_sensor_height = 1.20f;
     float odom_max_range = 120.0f;
     uint32_t odom_iterations = 4;
+    std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--frames" && i + 1 < argc) {
@@ -167,6 +168,8 @@ int main(int argc, char** argv) {
             odom_max_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--odom-iterations" && i + 1 < argc) {
             odom_iterations = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--ground-method" && i + 1 < argc) {
+            ground_method = argv[++i];
         } else if (a == "--carve-stride" && i + 1 < argc) {
             carve_stride = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--carve-max-range" && i + 1 < argc) {
@@ -196,7 +199,7 @@ int main(int argc, char** argv) {
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
-                     "[--odom-max-range M] [--odom-iterations N]\n";
+                     "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z]\n";
         return 2;
     }
 
@@ -251,6 +254,9 @@ int main(int argc, char** argv) {
     argus::GroundParams ground_params;
     ground_params.sensor_height = 1.2f;
     ground_params.forward_axis = axis;
+    if (ground_method == "z" || ground_method == "z_threshold") {
+        ground_params.method = argus::GroundMethod::ZThreshold;
+    }
     argus::GroundSegmenter ground(ground_params);
     argus::OdometryParams odom_params;
     odom_params.forward_axis = axis;

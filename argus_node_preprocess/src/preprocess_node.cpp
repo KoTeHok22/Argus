@@ -56,6 +56,11 @@ public:
         gp.enable_TGR = declare_parameter<bool>("ground_segmentation.enable_TGR", true);
         gp.num_zones = declare_parameter<int>("ground_segmentation.num_zones", 4);
         gp.num_sectors = declare_parameter<int>("ground_segmentation.num_sectors", 0);
+        const std::string method_name =
+            declare_parameter<std::string>("ground_segmentation.method", "z_threshold");
+        if (method_name == "z" || method_name == "z_threshold") {
+            gp.method = GroundMethod::ZThreshold;
+        }
         const std::string axis_name =
             declare_parameter<std::string>("ground_segmentation.forward_axis", "-y");
         if (!parse_forward_axis(axis_name, gp.forward_axis)) {
