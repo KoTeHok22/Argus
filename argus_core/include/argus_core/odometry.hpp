@@ -58,4 +58,7 @@ private:
     bool have_prev_ = false;
 };
 
+bool icp_find_nearest(const std::vector<Eigen::Vector3f>& pts, const Eigen::Vector3f& q,
+                      float voxel_size, float max_correspondence_m, Eigen::Vector3f& out);
+
 } // namespace argus

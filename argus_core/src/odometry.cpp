@@ -26,7 +26,13 @@ struct VoxelKeyHash {
     }
 };
 
-using VoxelMap = std::unordered_map<VoxelKey, Eigen::Vector3f, VoxelKeyHash>;
+struct VoxelRecord {
+    Eigen::Vector3f point = Eigen::Vector3f::Zero();
+    Eigen::Vector3f normal = Eigen::Vector3f::Zero();
+};
+
+using PointMap = std::unordered_map<VoxelKey, Eigen::Vector3f, VoxelKeyHash>;
+using RecordMap = std::unordered_map<VoxelKey, VoxelRecord, VoxelKeyHash>;
 
 VoxelKey key_of(const Eigen::Vector3f& p, float inv) {
     VoxelKey k;
@@ -34,6 +40,10 @@ VoxelKey key_of(const Eigen::Vector3f& p, float inv) {
     k.y = static_cast<int>(std::floor(p.y() * inv));
     k.z = static_cast<int>(std::floor(p.z() * inv));
     return k;
+}
+
+int search_radius(float max_correspondence_m, float vs) {
+    return std::max(1, std::min(3, static_cast<int>(std::ceil(max_correspondence_m / vs))));
 }
 
 std::vector<Eigen::Vector3f> downsample(const CleanCloud& cloud, const OdometryParams& p) {
@@ -45,7 +55,7 @@ std::vector<Eigen::Vector3f> downsample(const CleanCloud& cloud, const OdometryP
     const float inv = 1.0f / vs;
     const float min2 = p.min_range * p.min_range;
     const float max2 = p.max_range * p.max_range;
-    VoxelMap acc;
+    PointMap acc;
     acc.reserve(cloud.size() / 4 + 1);
     for (size_t i = 0; i < cloud.size(); ++i) {
         if (!p.keep_ground && !cloud.ground_mask.empty() && i < cloud.ground_mask.size() &&
@@ -66,41 +76,52 @@ std::vector<Eigen::Vector3f> downsample(const CleanCloud& cloud, const OdometryP
     return out;
 }
 
-VoxelMap index_cloud(const std::vector<Eigen::Vector3f>& cloud, float inv) {
-    VoxelMap m;
+RecordMap index_cloud(const std::vector<Eigen::Vector3f>& cloud, float inv) {
+    RecordMap m;
     m.reserve(cloud.size());
     for (const Eigen::Vector3f& p : cloud) {
-        m[key_of(p, inv)] = p;
+        m[key_of(p, inv)] = VoxelRecord{p, Eigen::Vector3f::Zero()};
     }
     return m;
 }
 
-bool nearest(const Eigen::Vector3f& q, const VoxelMap& map, float inv, int radius, float max_d2,
-             Eigen::Vector3f& out) {
+bool nearest(const Eigen::Vector3f& q, const RecordMap& map, float inv, float vs, int radius,
+             float max_d2, VoxelRecord& out) {
     const VoxelKey c = key_of(q, inv);
     float best = max_d2;
     bool found = false;
-    for (int dx = -radius; dx <= radius; ++dx) {
-        for (int dy = -radius; dy <= radius; ++dy) {
-            for (int dz = -radius; dz <= radius; ++dz) {
-                VoxelKey k{c.x + dx, c.y + dy, c.z + dz};
-                const auto it = map.find(k);
-                if (it == map.end()) {
-                    continue;
+    for (int r = 0; r <= radius; ++r) {
+        for (int dx = -r; dx <= r; ++dx) {
+            for (int dy = -r; dy <= r; ++dy) {
+                for (int dz = -r; dz <= r; ++dz) {
+                    if (std::max(std::abs(dx), std::max(std::abs(dy), std::abs(dz))) != r) {
+                        continue;
+                    }
+                    VoxelKey k{c.x + dx, c.y + dy, c.z + dz};
+                    const auto it = map.find(k);
+                    if (it == map.end()) {
+                        continue;
+                    }
+                    const float d2 = (it->second.point - q).squaredNorm();
+                    if (d2 < best) {
+                        best = d2;
+                        out = it->second;
+                        found = true;
+                    }
                 }
-                const float d2 = (it->second - q).squaredNorm();
-                if (d2 < best) {
-                    best = d2;
-                    out = it->second;
-                    found = true;
-                }
+            }
+        }
+        if (found) {
+            const float lim = static_cast<float>(r) * vs;
+            if (best <= lim * lim) {
+                break;
             }
         }
     }
     return found;
 }
 
-Eigen::Vector3f normal_at(const Eigen::Vector3f& p, const VoxelMap& map, float inv) {
+Eigen::Vector3f normal_at(const Eigen::Vector3f& p, const RecordMap& map, float inv) {
     const VoxelKey c = key_of(p, inv);
     Eigen::Vector3f acc = Eigen::Vector3f::Zero();
     int n = 0;
@@ -113,8 +134,8 @@ Eigen::Vector3f normal_at(const Eigen::Vector3f& p, const VoxelMap& map, float i
                 if (it == map.end()) {
                     continue;
                 }
-                pts[n++] = it->second;
-                acc += it->second;
+                pts[n++] = it->second.point;
+                acc += it->second.point;
             }
         }
     }
@@ -143,6 +164,21 @@ Eigen::Matrix3f rot_yaw_pitch(const Eigen::Vector3f& left, const Eigen::Vector3f
 }
 
 } // namespace
+
+bool icp_find_nearest(const std::vector<Eigen::Vector3f>& pts, const Eigen::Vector3f& q,
+                      float voxel_size, float max_correspondence_m, Eigen::Vector3f& out) {
+    const float vs = std::max(voxel_size, 0.05f);
+    const float inv = 1.0f / vs;
+    const RecordMap map = index_cloud(pts, inv);
+    const float max_d2 = max_correspondence_m * max_correspondence_m;
+    const int radius = search_radius(max_correspondence_m, vs);
+    VoxelRecord rec;
+    if (!nearest(q, map, inv, vs, radius, max_d2, rec)) {
+        return false;
+    }
+    out = rec.point;
+    return true;
+}
 
 TunnelOdometry::TunnelOdometry(const OdometryParams& p) : p_(p), gauge_(ClearanceGaugeParams{}) {
     ClearanceGaugeParams gp;
@@ -178,15 +214,12 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
     const Eigen::Vector3f up(0.0f, 0.0f, 1.0f);
     const float vs = std::max(p_.voxel_size, 0.05f);
     const float inv = 1.0f / vs;
-    const VoxelMap prev_map = index_cloud(prev_, inv);
-    std::unordered_map<VoxelKey, Eigen::Vector3f, VoxelKeyHash> prev_normals;
-    prev_normals.reserve(prev_map.size());
-    for (const auto& kv : prev_map) {
-        prev_normals.emplace(kv.first, normal_at(kv.second, prev_map, inv));
+    RecordMap prev_map = index_cloud(prev_, inv);
+    for (auto& kv : prev_map) {
+        kv.second.normal = normal_at(kv.second.point, prev_map, inv);
     }
     const float max_d2 = p_.max_correspondence_m * p_.max_correspondence_m;
-    const int radius =
-        std::max(1, std::min(3, static_cast<int>(std::ceil(p_.max_correspondence_m / vs))));
+    const int radius = search_radius(p_.max_correspondence_m, vs);
 
     float ds = 0.0f;
     float dyaw = 0.0f;
@@ -207,24 +240,22 @@ OdometryResult TunnelOdometry::update(const CleanCloud& cloud, double stamp_s) {
         uint32_t n_corr = 0;
         double abs_fwd = 0.0;
         for (const Eigen::Vector3f& src : cur) {
-            const Eigen::Vector3f q = R * src + t;
-            Eigen::Vector3f tgt;
-            if (!nearest(q, prev_map, inv, radius, max_d2, tgt)) {
+            const Eigen::Vector3f src_r = R * src;
+            const Eigen::Vector3f q = src_r + t;
+            VoxelRecord rec;
+            if (!nearest(q, prev_map, inv, vs, radius, max_d2, rec)) {
                 continue;
             }
-            const auto n_it = prev_normals.find(key_of(tgt, inv));
-            const Eigen::Vector3f nrm =
-                n_it == prev_normals.end() ? Eigen::Vector3f::Zero() : n_it->second;
+            const Eigen::Vector3f& nrm = rec.normal;
             if (nrm.squaredNorm() < 0.25f) {
                 continue;
             }
-            const Eigen::Vector3f src_r = R * src;
             Eigen::Vector4f J = Eigen::Vector4f::Zero();
             J(0) = nrm.dot(forward);
             J(1) = nrm.dot(up.cross(src_r));
             J(2) = nrm.dot(left.cross(src_r));
             J(3) = p_.lock_vertical ? 0.0f : nrm.dot(up);
-            const float residual = nrm.dot(tgt - q);
+            const float residual = nrm.dot(rec.point - q);
             AtA += J * J.transpose();
             Atb += J * residual;
             ++n_corr;

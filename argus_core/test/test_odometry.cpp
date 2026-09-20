@@ -1,3 +1,8 @@
+#include <cmath>
+#include <map>
+#include <tuple>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 #include "argus_core/odometry.hpp"
@@ -95,4 +100,72 @@ TEST(Odometry, DisabledStaysIdentity) {
     const auto r = odom.update(make_wall_cloud(2.0f), 0.1);
     EXPECT_TRUE(r.valid);
     EXPECT_TRUE(r.pose.isApprox(Eigen::Isometry3d::Identity(), 1e-9));
+}
+
+TEST(Odometry, ExpandingNearestMatchesFullRadiusCube) {
+    std::vector<Eigen::Vector3f> pts;
+    for (int i = -8; i <= 8; ++i) {
+        for (int j = -8; j <= 8; ++j) {
+            for (int k = -3; k <= 3; ++k) {
+                pts.emplace_back(0.51f * static_cast<float>(i) + 0.07f,
+                                 0.49f * static_cast<float>(j) - 0.11f,
+                                 0.53f * static_cast<float>(k) + 0.03f);
+            }
+        }
+    }
+    const float vs = 0.5f;
+    const float inv = 1.0f / vs;
+    const float max_c = 2.0f;
+    const float max_d2 = max_c * max_c;
+    const int radius = 3;
+    auto key_of = [inv](const Eigen::Vector3f& p) {
+        return std::tuple<int, int, int>(static_cast<int>(std::floor(p.x() * inv)),
+                                         static_cast<int>(std::floor(p.y() * inv)),
+                                         static_cast<int>(std::floor(p.z() * inv)));
+    };
+    std::map<std::tuple<int, int, int>, Eigen::Vector3f> map;
+    for (const auto& p : pts) {
+        map[key_of(p)] = p;
+    }
+    auto brute = [&](const Eigen::Vector3f& q, Eigen::Vector3f& out) {
+        const auto c = key_of(q);
+        float best = max_d2;
+        bool found = false;
+        for (int dx = -radius; dx <= radius; ++dx) {
+            for (int dy = -radius; dy <= radius; ++dy) {
+                for (int dz = -radius; dz <= radius; ++dz) {
+                    const auto k = std::make_tuple(std::get<0>(c) + dx, std::get<1>(c) + dy,
+                                                   std::get<2>(c) + dz);
+                    const auto it = map.find(k);
+                    if (it == map.end()) {
+                        continue;
+                    }
+                    const float d2 = (it->second - q).squaredNorm();
+                    if (d2 < best) {
+                        best = d2;
+                        out = it->second;
+                        found = true;
+                    }
+                }
+            }
+        }
+        return found;
+    };
+    std::vector<Eigen::Vector3f> queries = {
+        {0.1f, 0.2f, 0.0f},  {1.7f, -0.4f, 0.3f}, {3.1f, 2.8f, -0.6f},
+        {-2.2f, 1.1f, 0.9f}, {0.0f, 0.0f, 0.0f},  {10.0f, 0.0f, 0.0f},
+    };
+    for (size_t n = 0; n < 80; ++n) {
+        queries.push_back(pts[n * 17 % pts.size()] + Eigen::Vector3f(0.12f, -0.05f, 0.02f));
+    }
+    for (const auto& q : queries) {
+        Eigen::Vector3f a;
+        Eigen::Vector3f b;
+        const bool ok_a = argus::icp_find_nearest(pts, q, vs, max_c, a);
+        const bool ok_b = brute(q, b);
+        EXPECT_EQ(ok_a, ok_b);
+        if (ok_a && ok_b) {
+            EXPECT_NEAR((a - q).squaredNorm(), (b - q).squaredNorm(), 1e-6f);
+        }
+    }
 }
