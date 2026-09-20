@@ -13,13 +13,15 @@
 docker build -f docker/Dockerfile -t argus .
 docker run --rm --shm-size=256m \
     -v "$PWD/data/recordings":/data argus \
-    detect /data/doubleT_obstacle 0
+    detect /data/doubleT_obstacle
 ```
 
-Ожидаемый лог на `doubleT_obstacle`: `ALERT BLOCKED` с дистанции около 16.8 м. Топик лидара читается из `metadata.yaml` (у этого бэга он не `/lidar_points`).
+`--shm-size=256m` обязателен. Кадр Hesai ~24 МБ; без флага Fast-DDS не отдаёт `PointCloud2`, fusion уходит в `STATUS_DEGRADED` и тревоги нет.
+
+Ожидаемый лог на `doubleT_obstacle`: `ALERT BLOCKED` около 16.9 м. Топик лидара читается из `metadata.yaml` (у этого бэга он не `/lidar_points`).
 
 ```bash
-docker run --rm -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+docker run --rm --shm-size=256m -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v "$PWD/data/recordings":/data argus demo /data/doubleT_obstacle
 ```
 
@@ -57,7 +59,7 @@ ros2 launch argus_launch argus.launch.py \
 
 Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `c401b96d401d0d7db5348dd3effe7b6dcd1ecccf0bbf0c53d206f77092efefbb`.
 
-Одометрия на platform: 87 мс/кадр. Живой детектор geometry ≈ 42 мс. Полный кадр с картой тоннеля после T24 не переснимался; для сдачи достаточно geometry + no-return + габарит + трек.
+Живой `detect` на полном `doubleT_obstacle` (201 кадр): **198 BLOCKED** на 16.9 м, путь тревоги **28.5 мс / p95 32 мс**. Офлайн-одометрия на platform: 87 мс/кадр.
 
 ## Документы
 

@@ -21,14 +21,16 @@ docker run --rm --shm-size=256m \
     detect /data/doubleT_obstacle 0
 ```
 
-Второй аргумент — скорость bag: `1` реальное время, `0` быстрее (×10). Топик лидара берётся из `metadata.yaml`. На `doubleT_obstacle` это `/sensing/lidar/hesai128/pointcloud`.
+`--shm-size=256m` обязателен: кадр лидара ~24 МБ, стандартных 64 МБ `/dev/shm` в Docker не хватает. Без флага облако не доходит, fusion пишет `STATUS_DEGRADED`.
+
+Второй аргумент — скорость bag (`1` — реальное время). Топик лидара берётся из `metadata.yaml`. На `doubleT_obstacle` это `/sensing/lidar/hesai128/pointcloud`.
 
 Выход: строки `ALERT BLOCKED` с дистанции и в конце `frames=… blocked_alerts=…`.
 
 ## С визуализацией
 
 ```bash
-docker run --rm -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+docker run --rm --shm-size=256m -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v "$PWD/data/recordings":/data argus \
     demo /data/doubleT_obstacle
 ```

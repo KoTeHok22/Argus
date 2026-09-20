@@ -21,7 +21,8 @@ case "$MODE" in
     if [ "$RATE" = "0" ]; then
       RATE="1"
     fi
-    echo "bag=$BAG topic=$TOPIC rate=$RATE"
+    export ARGUS_LATENCY_CSV="${ARGUS_LATENCY_CSV:-/tmp/argus_latency.csv}"
+    echo "bag=$BAG topic=$TOPIC rate=$RATE csv=$ARGUS_LATENCY_CSV"
     python3 /opt/argus/detect_watch.py &
     WATCH_PID=$!
     setsid ros2 launch argus_launch argus.launch.py lidar_topic:="$TOPIC" &
@@ -64,15 +65,14 @@ case "$MODE" in
 Argus — препятствие в габарите поезда по 3D-лидару.
 
   docker build -f docker/Dockerfile -t argus .
-  docker run --rm --shm-size=256m -v /path/to/bags:/data argus detect /data/<bag_dir> [rate]
+  docker run --rm --shm-size=256m -v /path/to/bags:/data argus detect /data/<bag_dir>
 
   detect  прогон bag, печать /argus/obstacles, выход после конца записи
   demo    то же плюс RViz2 (нужен DISPLAY)
   eval    каркас отчёта
   shell   оболочка внутри образа
 
-rate=1 — реальное время, rate=0 — то же (кадры ~24 МБ, быстрее не ускоряет).
---shm-size=256m обязателен: облако не проходит через стандартный 64 МБ SHM.
+rate по умолчанию 1 (реальное время). --shm-size=256m обязателен: кадр ~24 МБ.
 Топик лидара читается из metadata.yaml.
 
 Пример:
