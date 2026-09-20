@@ -1,16 +1,15 @@
 # Архитектура Argus
 
-Статус: каркас. Диаграмма графа нод и бюджеты — в `PLAN.md` §3
-(внутренний документ, вне репозитория).
+Статус: девять пакетов ROS 2 Humble. Граф нод запускает `argus.launch.py`.
 
 ## Компоненты
 
 | Пакет | Роль |
 |---|---|
-| `argus_core` | Чистая библиотека без ROS: фильтр облака, range image, габарит, кластеризация, трекинг, лог объяснимости |
-| `argus_msgs` | Сообщения: `Obstacle`, `ObstacleArray`, `Diagnostics`, `GaugeState` |
+| `argus_core` | Библиотека без rclcpp: фильтр, range image, земля, одометрия, карта, детекторы, габарит, кластеризация, трекинг, fusion |
+| `argus_msgs` | `Obstacle`, `ObstacleArray`, `Diagnostics`, `GaugeState`, `CleanCloud`, `AnomalySet` |
 | `argus_node_preprocess` | Подписка на `PointCloud2`, sanity-фильтр, range image, диагностика |
-| `argus_node_odometry` | Одометрия (KISS-ICP, ограничение 4DoF) |
+| `argus_node_odometry` | 4DoF point-to-plane ICP, топик `/argus/pose` |
 | `argus_node_tunnel_model` | Модель свободного пространства + профиль сечения |
 | `argus_node_detector` | Три детектора аномалий |
 | `argus_node_fusion` | Голосование, габарит, кластеризация, трекинг, тревоги |

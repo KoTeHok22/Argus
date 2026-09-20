@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>shm_large</transport_id>
+                <type>SHM</type>
+                <segment_size>134217728</segment_size>
+                <maxMessageSize>67108864</maxMessageSize>
+                <port_queue_capacity>512</port_queue_capacity>
+                <healthy_check_timeout_ms>1000</healthy_check_timeout_ms>
+            </transport_descriptor>
+            <transport_descriptor>
+                <transport_id>udp_loopback</transport_id>
+                <type>UDPv4</type>
+                <maxMessageSize>65500</maxMessageSize>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="argus_participant" is_default_profile="true">
+            <rtps>
+                <useBuiltinTransports>false</useBuiltinTransports>
+                <userTransports>
+                    <transport_id>shm_large</transport_id>
+                    <transport_id>udp_loopback</transport_id>
+                </userTransports>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

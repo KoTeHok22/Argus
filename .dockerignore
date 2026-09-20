@@ -16,6 +16,10 @@ __pycache__/
 .pytest_cache/
 
 third_party/*/
+!third_party/argus.repos
+!third_party/patchworkpp
+!third_party/patchworkpp/**
+third_party/patchworkpp/.git
 
 .git/
 .gitignore

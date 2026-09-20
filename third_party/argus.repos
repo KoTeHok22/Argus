@@ -1,18 +1,5 @@
-# vcstool-манифест внешних зависимостей Argus.
-# Пиннить по конкретному SHA после первого успешного билда (PLAN.md 5.1.7, 16.3.6).
-# Импорт: vcs import third_party < third_party/argus.repos
-
 repositories:
-  # --- Обязательные (BSD/MIT/Apache - юридически чистые, PLAN.md 18.6) ---
-  kiss_icp:
-    type: git
-    url: https://github.com/PRBonn/kiss-icp.git
-    version: main            # TODO: заменить на SHA после первого билда
   patchworkpp:
     type: git
     url: https://github.com/url-kaist/patchwork-plusplus.git
     version: 3e6903a1d5537a4cc2ace897b0bbb98a92d6014c
-  bonxai:
-    type: git
-    url: https://github.com/facontidavide/Bonxai.git
-    version: main            # TODO: заменить на SHA (MPL-2.0)

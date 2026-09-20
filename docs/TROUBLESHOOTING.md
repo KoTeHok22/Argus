@@ -45,9 +45,8 @@
 - `tunnel_model.carve_stride_az/_ring` — прореживание лучей с поворотом фазы по
   кадрам (перекрытие набирается за несколько кадров).
 
-Полный прогон `--tunnel` на 300 кадрах платформы при этих настройках всё ещё
-долгий; для интерактивной проверки берите `--frames 100` или офлайн-режим
-`--fusion`, который карту не ведёт.
+Полный прогон `--tunnel` на 300 кадрах платформы после T18 проходит целиком
+(блочная сетка). Для сдачи достаточно `--fusion` / `detect`: голос карты выключен.
 
 ## `/argus/anom_fs` молчит
 
@@ -61,6 +60,16 @@
 
 Проверьте `ros2 topic hz /argus/pose` и `ros2 topic echo
 /argus/diagnostics_model --field model_voxel_count`.
+
+## `detect` молчит, fusion пишет STATUS_DEGRADED
+
+Каждый кадр Hesai ~24 МБ. Без увеличенного `/dev/shm` Fast-DDS не отдаёт облако.
+
+```bash
+docker run --rm --shm-size=256m -v /path/to/bags:/data argus detect /data/<bag> 0
+```
+
+На Docker Desktop (Windows) SHM часто недоступен: в логе `SHM Transport is not supported`, кадры идут через UDP с задержкой. На Linux-хосте жюри `--shm-size=256m` обязателен.
 
 ## `STATUS_DEGRADED` на fusion
 

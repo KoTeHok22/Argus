@@ -7,6 +7,6 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
-mkdir -p third_party/src
-vcs import third_party/src < third_party/argus.repos
-echo "OK: зависимости импортированы в third_party/src"
+mkdir -p third_party
+vcs import third_party < third_party/argus.repos
+echo "OK: зависимости импортированы в third_party"

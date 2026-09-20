@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -eo pipefail
 
 source /opt/ros/humble/setup.bash
@@ -10,23 +9,50 @@ fi
 MODE="${1:-help}"
 shift || true
 
+bag_topic() {
+  python3 /opt/argus/bag_topic.py "$1"
+}
+
 case "$MODE" in
   detect)
     BAG="${1:?usage: detect <bag_dir> [rate]}"
     RATE="${2:-1.0}"
-    shift 2 || true
-    exec ros2 launch argus_launch argus.launch.py \
-        bag:="$BAG" rate:="$RATE" "$@"
+    TOPIC="$(bag_topic "$BAG")"
+    if [ "$RATE" = "0" ]; then
+      RATE="1"
+    fi
+    echo "bag=$BAG topic=$TOPIC rate=$RATE"
+    python3 /opt/argus/detect_watch.py &
+    WATCH_PID=$!
+    setsid ros2 launch argus_launch argus.launch.py lidar_topic:="$TOPIC" &
+    LAUNCH_PID=$!
+    sleep 5
+    ros2 bag play "$BAG" \
+        --storage sqlite3 \
+        --rate "$RATE" \
+        --disable-keyboard-controls \
+        --disable-loan-message \
+        --read-ahead-queue-size 8
+    sleep 2
+    kill -INT -"$LAUNCH_PID" 2>/dev/null || true
+    kill -INT "$WATCH_PID" 2>/dev/null || true
+    sleep 1
+    kill -TERM -"$LAUNCH_PID" 2>/dev/null || true
+    kill -TERM "$WATCH_PID" 2>/dev/null || true
+    wait "$WATCH_PID" 2>/dev/null || true
+    wait "$LAUNCH_PID" 2>/dev/null || true
     ;;
 
   demo)
     BAG="${1:?usage: demo <bag_dir>}"
-    exec ros2 launch argus_launch argus_demo.launch.py bag:="$BAG"
+    TOPIC="$(bag_topic "$BAG")"
+    exec ros2 launch argus_launch argus.launch.py \
+        bag:="$BAG" lidar_topic:="$TOPIC" rviz:=true
     ;;
 
   eval)
     BAG="${1:?usage: eval <bag_dir>}"
-    exec ros2 run argus_eval run_eval --bag "$BAG" --report
+    exec ros2 run argus_eval run_eval.py --bag "$BAG" --report
     ;;
 
   shell)
@@ -35,26 +61,24 @@ case "$MODE" in
 
   help|*)
     cat <<'EOF'
-Argus - обнаружение препятствий в тоннеле метро по данным 3D-лидара
+Argus — препятствие в габарите поезда по 3D-лидару.
 
-Использование:
-  docker run --rm -v /path/to/bags:/data argus detect /data/<bag_dir> [rate]
-      Детекция на bag-файле. rate=1.0 - реальное время, rate=0 - без задержек.
+  docker build -f docker/Dockerfile -t argus .
+  docker run --rm --shm-size=256m -v /path/to/bags:/data argus detect /data/<bag_dir> [rate]
 
-  docker run --rm -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
-      -v /path/to/bags:/data argus demo /data/<bag_dir>
-      Детекция с визуализацией в RViz2.
+  detect  прогон bag, печать /argus/obstacles, выход после конца записи
+  demo    то же плюс RViz2 (нужен DISPLAY)
+  eval    каркас отчёта
+  shell   оболочка внутри образа
 
-  docker run --rm -v /path/to/bags:/data argus eval /data/<bag_dir>
-      Оценка и метрики.
-
-  docker run --rm -it argus shell
-      Интерактивная оболочка.
+rate=1 — реальное время, rate=0 — то же (кадры ~24 МБ, быстрее не ускоряет).
+--shm-size=256m обязателен: облако не проходит через стандартный 64 МБ SHM.
+Топик лидара читается из metadata.yaml.
 
 Пример:
-  docker build -f docker/Dockerfile -t argus .
-  docker run --rm -v "$PWD/data/recordings":/data argus \
-      detect /data/roundT_doubleT
+  docker run --rm --shm-size=256m \
+      -v "$PWD/data/recordings":/data argus \
+      detect /data/doubleT_obstacle 0
 EOF
     ;;
 esac

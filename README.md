@@ -1,42 +1,75 @@
 # Argus
 
-Система обнаружения посторонних объектов в тоннеле метро по данным 3D-лидара.
+Посторонний объект в габарите поезда по облаку 3D-лидара.
 
 Инструмент обработки пространственных данных.
 
-## Что это
-
-Argus принимает поток `sensor_msgs/PointCloud2` от 128-канального лидара, установленного
-на беспилотном поезде, и на каждом кадре отвечает на вопрос: **есть ли в габарите движения
-поезда препятствие и на каком расстоянии оно находится**.
-
-Подход — не детекция объектов, а описание нормы: система строит модель «нормального»
-тоннеля и ищет всё, что в неё не вписывается. Три независимых признака аномальности
-(нарушение свободного пространства, потеря возвратов, геометрический остаток) объединяются
-голосованием, кластеризуются и подтверждаются трекингом.
-
-Документы:
-
-| Документ | О чём |
-|---|---|
-| [`PLAN.md`](PLAN.md) | План реализации: фазы, задачи, критерии выхода |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Архитектура решения |
-| [`docs/ALGORITHM.md`](docs/ALGORITHM.md) | Описание алгоритма |
-| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Эксперименты и что не сработало |
-| [`docs/DATA_FORMAT.md`](docs/DATA_FORMAT.md) | Формат входных данных |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Сборка и запуск |
+На каждом кадре система отвечает: есть ли препятствие в габарите 3×2.1 м и на каком расстоянии. Не нейросеть и не детектор «объектов вообще»: модель нормы тоннеля и отклонения от неё.
 
 ## Быстрый старт
 
 ```bash
+./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
-docker run --rm -v "$PWD/data":/data argus detect /data/recordings/roundT_doubleT
+docker run --rm --shm-size=256m \
+    -v "$PWD/data/recordings":/data argus \
+    detect /data/doubleT_obstacle 0
 ```
 
-## Статус
+Ожидаемый лог на `doubleT_obstacle`: `ALERT BLOCKED` с дистанции около 16.8 м. Топик лидара читается из `metadata.yaml` (у этого бэга он не `/lidar_points`).
 
-Каркас проекта. Реализация по фазам описана в [`PLAN.md`](PLAN.md).
+```bash
+docker run --rm -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v "$PWD/data/recordings":/data argus demo /data/doubleT_obstacle
+```
+
+Без Docker (ROS 2 Humble):
+
+```bash
+./scripts/fetch_third_party.sh
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+ros2 launch argus_launch argus.launch.py \
+    bag:=data/recordings/doubleT_obstacle \
+    lidar_topic:=/sensing/lidar/hesai128/pointcloud
+```
+
+## Что система делает
+
+1. Читает `PointCloud2` по фактической раскладке `fields[]`.
+2. Отбрасывает мусор и помечает лучи без возврата.
+3. Режет пол и рельсы порогом по Z в колее (Patchwork++ остаётся опцией).
+4. Ищет геометрический остаток относительно профиля стен и серии дыр в возвратах.
+5. Оставляет только то, что попало в габарит поезда, и подтверждает треком.
+
+Карта свободного пространства и 4DoF-одометрия есть, но голос карты по умолчанию выключен: на платформе он даёт ложные тревоги, а детекция F-D от него не зависит.
+
+## Что проверено
+
+| Данные | Результат |
+|---|---|
+| `doubleT_obstacle`, 200 кадров | 197 тревог с кадра 3, 16.8 м впереди |
+| `doubleT_platform`, 200 кадров | 0 тревог |
+| `new_data` голова `_0`/`_1` | узкий тоннель, трогание, 0 тревог |
+| `new_data` `_29`…`_31` | стоянка у широкого сечения, 0 тревог |
+| `new_data` `_110`/`_111` | 5 тревог на 5 м — плоский край, не вклейка |
+
+Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `c401b96d401d0d7db5348dd3effe7b6dcd1ecccf0bbf0c53d206f77092efefbb`.
+
+Одометрия на platform: 87 мс/кадр. Живой детектор geometry ≈ 42 мс. Полный кадр с картой тоннеля после T24 не переснимался; для сдачи достаточно geometry + no-return + габарит + трек.
+
+## Документы
+
+| Документ | О чём |
+|---|---|
+| [`docs/ALGORITHM.md`](docs/ALGORITHM.md) | Как устроен конвейер |
+| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали и что отвергли |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Пакеты и граф нод |
+| [`docs/DATA_FORMAT.md`](docs/DATA_FORMAT.md) | Раскладка PointCloud2 |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Сборка и запуск |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Частые отказы |
 
 ## Требования
 
-Ubuntu 22.04, ROS 2 Humble, Docker. GPU опционально.
+Ubuntu 22.04, ROS 2 Humble, Docker. GPU не нужен.
