@@ -13,6 +13,21 @@ constexpr int kStateDim = 6;
 
 ObstacleTracker::ObstacleTracker(const TrackingParams& p) : p_(p) {}
 
+uint32_t ObstacleTracker::required_hits_at(float nearest_range_m) const {
+    const float r = std::max(0.0f, nearest_range_m);
+    if (r <= p_.confirm_near_range_m) {
+        return p_.min_hits_to_confirm;
+    }
+    if (r >= p_.confirm_far_range_m) {
+        return p_.min_hits_to_confirm_far;
+    }
+    const float near = static_cast<float>(p_.min_hits_to_confirm);
+    const float far = static_cast<float>(p_.min_hits_to_confirm_far);
+    const float span = std::max(0.001f, p_.confirm_far_range_m - p_.confirm_near_range_m);
+    const float t = (r - p_.confirm_near_range_m) / span;
+    return static_cast<uint32_t>(std::lround(near + (far - near) * std::clamp(t, 0.0f, 1.0f)));
+}
+
 float compute_ttc(const Track& t, float train_speed_mps) {
     const float closing = train_speed_mps - t.state(3);
     if (closing <= 0.0f) {
@@ -52,8 +67,8 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
 
             tr.hits++;
             tr.misses = 0;
-            tr.confirmed = tr.hits >= p_.min_hits_to_confirm;
             tr.nearest_range = c.nearest_range;
+            tr.confirmed = tr.confirmed || tr.hits >= required_hits_at(tr.nearest_range);
             tr.volume = c.volume;
             tr.extent = c.max_corner - c.min_corner;
             tr.point_count = c.point_count;
@@ -81,8 +96,8 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
         t.covariance = Eigen::Matrix<float, 6, 6>::Identity() * p_.measurement_noise;
         t.hits = 1;
         t.misses = 0;
-        t.confirmed = t.hits >= p_.min_hits_to_confirm;
         t.nearest_range = clusters[j].nearest_range;
+        t.confirmed = t.hits >= required_hits_at(t.nearest_range);
         t.volume = clusters[j].volume;
         t.extent = clusters[j].max_corner - clusters[j].min_corner;
         t.point_count = clusters[j].point_count;

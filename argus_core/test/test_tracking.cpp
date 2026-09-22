@@ -71,3 +71,59 @@ TEST(Tracking, TtcClosingAndReceding) {
     t.state(3) = 12.0f;
     EXPECT_FLOAT_EQ(argus::compute_ttc(t, 10.0f), -1.0f);
 }
+
+TEST(Tracking, RequiredHitsGrowsWithRange) {
+    argus::TrackingParams p;
+    p.min_hits_to_confirm = 3;
+    p.min_hits_to_confirm_far = 5;
+    p.confirm_near_range_m = 60.0f;
+    p.confirm_far_range_m = 120.0f;
+    argus::ObstacleTracker tr(p);
+
+    EXPECT_EQ(tr.required_hits_at(16.9f), 3u);
+    EXPECT_EQ(tr.required_hits_at(60.0f), 3u);
+    EXPECT_EQ(tr.required_hits_at(90.0f), 4u);
+    EXPECT_EQ(tr.required_hits_at(160.0f), 5u);
+}
+
+TEST(Tracking, FarTrackNeedsAccumulation) {
+    argus::TrackingParams p;
+    p.min_hits_to_confirm = 3;
+    p.min_hits_to_confirm_far = 5;
+    p.confirm_near_range_m = 60.0f;
+    p.confirm_far_range_m = 120.0f;
+    argus::ObstacleTracker tr(p);
+
+    const auto out1 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    const auto out2 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    const auto out3 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    const auto out4 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    EXPECT_TRUE(out1.empty());
+    EXPECT_TRUE(out2.empty());
+    EXPECT_TRUE(out3.empty());
+    EXPECT_TRUE(out4.empty());
+    const auto out5 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    ASSERT_EQ(out5.size(), 1u);
+    EXPECT_EQ(out5[0].hits, 5u);
+}
+
+TEST(Tracking, ConfirmedStaysConfirmedAcrossRanges) {
+    argus::TrackingParams p;
+    p.min_hits_to_confirm = 3;
+    p.min_hits_to_confirm_far = 5;
+    p.confirm_near_range_m = 60.0f;
+    p.confirm_far_range_m = 120.0f;
+    argus::ObstacleTracker tr(p);
+
+    tr.update({make_cluster(0.0f, -16.0f, 0.0f)}, 0.1f, 0.0f);
+    tr.update({make_cluster(0.0f, -16.0f, 0.0f)}, 0.1f, 0.0f);
+    const auto confirmed_near = tr.update({make_cluster(0.0f, -16.0f, 0.0f)}, 0.1f, 0.0f);
+    ASSERT_EQ(confirmed_near.size(), 1u);
+    EXPECT_TRUE(confirmed_near[0].confirmed);
+
+    for (float y = -17.5f; y >= -160.0f; y -= 1.5f) {
+        const auto out = tr.update({make_cluster(0.0f, y, 0.0f)}, 0.1f, 0.0f);
+        ASSERT_EQ(out.size(), 1u);
+        EXPECT_TRUE(out[0].confirmed);
+    }
+}

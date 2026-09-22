@@ -1,6 +1,6 @@
 # Эксперименты
 
-Офлайн — `offline_detector` в `argus:dev`. Живой ROS — `docker run --shm-size=256m … argus detect`. Ось «вперёд» −Y, габарит 3.0×2.1 м, земля — порог по Z. Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `6102667a5df87fd04cc892a224fc486be0bc0e7f7675f1d51cdacb42516fcd4f`.
+Офлайн — `offline_detector` в `argus:dev`. Живой ROS — `docker run --shm-size=256m … argus detect`. Ось «вперёд» −Y, габарит 3.0×2.1 м, земля — порог по Z. Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `9352a301b50514745a43b531debde2f6e27e21176c84554a3c1024f55906a344`.
 
 ## Почему не нейросеть
 
@@ -18,6 +18,8 @@
 | `new_data` `_4`+`_5`, 100 кадров | 0 | Стоянка, узкий тоннель |
 | `new_data` `_29`+`_30`+`_31`, 150 кадров | 0 | Стоянка, широкое сечение (\|x\|p90≈6.4 м) |
 | `new_data` `_110`+`_111`, 100 кадров | **5/100**, кадры 9–13 | Кластер 4.96 м, centroid x≈1.53 y≈−4.99, ext.z≈0.01. Край, не F-D. Затем разгон 14 м/с |
+| **T31, `--fusion` obstacle 200** | **197/200**, first=3, 16.90 м | Лесенка 15/6/3 + M-of-N 3→5. CSV: `results/t31_obs_fusion200.csv` |
+| **T31, `--fusion` platform 300** | **0/300** | Дальний порог не добавил FP. CSV: `results/t31_plat_fusion300.csv` |
 
 Hold-out `squareT_platform_squareT_switch` до сдачи не запускался.
 
@@ -37,6 +39,7 @@ Hold-out `squareT_platform_squareT_switch` до сдачи не запускал
 | `odom.max_range` 120→60 | Путь короче на 12% | Не режем дальность ICP |
 | Patchwork++ как земля по умолчанию | В тоннеле пол плоский | Порог по Z в колее, 153→136 мс |
 | Полный куб соседей ICP 7³ | 343 пробы на точку | Слои Чебышева, 87 мс/кадр, путь как раньше |
+| Фиксированный `min_cluster_size=15` на 150 м | Объект даёт 5–8 точек, порог 15 — гарантированный пропуск | Лесенка 15/6/3 на 60/120/200 м + накопление 3→5 кадров |
 
 Полный журнал — `PROJECT_STATUS.md` §7.
 

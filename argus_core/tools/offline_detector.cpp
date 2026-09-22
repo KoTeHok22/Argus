@@ -153,6 +153,11 @@ int main(int argc, char** argv) {
     float gauge_sensor_height = 1.20f;
     float odom_max_range = 120.0f;
     uint32_t odom_iterations = 4;
+    uint32_t min_cluster_size_near = 15;
+    uint32_t min_cluster_size_mid = 6;
+    uint32_t min_cluster_size_far = 3;
+    uint32_t min_hits = 3;
+    uint32_t min_hits_far = 5;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -178,6 +183,16 @@ int main(int argc, char** argv) {
             carve_half_width = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--warmup" && i + 1 < argc) {
             warmup_frames = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (a == "--min-cluster-size" && i + 1 < argc) {
+            min_cluster_size_near = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-cluster-size-mid" && i + 1 < argc) {
+            min_cluster_size_mid = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-cluster-size-far" && i + 1 < argc) {
+            min_cluster_size_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-hits" && i + 1 < argc) {
+            min_hits = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-hits-far" && i + 1 < argc) {
+            min_hits_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--free-space-vote") {
             free_space_vote = true;
         } else if (a == "--fusion") {
@@ -199,7 +214,9 @@ int main(int argc, char** argv) {
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
-                     "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z]\n";
+                     "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
+                     "[--min-cluster-size N] [--min-cluster-size-mid N] "
+                     "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N]\n";
         return 2;
     }
 
@@ -238,9 +255,12 @@ int main(int argc, char** argv) {
     gauge_params.half_width = gauge_half_width;
     gauge_params.sensor_height = gauge_sensor_height;
     argus::FusionParams fusion_params;
-    fusion_params.clustering.min_cluster_size = 15;
+    fusion_params.clustering.min_cluster_size_near = min_cluster_size_near;
+    fusion_params.clustering.min_cluster_size_mid = min_cluster_size_mid;
+    fusion_params.clustering.min_cluster_size_far = min_cluster_size_far;
     fusion_params.clustering.min_extent_m = 0.20f;
-    fusion_params.tracking.min_hits_to_confirm = 3;
+    fusion_params.tracking.min_hits_to_confirm = min_hits;
+    fusion_params.tracking.min_hits_to_confirm_far = min_hits_far;
     fusion_params.ground_filter = false;
     fusion_params.use_free_space = free_space_vote;
     fusion_params.free_space_warmup_frames = warmup_frames;
@@ -335,7 +355,7 @@ int main(int argc, char** argv) {
                 argus::AnomalySet merged;
                 merged.indices = geom.indices;
                 argus::ClusteringParams raw_cp;
-                raw_cp.min_cluster_size = 1;
+                raw_cp.min_cluster_size_near = 1;
                 raw_cp.min_extent_m = 0.0f;
                 raw_cp.max_extent_m = 1e9f;
                 const auto raw = argus::cluster_anomalies(cloud, ri, merged, raw_cp);
@@ -347,7 +367,8 @@ int main(int argc, char** argv) {
                               << " centroid=(" << c.centroid.transpose() << ")\n";
                 }
                 argus::ClusteringParams cp;
-                cp.min_cluster_size = fusion_params.clustering.min_cluster_size;
+                cp.min_cluster_size_near = fusion_params.clustering.min_cluster_size_near;
+                cp.min_cluster_size_far = fusion_params.clustering.min_cluster_size_far;
                 cp.min_extent_m = fusion_params.clustering.min_extent_m;
                 cp.max_extent_m = fusion_params.clustering.max_extent_m;
                 const auto cls = argus::cluster_anomalies(cloud, ri, merged, cp);

@@ -13,6 +13,9 @@ namespace argus {
 struct TrackingParams {
     float max_association_distance = 2.0f;
     uint32_t min_hits_to_confirm = 3;
+    uint32_t min_hits_to_confirm_far = 5;
+    float confirm_near_range_m = 60.0f;
+    float confirm_far_range_m = 120.0f;
     uint32_t max_misses_to_keep = 4;
     float process_noise = 0.5f;
     float measurement_noise = 0.3f;
@@ -40,6 +43,8 @@ struct Track {
 class ObstacleTracker {
 public:
     explicit ObstacleTracker(const TrackingParams& p);
+
+    uint32_t required_hits_at(float nearest_range_m) const;
 
     std::vector<Track> update(const std::vector<Cluster>& clusters, float dt,
                               float train_speed_mps);

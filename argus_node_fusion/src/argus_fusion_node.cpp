@@ -199,8 +199,18 @@ private:
             declare_parameter<bool>("clustering.adaptive_scaling", c.adaptive_scaling);
         c.reference_range = static_cast<float>(
             declare_parameter<double>("clustering.reference_range", c.reference_range));
-        c.min_cluster_size = static_cast<uint32_t>(declare_parameter<int>(
-            "clustering.min_cluster_size", static_cast<int>(c.min_cluster_size)));
+        c.min_cluster_size_near = static_cast<uint32_t>(declare_parameter<int>(
+            "clustering.min_cluster_size_near", static_cast<int>(c.min_cluster_size_near)));
+        c.min_cluster_size_mid = static_cast<uint32_t>(declare_parameter<int>(
+            "clustering.min_cluster_size_mid", static_cast<int>(c.min_cluster_size_mid)));
+        c.min_cluster_size_far = static_cast<uint32_t>(declare_parameter<int>(
+            "clustering.min_cluster_size_far", static_cast<int>(c.min_cluster_size_far)));
+        c.size_near_range_m = static_cast<float>(
+            declare_parameter<double>("clustering.size_near_range_m", c.size_near_range_m));
+        c.size_mid_range_m = static_cast<float>(
+            declare_parameter<double>("clustering.size_mid_range_m", c.size_mid_range_m));
+        c.size_far_range_m = static_cast<float>(
+            declare_parameter<double>("clustering.size_far_range_m", c.size_far_range_m));
         c.max_cluster_size = static_cast<uint32_t>(declare_parameter<int>(
             "clustering.max_cluster_size", static_cast<int>(c.max_cluster_size)));
         c.min_extent_m = static_cast<float>(
@@ -213,6 +223,12 @@ private:
             "tracking.max_association_distance", t.max_association_distance));
         t.min_hits_to_confirm = static_cast<uint32_t>(declare_parameter<int>(
             "tracking.min_hits_to_confirm", static_cast<int>(t.min_hits_to_confirm)));
+        t.min_hits_to_confirm_far = static_cast<uint32_t>(declare_parameter<int>(
+            "tracking.min_hits_to_confirm_far", static_cast<int>(t.min_hits_to_confirm_far)));
+        t.confirm_near_range_m = static_cast<float>(
+            declare_parameter<double>("tracking.confirm_near_range_m", t.confirm_near_range_m));
+        t.confirm_far_range_m = static_cast<float>(
+            declare_parameter<double>("tracking.confirm_far_range_m", t.confirm_far_range_m));
         t.max_misses_to_keep = static_cast<uint32_t>(declare_parameter<int>(
             "tracking.max_misses_to_keep", static_cast<int>(t.max_misses_to_keep)));
         t.process_noise = static_cast<float>(

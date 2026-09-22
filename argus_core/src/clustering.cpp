@@ -20,6 +20,31 @@ float neighbor_distance_at(float base, float d, float ref, bool adaptive) {
     return base * std::max(1.0f, d / std::max(0.001f, ref));
 }
 
+uint32_t min_cluster_size_at(const ClusteringParams& p, float nearest_range_m) {
+    const float r = std::max(0.0f, nearest_range_m);
+    const float near = static_cast<float>(std::max(1u, p.min_cluster_size_near));
+    const float mid = static_cast<float>(std::max(1u, p.min_cluster_size_mid));
+    const float far = static_cast<float>(std::max(1u, p.min_cluster_size_far));
+    const float r_near = std::max(0.001f, p.size_near_range_m);
+    const float r_mid = std::max(r_near + 0.001f, p.size_mid_range_m);
+    const float r_far = std::max(r_mid + 0.001f, p.size_far_range_m);
+    if (r <= r_near) {
+        return std::max(1u, p.min_cluster_size_near);
+    }
+    if (r >= r_far) {
+        return std::max(1u, p.min_cluster_size_far);
+    }
+    float lo = near, hi = mid, r_lo = r_near, r_hi = r_mid;
+    if (r > r_mid) {
+        lo = mid;
+        hi = far;
+        r_lo = r_mid;
+        r_hi = r_far;
+    }
+    const float t = (r - r_lo) / (r_hi - r_lo);
+    return std::max(1u, static_cast<uint32_t>(std::lround(lo + (hi - lo) * t)));
+}
+
 std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage& ri,
                                        const AnomalySet& merged, const ClusteringParams& p) {
     std::vector<Cluster> out;
@@ -124,7 +149,10 @@ std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage
             c.point_count++;
         }
 
-        if (c.point_count < p.min_cluster_size || c.point_count > p.max_cluster_size) {
+        if (c.point_count > p.max_cluster_size) {
+            continue;
+        }
+        if (c.point_count < min_cluster_size_at(p, c.nearest_range)) {
             continue;
         }
         c.centroid = sum / static_cast<float>(c.point_count);

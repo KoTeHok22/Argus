@@ -15,7 +15,12 @@ struct ClusteringParams {
     float neighbor_distance = 0.35f;
     bool adaptive_scaling = true;
     float reference_range = 50.0f;
-    uint32_t min_cluster_size = 15;
+    uint32_t min_cluster_size_near = 15;
+    uint32_t min_cluster_size_mid = 6;
+    uint32_t min_cluster_size_far = 3;
+    float size_near_range_m = 60.0f;
+    float size_mid_range_m = 120.0f;
+    float size_far_range_m = 200.0f;
     uint32_t max_cluster_size = 20000;
     float min_extent_m = 0.20f;
     float max_extent_m = 5.00f;
@@ -38,6 +43,8 @@ struct Cluster {
 };
 
 float neighbor_distance_at(float base, float d, float ref, bool adaptive);
+
+uint32_t min_cluster_size_at(const ClusteringParams& p, float nearest_range_m);
 
 std::vector<Cluster> cluster_anomalies(const CleanCloud& cloud, const RangeImage& ri,
                                        const AnomalySet& merged, const ClusteringParams& p);

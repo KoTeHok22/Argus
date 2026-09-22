@@ -56,7 +56,7 @@ argus::AnomalySet geometry_of_box(const argus::CleanCloud& cloud) {
 
 argus::FusionParams fusion_params() {
     argus::FusionParams p;
-    p.clustering.min_cluster_size = 15;
+    p.clustering.min_cluster_size_near = 15;
     p.clustering.min_extent_m = 0.1f;
     p.clustering.max_extent_m = 50.0f;
     p.tracking.min_hits_to_confirm = 2;
@@ -195,7 +195,7 @@ TEST(Fusion, GroundFilterDropsRailLikePoints) {
     geometry.score.assign(geometry.indices.size(), 0.8f);
 
     argus::FusionParams p = fusion_params();
-    p.clustering.min_cluster_size = 5;
+    p.clustering.min_cluster_size_near = 5;
     p.clustering.min_extent_m = 0.1f;
     p.tracking.min_hits_to_confirm = 1;
     argus::ClearanceGaugeParams gp;

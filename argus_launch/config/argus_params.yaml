@@ -123,7 +123,12 @@
       neighbor_distance: 0.35
       adaptive_scaling: true
       reference_range: 50.0
-      min_cluster_size: 15
+      min_cluster_size_near: 15
+      min_cluster_size_mid: 6
+      min_cluster_size_far: 3
+      size_near_range_m: 60.0
+      size_mid_range_m: 120.0
+      size_far_range_m: 200.0
       max_cluster_size: 20000
       min_extent_m: 0.20
       max_extent_m: 5.00
@@ -131,6 +136,9 @@
     tracking:
       max_association_distance: 2.0
       min_hits_to_confirm: 3
+      min_hits_to_confirm_far: 5
+      confirm_near_range_m: 60.0
+      confirm_far_range_m: 120.0
       max_misses_to_keep: 4
       process_noise: 0.5
       measurement_noise: 0.3

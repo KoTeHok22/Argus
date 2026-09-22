@@ -80,7 +80,7 @@ ros2 launch argus_launch argus.launch.py \
 | `new_data` `_29`…`_31` | стоянка у широкого сечения, 0 тревог |
 | `new_data` `_110`/`_111` | 5 тревог на 5 м — плоский край, не вклейка |
 
-Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `6102667a5df87fd04cc892a224fc486be0bc0e7f7675f1d51cdacb42516fcd4f`.
+Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `9352a301b50514745a43b531debde2f6e27e21176c84554a3c1024f55906a344`.
 
 Живой `detect` на полном `doubleT_obstacle` (201 кадр): **198 BLOCKED** на 16.9 м, путь тревоги **28.5 мс / p95 32 мс**. Офлайн-одометрия на platform: 87 мс/кадр.
 

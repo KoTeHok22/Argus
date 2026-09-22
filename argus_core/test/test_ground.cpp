@@ -191,7 +191,7 @@ TEST(Fusion, GroundMaskDropsRailsWithoutFallbackFilter) {
 
     argus::FusionParams p;
     p.ground_filter = false;
-    p.clustering.min_cluster_size = 5;
+    p.clustering.min_cluster_size_near = 5;
     p.clustering.min_extent_m = 0.1f;
     p.clustering.max_extent_m = 50.0f;
     p.tracking.min_hits_to_confirm = 1;
