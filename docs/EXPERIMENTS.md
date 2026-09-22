@@ -21,8 +21,7 @@
 | **T31, `--fusion` obstacle 200** | **197/200**, first=3, 16.90 м | Лесенка 15/6/3 + M-of-N 3→5. CSV: `results/t31_obs_fusion200.csv` |
 | **T31, `--fusion` platform 300** | **0/300** | Дальний порог не добавил FP. CSV: `results/t31_plat_fusion300.csv` |
 | **T32, полный `new_data`, 11 271 кадр** | **167/11271 (1.48%)** | 221 часть. `_110` кадры 9–13 на 4.96 м — как T26. Дальние серии ≥20 м: части 43, 44, 100–101, 154 (до 38.7 м), короткие, не F-D. CSV: `results/t32_new_data_full.csv` |
-
-Hold-out `squareT_platform_squareT_switch` до сдачи не запускался.
+| **T33, held-out `squareT_platform_squareT_switch`** | **26/876 BLOCKED (3.0%)** | Один прогон, yaml не менялся. Две серии 26.4–29.2 с, ближайшая **5.3 м**. CLEAR 52, DEGRADED 798: поза была на 287 кадрах. Путь тревоги 10.7 / 14.1 мс. Отчёт: `docs/holdout_report.md` |
 
 ## Что не сработало
 
