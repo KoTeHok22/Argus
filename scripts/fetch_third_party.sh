@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Copyright 2026 Argus Team
-# Licensed under the Apache License, Version 2.0
-#
-# Импорт внешних зависимостей по манифесту (PLAN.md 5.1.7).
-# После первого успешного билда заменить ветки в argus.repos на SHA (16.3.6).
-
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p third_party
-vcs import third_party < third_party/argus.repos
-echo "OK: зависимости импортированы в third_party"
+DEST=third_party/patchworkpp
+SHA=3e6903a1d5537a4cc2ace897b0bbb98a92d6014c
+URL=https://github.com/url-kaist/patchwork-plusplus.git
+if [ -d "$DEST/.git" ]; then
+  git -C "$DEST" fetch origin "$SHA" || git -C "$DEST" fetch origin
+  git -C "$DEST" checkout --detach "$SHA"
+else
+  git clone "$URL" "$DEST"
+  git -C "$DEST" checkout --detach "$SHA"
+fi
+echo "OK: $DEST @ $(git -C "$DEST" rev-parse --short HEAD)"
