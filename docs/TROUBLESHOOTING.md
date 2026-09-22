@@ -12,9 +12,9 @@
 
 ## RViz2 не показывает облако
 
-1. Проверьте Fixed Frame: должен совпадать с `frame_id` сообщения
-   (`hesai_lidar` либо `lidar_livox`).
-2. Проверьте топик: `ros2 topic hz /argus/clean`.
+1. Проверьте Fixed Frame: `lidar_livox` (кадр бэга `doubleT_obstacle`).
+2. Облако для RViz — `/argus/cloud`, не `/argus/clean` и не сырой топик бэга.
+   `ros2 topic hz /argus/cloud`. Маркеры: `/argus/markers`.
 
 ## `colcon build` падает на argus_core
 

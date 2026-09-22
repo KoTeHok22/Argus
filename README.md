@@ -46,6 +46,8 @@ docker run --rm --shm-size=256m -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix 
     -v "$PWD/data/recordings":/data argus demo /data/doubleT_obstacle
 ```
 
+RViz показывает `/argus/cloud`, габарит и бокс 16.9 м. Запись экрана: `docs/video/argus_demo.mp4`.
+
 Без Docker (ROS 2 Humble):
 
 ```bash
@@ -78,7 +80,7 @@ ros2 launch argus_launch argus.launch.py \
 | `new_data` `_29`…`_31` | стоянка у широкого сечения, 0 тревог |
 | `new_data` `_110`/`_111` | 5 тревог на 5 м — плоский край, не вклейка |
 
-Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `c401b96d401d0d7db5348dd3effe7b6dcd1ecccf0bbf0c53d206f77092efefbb`.
+Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `6102667a5df87fd04cc892a224fc486be0bc0e7f7675f1d51cdacb42516fcd4f`.
 
 Живой `detect` на полном `doubleT_obstacle` (201 кадр): **198 BLOCKED** на 16.9 м, путь тревоги **28.5 мс / p95 32 мс**. Офлайн-одометрия на platform: 87 мс/кадр.
 

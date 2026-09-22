@@ -6,6 +6,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
@@ -72,6 +73,7 @@ public:
         sub_ = create_subscription<PointCloud2>(
             input_topic_, qos, [this](PointCloud2::ConstSharedPtr msg) { on_cloud(msg); });
         pub_clean_ = create_publisher<CleanCloudMsg>("/argus/clean", qos);
+        pub_cloud_ = create_publisher<PointCloud2>("/argus/cloud", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics", qos);
 
         RCLCPP_INFO(get_logger(), "argus_preprocess подписан на '%s'", input_topic_.c_str());
@@ -103,6 +105,33 @@ private:
         return out;
     }
 
+    static PointCloud2 make_cloud_pc2(const CleanCloud& cloud, const rclcpp::Time& stamp) {
+        PointCloud2 out;
+        out.header.stamp = stamp;
+        out.header.frame_id = cloud.frame_id.empty() ? "lidar_livox" : cloud.frame_id;
+        const size_t n = cloud.x.size();
+        sensor_msgs::PointCloud2Modifier modifier(out);
+        modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::msg::PointField::FLOAT32, "y", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32, "z", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32, "intensity", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32);
+        modifier.resize(n);
+        sensor_msgs::PointCloud2Iterator<float> it_x(out, "x");
+        sensor_msgs::PointCloud2Iterator<float> it_y(out, "y");
+        sensor_msgs::PointCloud2Iterator<float> it_z(out, "z");
+        sensor_msgs::PointCloud2Iterator<float> it_i(out, "intensity");
+        for (size_t i = 0; i < n; ++i, ++it_x, ++it_y, ++it_z, ++it_i) {
+            *it_x = cloud.x[i];
+            *it_y = cloud.y[i];
+            *it_z = cloud.z[i];
+            *it_i = i < cloud.intensity.size() ? cloud.intensity[i] : 0.0f;
+        }
+        out.height = 1;
+        out.width = static_cast<uint32_t>(n);
+        out.is_dense = false;
+        return out;
+    }
+
     void on_cloud(PointCloud2::ConstSharedPtr msg) {
         const auto t_start = std::chrono::steady_clock::now();
         const rclcpp::Time stamp = msg->header.stamp;
@@ -131,6 +160,7 @@ private:
         const float t_range_image_ms = ms_since(t_ri0);
 
         pub_clean_->publish(make_clean_msg(cloud, ri, stamp));
+        pub_cloud_->publish(make_cloud_pc2(cloud, stamp));
 
         Diagnostics d;
         d.header.stamp = stamp;
@@ -172,6 +202,7 @@ private:
     float t_total_ms_prev_ = 0.0f;
     rclcpp::Subscription<PointCloud2>::SharedPtr sub_;
     rclcpp::Publisher<CleanCloudMsg>::SharedPtr pub_clean_;
+    rclcpp::Publisher<PointCloud2>::SharedPtr pub_cloud_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
 };
 

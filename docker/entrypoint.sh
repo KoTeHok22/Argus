@@ -76,9 +76,10 @@ Argus — препятствие в габарите поезда по 3D-лид
 
   docker build -f docker/Dockerfile -t argus .
   docker run --rm --shm-size=256m -v /path/to/bags:/data argus detect /data/<bag_dir>
+  docker run --rm --shm-size=256m -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix argus demo /data/<bag_dir>
 
   detect  прогон bag, печать /argus/obstacles, выход после конца записи
-  demo    то же плюс RViz2 (нужен DISPLAY)
+  demo    то же плюс RViz2: /argus/cloud, габарит и бокс на /argus/markers, карта на /argus/model
   eval    каркас отчёта
   ui      панель: загрузка записи, эфир, отчёт (порт 8080)
   shell   оболочка внутри образа

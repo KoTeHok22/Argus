@@ -69,6 +69,9 @@
       prior_map_path: ""
       process_period_s: 0.05
       pose_timeout_s: 1.0
+      publish_points: true
+      publish_divisor: 20
+      publish_max_range_m: 60.0
 
     tunnel_profile:
       enabled: true
@@ -150,6 +153,9 @@
       default_dt_s: 0.1
       stale_timeout_s: 1.0
       max_pending_frames: 16
+      publish_markers: true
+      marker_max_range_m: 60.0
+      marker_max_obstacles: 16
 
     vehicle:
       speed_topic: ""

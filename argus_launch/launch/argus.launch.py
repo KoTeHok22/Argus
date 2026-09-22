@@ -40,6 +40,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'rviz', default_value='false',
             description='Запустить RViz2 с готовым layout'),
+        DeclareLaunchArgument(
+            'publish_markers', default_value='true',
+            description='Публиковать маркеры габарита и кластеров для RViz2'),
     ]
 
     nodes = [
@@ -57,7 +60,9 @@ def generate_launch_description():
             package='argus_node_tunnel_model',
             executable='argus_tunnel_model_node',
             name='argus_tunnel_model', output='screen',
-            parameters=[params_file],
+            parameters=[params_file, {
+                'tunnel_model.publish_points': LaunchConfiguration('publish_markers'),
+            }],
         ),
         Node(
             package='argus_node_detector', executable='argus_detector_node',
@@ -67,7 +72,9 @@ def generate_launch_description():
         Node(
             package='argus_node_fusion', executable='argus_fusion_node',
             name='argus_fusion', output='screen',
-            parameters=[params_file],
+            parameters=[params_file, {
+                'fusion.publish_markers': LaunchConfiguration('publish_markers'),
+            }],
         ),
     ]
 

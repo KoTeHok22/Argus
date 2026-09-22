@@ -1,6 +1,6 @@
 # Эксперименты
 
-Офлайн — `offline_detector` в `argus:dev`. Живой ROS — `docker run --shm-size=256m … argus detect`. Ось «вперёд» −Y, габарит 3.0×2.1 м, земля — порог по Z. Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `c401b96d401d0d7db5348dd3effe7b6dcd1ecccf0bbf0c53d206f77092efefbb`.
+Офлайн — `offline_detector` в `argus:dev`. Живой ROS — `docker run --shm-size=256m … argus detect`. Ось «вперёд» −Y, габарит 3.0×2.1 м, земля — порог по Z. Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `6102667a5df87fd04cc892a224fc486be0bc0e7f7675f1d51cdacb42516fcd4f`.
 
 ## Почему не нейросеть
 

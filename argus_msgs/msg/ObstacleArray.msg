@@ -16,3 +16,5 @@ float32 processing_ms
 float32 fps
 
 bool model_ready
+
+string explain

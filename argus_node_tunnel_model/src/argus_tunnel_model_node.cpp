@@ -1,19 +1,24 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
 
 #include "argus_core/anomaly.hpp"
+#include "argus_core/gauge.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/tunnel_model.hpp"
 #include "argus_core/tunnel_profile.hpp"
@@ -86,6 +91,9 @@ public:
 
         pub_free_space_ = create_publisher<AnomalySetMsg>("/argus/anom_fs", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_model", qos);
+        if (publish_model_points_) {
+            pub_model_ = create_publisher<sensor_msgs::msg::PointCloud2>("/argus/model", qos);
+        }
 
         const auto period = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::duration<double>(process_period_s_));
@@ -168,6 +176,30 @@ private:
             static_cast<uint32_t>(declare_parameter<int>("detector_free_space.warmup_frames", 60));
         process_period_s_ = declare_parameter<double>("tunnel_model.process_period_s", 0.05);
         pose_timeout_s_ = declare_parameter<double>("tunnel_model.pose_timeout_s", 1.0);
+        publish_model_points_ = declare_parameter<bool>("tunnel_model.publish_points", true);
+        model_publish_divisor_ = static_cast<uint32_t>(
+            std::max<int>(1, declare_parameter<int>("tunnel_model.publish_divisor", 20)));
+        model_point_max_range_ =
+            static_cast<float>(declare_parameter<double>("tunnel_model.publish_max_range_m", 60.0));
+        gauge_params_.forward_axis = ForwardAxis::NegY;
+        gauge_params_.half_width = static_cast<float>(
+            declare_parameter<double>("gauge.half_width", gauge_params_.half_width));
+        gauge_params_.height =
+            static_cast<float>(declare_parameter<double>("gauge.height", gauge_params_.height));
+        gauge_params_.base_offset = static_cast<float>(
+            declare_parameter<double>("gauge.base_offset", gauge_params_.base_offset));
+        gauge_params_.chamfer =
+            static_cast<float>(declare_parameter<double>("gauge.chamfer", gauge_params_.chamfer));
+        gauge_params_.nose_offset = static_cast<float>(
+            declare_parameter<double>("gauge.nose_offset", gauge_params_.nose_offset));
+        gauge_params_.sensor_height = static_cast<float>(
+            declare_parameter<double>("gauge.sensor_height", gauge_params_.sensor_height));
+        std::string axis_name = declare_parameter<std::string>("gauge.forward_axis", "-y");
+        ForwardAxis axis;
+        if (!parse_forward_axis(axis_name, axis)) {
+            throw std::invalid_argument("gauge.forward_axis: неизвестная ось '" + axis_name + "'");
+        }
+        gauge_params_.forward_axis = axis;
         if (process_period_s_ <= 0.0) {
             throw std::invalid_argument("tunnel_model.process_period_s must be > 0");
         }
@@ -245,6 +277,10 @@ private:
         d.fps = (t_prev_ms_ > 0.0f) ? 1000.0f / t_prev_ms_ : 0.0f;
         pub_diag_->publish(d);
 
+        if (pub_model_ && frames_processed_ % model_publish_divisor_ == 0) {
+            publish_model(slot.cloud->header, pose);
+        }
+
         t_prev_ms_ = processing_ms;
         RCLCPP_DEBUG(get_logger(),
                      "вокселей %u, пусто %.1f%%, проверено %u, пустых %u, free_space точек %u, "
@@ -254,12 +290,77 @@ private:
                      static_cast<double>(processing_ms));
     }
 
+    void publish_model(const std_msgs::msg::Header& header, const Eigen::Isometry3d& pose) {
+        std::vector<Eigen::Vector3f> points;
+        std::vector<float> confidence;
+        model_->export_occupancy(points, confidence, true);
+
+        std::vector<Eigen::Vector3f> gauge_vertices;
+        std::vector<uint32_t> gauge_indices;
+        ClearanceGauge(gauge_params_)
+            .to_mesh(model_point_max_range_, gauge_vertices, gauge_indices);
+
+        const Eigen::Isometry3d inv = pose.inverse();
+        const size_t total = points.size() + gauge_indices.size();
+        if (total == 0) {
+            return;
+        }
+
+        sensor_msgs::msg::PointCloud2 msg;
+        msg.header = header;
+        msg.height = 1;
+        msg.width = static_cast<uint32_t>(total);
+        msg.is_bigendian = false;
+        msg.is_dense = true;
+
+        sensor_msgs::PointCloud2Modifier modifier(msg);
+        modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::msg::PointField::FLOAT32, "y", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32, "z", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32, "intensity", 1,
+                                      sensor_msgs::msg::PointField::FLOAT32);
+        modifier.resize(total);
+
+        sensor_msgs::PointCloud2Iterator<float> out_x(msg, "x");
+        sensor_msgs::PointCloud2Iterator<float> out_y(msg, "y");
+        sensor_msgs::PointCloud2Iterator<float> out_z(msg, "z");
+        sensor_msgs::PointCloud2Iterator<float> out_i(msg, "intensity");
+
+        for (const Eigen::Vector3f& p : points) {
+            const Eigen::Vector3f world = (inv * p.cast<double>()).cast<float>();
+            *out_x = world.x();
+            *out_y = world.y();
+            *out_z = world.z();
+            *out_i = 0.35f;
+            ++out_x;
+            ++out_y;
+            ++out_z;
+            ++out_i;
+        }
+        for (uint32_t index : gauge_indices) {
+            const Eigen::Vector3f world =
+                (inv * gauge_vertices[index].cast<double>()).cast<float>();
+            *out_x = world.x();
+            *out_y = world.y();
+            *out_z = world.z();
+            *out_i = 1.0f;
+            ++out_x;
+            ++out_y;
+            ++out_z;
+            ++out_i;
+        }
+        pub_model_->publish(msg);
+    }
+
     TunnelModelParams model_params_;
     TunnelProfileParams profile_params_;
     FreeSpaceParams free_space_params_;
     uint32_t free_space_warmup_frames_ = 60;
     double process_period_s_ = 0.05;
     double pose_timeout_s_ = 1.0;
+    bool publish_model_points_ = true;
+    uint32_t model_publish_divisor_ = 20;
+    float model_point_max_range_ = 60.0f;
+    ClearanceGaugeParams gauge_params_;
     size_t max_pending_ = 16;
     uint64_t frames_processed_ = 0;
     float t_prev_ms_ = 0.0f;
@@ -276,6 +377,7 @@ private:
     rclcpp::Subscription<PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_free_space_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_model_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 

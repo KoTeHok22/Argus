@@ -14,13 +14,14 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(argus_core REQUIRED)
 find_package(argus_msgs REQUIRED)
 
 add_executable(argus_tunnel_model_node src/argus_tunnel_model_node.cpp)
 target_compile_features(argus_tunnel_model_node PUBLIC cxx_std_17)
 ament_target_dependencies(argus_tunnel_model_node
-  rclcpp sensor_msgs std_msgs argus_core argus_msgs)
+  rclcpp sensor_msgs std_msgs geometry_msgs argus_core argus_msgs)
 
 install(TARGETS argus_tunnel_model_node DESTINATION lib/${PROJECT_NAME})
 

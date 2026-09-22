@@ -17,6 +17,7 @@
   <exec_depend>argus_node_tunnel_model</exec_depend>
   <exec_depend>argus_node_detector</exec_depend>
   <exec_depend>argus_node_fusion</exec_depend>
+  <exec_depend>rviz2</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_flake8</test_depend>

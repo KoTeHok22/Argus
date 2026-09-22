@@ -66,7 +66,9 @@ ros2 launch argus_launch argus.launch.py \
 
 ## Параметры
 
-Все пороги — в `argus_launch/config/argus_params.yaml`. Хэш сдачи: SHA-256 `c401b96d401d0d7db5348dd3effe7b6dcd1ecccf0bbf0c53d206f77092efefbb`.
+Все пороги — в `argus_launch/config/argus_params.yaml`. Хэш сдачи: SHA-256 `6102667a5df87fd04cc892a224fc486be0bc0e7f7675f1d51cdacb42516fcd4f`.
+
+`fusion.publish_markers` (по умолчанию true) включает `/argus/markers`. `/argus/explain` — текст тревоги. `/argus/cloud` — облако для RViz (не сырой топик бэга). Видео G8: `docs/video/argus_demo.mp4`.
 
 ## Сторонние компоненты
 
