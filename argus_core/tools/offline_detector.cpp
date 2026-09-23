@@ -20,6 +20,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -169,6 +170,7 @@ int main(int argc, char** argv) {
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
     uint32_t world_warmup = 10;
+    uint32_t world_evidence = 3;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -232,6 +234,8 @@ int main(int argc, char** argv) {
             world_fitness = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-warmup" && i + 1 < argc) {
             world_warmup = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--world-evidence" && i + 1 < argc) {
+            world_evidence = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -248,7 +252,7 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
-                     "[--world-fitness M] [--world-warmup N]\n";
+                     "[--world-fitness M] [--world-warmup N] [--world-evidence N]\n";
         return 2;
     }
 
@@ -278,6 +282,7 @@ int main(int argc, char** argv) {
     argus::RangeImageParams ri_params;
     std::vector<std::vector<float>> temporal_history;
     std::unordered_set<int64_t> world_history;
+    std::unordered_map<int64_t, uint32_t> world_evidence_counts;
 
     argus::ForwardAxis axis = argus::ForwardAxis::PosX;
     if (!argus::parse_forward_axis(forward_axis, axis)) {
@@ -448,6 +453,7 @@ int main(int argc, char** argv) {
                 };
                 std::vector<int64_t> keys;
                 keys.reserve(cloud.size());
+                std::unordered_set<int64_t> frame_keys;
                 for (size_t i = 0; i < cloud.size(); ++i) {
                     const float forward =
                         gauge_params.forward_axis == argus::ForwardAxis::PosX   ? cloud.x[i]
@@ -472,12 +478,16 @@ int main(int argc, char** argv) {
                     const int64_t iz = static_cast<int64_t>(std::floor(world.z() * inv));
                     const int64_t key = voxel_key(ix, iy, iz);
                     keys.push_back(key);
-                    if (k >= world_warmup && !seen_nearby(ix, iy, iz)) {
+                    const bool first_in_frame = frame_keys.insert(key).second;
+                    if (k >= world_warmup && first_in_frame && !seen_nearby(ix, iy, iz) &&
+                        ++world_evidence_counts[key] >= world_evidence) {
                         geom.indices.push_back(static_cast<uint32_t>(i));
                         geom.score.push_back(1.0f);
                     }
                 }
-                world_history.insert(keys.begin(), keys.end());
+                if (k < world_warmup) {
+                    world_history.insert(keys.begin(), keys.end());
+                }
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
             if (debug_clusters) {
