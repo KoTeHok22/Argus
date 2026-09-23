@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -160,6 +161,9 @@ int main(int argc, char** argv) {
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
     bool ground_filter = false;
+    bool temporal_residual = false;
+    uint32_t temporal_window = 5;
+    float temporal_threshold = 1.0f;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -209,6 +213,12 @@ int main(int argc, char** argv) {
             geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--ground-filter") {
             ground_filter = true;
+        } else if (a == "--temporal-residual") {
+            temporal_residual = true;
+        } else if (a == "--temporal-window" && i + 1 < argc) {
+            temporal_window = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--temporal-threshold" && i + 1 < argc) {
+            temporal_threshold = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -223,7 +233,8 @@ int main(int argc, char** argv) {
                      "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
-                     "[--geom-max-range M]\n";
+                     "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
+                     "[--temporal-threshold M]\n";
         return 2;
     }
 
@@ -251,6 +262,7 @@ int main(int argc, char** argv) {
     argus::NoReturnDetector no_return(nr_params);
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;
+    std::vector<std::vector<float>> temporal_history;
 
     argus::ForwardAxis axis = argus::ForwardAxis::PosX;
     if (!argus::parse_forward_axis(forward_axis, axis)) {
@@ -357,7 +369,42 @@ int main(int argc, char** argv) {
             continue;
         }
         if (fusion_mode) {
-            const argus::AnomalySet geom = geometry.detect(cloud, ri);
+            argus::AnomalySet geom =
+                temporal_residual ? argus::AnomalySet{} : geometry.detect(cloud, ri);
+            if (temporal_residual && !temporal_history.empty()) {
+                geom.source = "temporal";
+                std::vector<uint32_t> cell_to_cloud(ri.range.size(),
+                                                    std::numeric_limits<uint32_t>::max());
+                for (size_t i = 0; i < cloud.raw_idx.size(); ++i) {
+                    if (cloud.raw_idx[i] < cell_to_cloud.size()) {
+                        cell_to_cloud[cloud.raw_idx[i]] = static_cast<uint32_t>(i);
+                    }
+                }
+                for (size_t cell = 0; cell < ri.range.size(); ++cell) {
+                    const float current = ri.range[cell];
+                    if (!std::isfinite(current) ||
+                        cell_to_cloud[cell] == std::numeric_limits<uint32_t>::max()) {
+                        continue;
+                    }
+                    std::vector<float> values;
+                    for (const auto& frame : temporal_history) {
+                        if (cell < frame.size() && std::isfinite(frame[cell])) {
+                            values.push_back(frame[cell]);
+                        }
+                    }
+                    if (values.empty()) {
+                        continue;
+                    }
+                    std::sort(values.begin(), values.end());
+                    const float baseline = values[values.size() / 2];
+                    if (baseline - current <= temporal_threshold || current < 4.0f ||
+                        current > geom_max_target_range) {
+                        continue;
+                    }
+                    geom.indices.push_back(cell_to_cloud[cell]);
+                    geom.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
+                }
+            }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
             if (debug_clusters) {
                 argus::AnomalySet merged;
@@ -393,6 +440,12 @@ int main(int argc, char** argv) {
                       << r.n_clusters_raw << ',' << r.n_filtered_out << ',' << r.tracks.size()
                       << ',' << r.nearest_forward_m << ',' << r.nearest_range_m << ','
                       << r.n_anom_points << ',' << r.n_anom_cells << '\n';
+            if (temporal_residual) {
+                temporal_history.push_back(ri.range);
+                if (temporal_history.size() > temporal_window) {
+                    temporal_history.erase(temporal_history.begin());
+                }
+            }
             continue;
         }
         report(k, no_return.detect(cloud, ri), ri, cloud);

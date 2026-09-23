@@ -161,6 +161,7 @@ def main():
     ap.add_argument("--lateral", type=float, default=0.0)
     ap.add_argument("--vertical", type=float, default=0.0)
     ap.add_argument("--frames", type=int, default=40)
+    ap.add_argument("--start-frame", type=int, default=0)
     ap.add_argument("--pod", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--truth", required=True)
@@ -171,10 +172,23 @@ def main():
     replaced = 0
     added = 0
     for k, (stamp, n_raw, pts, nr) in enumerate(frames):
-        pts2, nr2, info = insert_box(
-            pts, args.distance, args.preset, args.lateral, args.vertical,
-            n_raw, nr, args.pod, args.seed + k,
-        )
+        if k < args.start_frame:
+            pts2, nr2, info = pts, nr, {
+                "preset": args.preset,
+                "distance_m": args.distance,
+                "lateral_m": args.lateral,
+                "vertical_m": args.vertical,
+                "pod": args.pod,
+                "box_min": [],
+                "box_max": [],
+                "rays_replaced": 0,
+                "rays_added": 0,
+            }
+        else:
+            pts2, nr2, info = insert_box(
+                pts, args.distance, args.preset, args.lateral, args.vertical,
+                n_raw, nr, args.pod, args.seed + k,
+            )
         changed.append((stamp, n_raw, pts2, nr2))
         replaced += info["rays_replaced"]
         added += info["rays_added"]
