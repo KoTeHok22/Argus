@@ -20,6 +20,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -164,6 +165,9 @@ int main(int argc, char** argv) {
     bool temporal_residual = false;
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
+    bool world_residual = false;
+    float world_voxel = 0.30f;
+    float world_fitness = 0.03f;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -219,6 +223,12 @@ int main(int argc, char** argv) {
             temporal_window = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--temporal-threshold" && i + 1 < argc) {
             temporal_threshold = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--world-residual") {
+            world_residual = true;
+        } else if (a == "--world-voxel" && i + 1 < argc) {
+            world_voxel = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--world-fitness" && i + 1 < argc) {
+            world_fitness = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -234,7 +244,8 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
-                     "[--temporal-threshold M]\n";
+                     "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
+                     "[--world-fitness M]\n";
         return 2;
     }
 
@@ -263,6 +274,7 @@ int main(int argc, char** argv) {
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;
     std::vector<std::vector<float>> temporal_history;
+    std::unordered_set<int64_t> world_history;
 
     argus::ForwardAxis axis = argus::ForwardAxis::PosX;
     if (!argus::parse_forward_axis(forward_axis, axis)) {
@@ -369,8 +381,13 @@ int main(int argc, char** argv) {
             continue;
         }
         if (fusion_mode) {
-            argus::AnomalySet geom =
-                temporal_residual ? argus::AnomalySet{} : geometry.detect(cloud, ri);
+            argus::OdometryResult world_odom;
+            if (world_residual) {
+                world_odom = odom.update(cloud, f.stamp_s);
+            }
+            argus::AnomalySet geom = (temporal_residual || world_residual)
+                                         ? argus::AnomalySet{}
+                                         : geometry.detect(cloud, ri);
             if (temporal_residual && !temporal_history.empty()) {
                 geom.source = "temporal";
                 std::vector<uint32_t> cell_to_cloud(ri.range.size(),
@@ -404,6 +421,60 @@ int main(int argc, char** argv) {
                     geom.indices.push_back(cell_to_cloud[cell]);
                     geom.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
                 }
+            }
+            if (world_residual && world_odom.valid && world_odom.fitness <= world_fitness &&
+                world_odom.n_correspondences >= 1000) {
+                geom.source = "world";
+                const Eigen::Isometry3d pose = world_odom.pose;
+                const float inv = 1.0f / std::max(world_voxel, 0.05f);
+                const auto voxel_key = [](int64_t ix, int64_t iy, int64_t iz) {
+                    return (ix * 73856093LL) ^ (iy * 19349663LL) ^ (iz * 83492791LL);
+                };
+                const auto seen_nearby = [&](int64_t ix, int64_t iy, int64_t iz) {
+                    for (int64_t dx = -1; dx <= 1; ++dx) {
+                        for (int64_t dy = -1; dy <= 1; ++dy) {
+                            for (int64_t dz = -1; dz <= 1; ++dz) {
+                                if (world_history.find(voxel_key(ix + dx, iy + dy, iz + dz)) !=
+                                    world_history.end()) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                };
+                std::vector<int64_t> keys;
+                keys.reserve(cloud.size());
+                for (size_t i = 0; i < cloud.size(); ++i) {
+                    const float forward =
+                        gauge_params.forward_axis == argus::ForwardAxis::PosX   ? cloud.x[i]
+                        : gauge_params.forward_axis == argus::ForwardAxis::NegX ? -cloud.x[i]
+                        : gauge_params.forward_axis == argus::ForwardAxis::PosY ? cloud.y[i]
+                                                                                : -cloud.y[i];
+                    const float lateral =
+                        gauge_params.forward_axis == argus::ForwardAxis::PosX   ? cloud.y[i]
+                        : gauge_params.forward_axis == argus::ForwardAxis::NegX ? -cloud.y[i]
+                        : gauge_params.forward_axis == argus::ForwardAxis::PosY ? -cloud.x[i]
+                                                                                : cloud.x[i];
+                    const float relative_z = cloud.z[i] + gauge_sensor_height;
+                    if (forward < 15.0f || forward > geom_max_target_range ||
+                        std::fabs(lateral) > gauge_half_width || relative_z < 0.0f ||
+                        relative_z > gauge_height) {
+                        continue;
+                    }
+                    const Eigen::Vector3d local(cloud.x[i], cloud.y[i], cloud.z[i]);
+                    const Eigen::Vector3d world = pose * local;
+                    const int64_t ix = static_cast<int64_t>(std::floor(world.x() * inv));
+                    const int64_t iy = static_cast<int64_t>(std::floor(world.y() * inv));
+                    const int64_t iz = static_cast<int64_t>(std::floor(world.z() * inv));
+                    const int64_t key = voxel_key(ix, iy, iz);
+                    keys.push_back(key);
+                    if (!seen_nearby(ix, iy, iz)) {
+                        geom.indices.push_back(static_cast<uint32_t>(i));
+                        geom.score.push_back(1.0f);
+                    }
+                }
+                world_history.insert(keys.begin(), keys.end());
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
             if (debug_clusters) {
