@@ -168,6 +168,7 @@ int main(int argc, char** argv) {
     bool world_residual = false;
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
+    uint32_t world_warmup = 10;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -229,6 +230,8 @@ int main(int argc, char** argv) {
             world_voxel = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-fitness" && i + 1 < argc) {
             world_fitness = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--world-warmup" && i + 1 < argc) {
+            world_warmup = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -245,7 +248,7 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
-                     "[--world-fitness M]\n";
+                     "[--world-fitness M] [--world-warmup N]\n";
         return 2;
     }
 
@@ -469,7 +472,7 @@ int main(int argc, char** argv) {
                     const int64_t iz = static_cast<int64_t>(std::floor(world.z() * inv));
                     const int64_t key = voxel_key(ix, iy, iz);
                     keys.push_back(key);
-                    if (!seen_nearby(ix, iy, iz)) {
+                    if (k >= world_warmup && !seen_nearby(ix, iy, iz)) {
                         geom.indices.push_back(static_cast<uint32_t>(i));
                         geom.score.push_back(1.0f);
                     }
