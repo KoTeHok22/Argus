@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import struct
 import sys
 from pathlib import Path
+
+from argus_web.cloud import header_stamp_ns, load_frame
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -11,7 +14,8 @@ os.environ["ARGUS_DATA"] = str(Path(__file__).resolve().parent / "_empty_data")
 os.environ["ARGUS_RESULTS"] = str(Path(__file__).resolve().parent / "_empty_results")
 os.environ["ARGUS_UI_ROOT"] = str(Path(__file__).resolve().parent / "_empty_ui")
 
-from argus_web.bags import parse_metadata
+from argus_web.align import align_rows, gauge_profile, load_gauge, reset_gauge, save_gauge, verdict_for_stamp
+from argus_web.bags import describe, parse_metadata
 from argus_web.reports import csv_to_text, load_report, percentile, summarize_latency
 
 
@@ -78,3 +82,87 @@ def test_parse_metadata(tmp_path: Path):
     assert meta["frames"] == 201
     assert abs(meta["duration_ns"] / 1e9 - 20.0) < 1e-9
     assert meta["files"] == ["doubleT_obstacle_0.db3"]
+
+
+def test_header_stamp_matches_report_clock():
+    blob = b"\x00\x01\x00\x00" + struct.pack("<iI", 946687297, 499959946)
+    assert header_stamp_ns(blob) == 946687297499959946
+    assert header_stamp_ns(b"\x00\x00\x00\x00" + blob[4:]) is None
+    frames = [946687297199933052, 946687297499959946]
+    rows = [
+        {"stamp_ns": "1789912875198547104", "status": "DEGRADED", "nearest_m": "-1", "t_alert_path_ms": "0"},
+        {"stamp_ns": "946687297199933052", "status": "CLEAR", "nearest_m": "-1", "t_alert_path_ms": "56.5"},
+        {"stamp_ns": "946687297499959946", "status": "BLOCKED", "nearest_m": "16.896", "t_alert_path_ms": "31.2"},
+    ]
+    aligned = align_rows(frames, rows)
+    assert aligned["dropped"] == 1
+    hit = verdict_for_stamp(946687297499959946, aligned, True)
+    assert hit["text"] == "Препятствие, 16,9 м"
+    miss = verdict_for_stamp(1, aligned, True)
+    assert miss["text"] == "Детектор не уверен"
+    assert verdict_for_stamp(946687297499959946, None, False)["text"] == "Детектор ещё не прогнан"
+
+
+def test_foreign_report_does_not_say_clear():
+    aligned = align_rows(
+        [100],
+        [{"stamp_ns": "900", "status": "CLEAR", "nearest_m": "-1", "t_alert_path_ms": "20"}],
+    )
+    assert aligned["rows"] == []
+    assert verdict_for_stamp(100, aligned, True)["text"] == "Детектор не уверен"
+
+
+def test_gauge_lines_from_yaml(tmp_path: Path):
+    path = tmp_path / "argus_params.yaml"
+    path.write_text(
+        "argus_node_fusion:\n"
+        "  ros__parameters:\n"
+        "    gauge:\n"
+        "      forward_axis: \"-y\"\n"
+        "      half_width: 1.50\n"
+        "      height: 2.10\n"
+        "      base_offset: 0.20\n"
+        "      chamfer: 0.20\n"
+        "      nose_offset: 0.00\n"
+        "      sensor_height: 1.20\n"
+        "      max_range: 300.0\n"
+        "      safety_margin: 0.10\n",
+        encoding="utf-8",
+    )
+    gauge = load_gauge(path)
+    profile = gauge_profile(gauge, view_range=10.0)
+    assert abs(profile["left"][0][0] - -1.50) < 1e-6
+    assert abs(profile["right"][0][0] - 1.50) < 1e-6
+    assert abs(profile["left"][1][1] - -10.0) < 1e-6
+
+
+def test_save_gauge_then_reset(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("ARGUS_UI_ROOT", str(tmp_path / "ui"))
+    saved = save_gauge({"half_width": 2.0, "forward_axis": "+x"})
+    assert saved["half_width"] == 2.0
+    assert saved["forward_axis"] == "+x"
+    again = load_gauge()
+    assert again["half_width"] == 2.0
+    restored = reset_gauge()
+    assert restored["half_width"] == 1.5
+    assert not (tmp_path / "ui" / "params.yaml").exists()
+
+
+def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):
+    bag = tmp_path / "person20"
+    bag.mkdir()
+    point = struct.pack("<ffffI", 0.2, -20.0, 0.5, 1.0, 12)
+    with (bag / "cloud.argfrm").open("wb") as fh:
+        fh.write(b"ARGFRM1\0")
+        fh.write(struct.pack("<I", 1))
+        fh.write(struct.pack("<dIII", 0.0, 128, 1, 0))
+        fh.write(point)
+    info = describe(bag, {})
+    cloud = load_frame(bag, 0)
+    assert info["synthetic"] is True
+    assert info["status"] == "ready"
+    assert cloud["total"] == 1
+    assert cloud["raw_points"] == 1
+    assert abs(float(cloud["xyz"][0, 0]) - 0.2) < 1e-6
+    assert float(cloud["xyz"][0, 1]) == -20.0
+    assert float(cloud["xyz"][0, 2]) == 0.5

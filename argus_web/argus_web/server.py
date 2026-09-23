@@ -13,12 +13,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from argus_web.align import gauge_profile, load_gauge, reset_gauge, save_gauge
 from argus_web.bags import get_bag, list_bags
-from argus_web.cloud import load_frame, pack_xyz
+from argus_web.cloud import frame_stamps, load_frame, pack_xyz
 from argus_web.ingest import ingest_archive, job_status, list_jobs, save_upload
 from argus_web.paths import params_yaml, static_root, ui_params_yaml
 from argus_web.reports import csv_to_text, get_report, list_reports
-from argus_web.runner import current_run, load_params_text, save_params, start_run
+from argus_web.runner import current_run, start_run
 
 HOST = os.environ.get("ARGUS_WEB_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ARGUS_WEB_PORT", "8080"))
@@ -148,11 +149,19 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/run":
             _json(self, current_run() or {"status": "idle"})
             return
+        if route == "/api/gauge":
+            _json(self, gauge_profile(load_gauge()))
+            return
         if route == "/api/params":
-            if query.get("factory") == "1":
-                _text(self, params_yaml().read_text(encoding="utf-8"), mime="text/yaml; charset=utf-8")
+            _text(self, params_yaml().read_text(encoding="utf-8"), mime="text/yaml; charset=utf-8")
+            return
+        if route == "/api/stamps":
+            bag_id = query.get("bag")
+            bag = get_bag(bag_id or "")
+            if bag is None:
+                _json(self, {"error": "Запись не найдена"}, 404)
                 return
-            _text(self, load_params_text(), mime="text/yaml; charset=utf-8")
+            _json(self, {"stamps": frame_stamps(Path(bag["path"]))})
             return
         if route == "/api/cloud":
             bag_id = query.get("bag")
@@ -167,6 +176,24 @@ class Handler(BaseHTTPRequestHandler):
                 "X-Argus-Total": str(data["total"]),
                 "X-Argus-Points": str(data["points"]),
                 "X-Argus-Raw": str(data["raw_points"]),
+                "X-Argus-Stamp": str(data.get("stamp_ns") or 0),
+            }
+            _bytes(self, pack_xyz(data["xyz"]), "application/octet-stream", extra)
+            return
+        if route.startswith("/api/synthetic/"):
+            bag_id = unquote(route.rsplit("/", 1)[-1])
+            bag = get_bag(bag_id)
+            if bag is None or not bag.get("synthetic"):
+                _json(self, {"error": "Синтетическая запись не найдена"}, 404)
+                return
+            frame = int(query.get("frame") or "0")
+            data = load_frame(Path(bag["path"]), frame)
+            extra = {
+                "X-Argus-Frame": str(data["frame"]),
+                "X-Argus-Total": str(data["total"]),
+                "X-Argus-Points": str(data["points"]),
+                "X-Argus-Raw": str(data["raw_points"]),
+                "X-Argus-Stamp": str(data.get("stamp_ns") or 0),
             }
             _bytes(self, pack_xyz(data["xyz"]), "application/octet-stream", extra)
             return
@@ -192,15 +219,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _json(self, run, 202)
             return
-        if route == "/api/params":
-            text = self.rfile.read(length).decode("utf-8")
-            path = save_params(text)
-            _json(self, {"path": str(path)})
+        if route == "/api/gauge":
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+                if body.get("reset"):
+                    _json(self, reset_gauge())
+                    return
+                _json(self, save_gauge(body))
+            except (TypeError, ValueError) as exc:
+                _json(self, {"error": str(exc)}, 400)
             return
         if route == "/api/upload":
             filename = unquote(self.headers.get("X-Filename") or "upload.bin")
             dest_name = unquote(self.headers.get("X-Name") or Path(filename).stem)
             dest_name = re.sub(r"[^A-Za-z0-9._-]+", "_", dest_name) or "upload"
+            notes = unquote(self.headers.get("X-Notes") or "")
             remaining = length
             chunks = []
             while remaining > 0:
@@ -211,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
             saved = save_upload(filename, chunks)
             thread = threading.Thread(
-                target=ingest_archive, args=(saved, dest_name), daemon=True
+                target=ingest_archive, args=(saved, dest_name, notes), daemon=True
             )
             thread.start()
             _json(self, {"id": dest_name, "status": "parsing"}, 202)

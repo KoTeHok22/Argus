@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import struct
 import time
 from pathlib import Path
 
@@ -133,6 +134,9 @@ def _present_files(bag_dir: Path, names: list[str]) -> tuple[int, int]:
 
 def _candidate_dirs() -> list[Path]:
     roots = [data_root(), uploads_root()]
+    root = os.environ.get("ARGUS_SYNTHETIC_DATA")
+    if root:
+        roots.append(Path(root).resolve())
     found: list[Path] = []
     seen: set[Path] = set()
     for root in roots:
@@ -140,7 +144,7 @@ def _candidate_dirs() -> list[Path]:
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in {".git", "__pycache__"}]
-            if "metadata.yaml" in filenames:
+            if "metadata.yaml" in filenames or "cloud.argfrm" in filenames:
                 path = Path(dirpath)
                 if path not in seen:
                     seen.add(path)
@@ -164,6 +168,32 @@ def describe(bag_dir: Path, registry: dict | None = None) -> dict:
     name = bag_dir.name
     meta = parse_metadata(bag_dir)
     info = dict(registry.get(name, {}))
+    synthetic_file = bag_dir / "cloud.argfrm"
+    if synthetic_file.is_file():
+        with synthetic_file.open("rb") as fh:
+            header = fh.read(12)
+        frames = struct.unpack_from("<I", header, 8)[0] if header[:8] == b"ARGFRM1\0" and len(header) == 12 else 0
+        duration_s = max(0, frames - 1) / 10.0
+        return {
+            "id": name,
+            "name": name,
+            "path": str(bag_dir),
+            "topic": "synthetic/ARGFRM1",
+            "frames": frames,
+            "points_per_frame": None,
+            "rate_hz": 10.0,
+            "duration_s": duration_s,
+            "size_bytes": synthetic_file.stat().st_size,
+            "files_have": 1 if frames else 0,
+            "files_total": 1,
+            "split": "synthetic",
+            "split_label": "синтетика",
+            "labels": ["synthetic"],
+            "notes": (bag_dir / "notes.txt").read_text(encoding="utf-8") if (bag_dir / "notes.txt").is_file() else "",
+            "status": STATUS_READY if frames else STATUS_INCOMPLETE,
+            "holdout": False,
+            "synthetic": True,
+        }
     have, total = _present_files(bag_dir, meta["files"])
     split = str(info.get("split") or "train")
     duration_s = meta["duration_ns"] / 1_000_000_000.0 if meta["duration_ns"] else 0.0
@@ -185,6 +215,7 @@ def describe(bag_dir: Path, registry: dict | None = None) -> dict:
         "notes": info.get("notes") or "",
         "status": _status(split, have, total),
         "holdout": split == "holdout",
+        "synthetic": False,
     }
 
 
@@ -203,7 +234,13 @@ def list_bags() -> list[dict]:
         return _BAGS_CACHE[1]
     registry = _load_registry()
     bags = [describe(path, registry) for path in _candidate_dirs()]
-    bags.sort(key=lambda item: (item["holdout"], item["name"]))
+    best: dict[str, dict] = {}
+    for item in bags:
+        current = best.get(item["id"])
+        if current is None or (item["frames"], item["size_bytes"]) > (current["frames"], current["size_bytes"]):
+            best[item["id"]] = item
+    bags = [item for item in best.values() if item["frames"] or item["size_bytes"]]
+    bags.sort(key=lambda item: (item["holdout"], item["synthetic"], item["name"]))
     _BAGS_CACHE = (now, bags)
     return bags
 

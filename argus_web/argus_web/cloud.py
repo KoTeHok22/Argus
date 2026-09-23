@@ -13,6 +13,15 @@ RANGE_MIN, RANGE_MAX = 0.5, 400.0
 TARGET_POINTS = 18000
 
 
+def header_stamp_ns(blob: bytes) -> int | None:
+    if len(blob) < 12 or blob[:4] != b"\x00\x01\x00\x00":
+        return None
+    sec, nsec = struct.unpack_from("<iI", blob, 4)
+    if sec < 0 or nsec >= 1_000_000_000:
+        return None
+    return int(sec) * 1_000_000_000 + int(nsec)
+
+
 def parse_pointcloud2_cdr(blob: bytes) -> dict | None:
     if blob[:4] != b"\x00\x01\x00\x00":
         return None
@@ -96,25 +105,77 @@ def downsample(points: np.ndarray, limit: int = TARGET_POINTS) -> np.ndarray:
     return points[::step][:limit]
 
 
+def _lidar_topic_id(con: sqlite3.Connection) -> int | None:
+    topics = con.execute("SELECT id, name, type FROM topics").fetchall()
+    pc = [
+        t
+        for t in topics
+        if "PointCloud2" in (t[2] or "") or "pointcloud" in (t[1] or "")
+    ]
+    if not pc:
+        return None
+    return max(
+        pc,
+        key=lambda t: con.execute(
+            "SELECT COUNT(*) FROM messages WHERE topic_id=?",
+            (t[0],),
+        ).fetchone()[0],
+    )[0]
+
+
+_STAMP_CACHE: dict[str, list[str]] = {}
+
+
+def frame_stamps(bag_dir: Path) -> list[str]:
+    key = str(bag_dir)
+    cached = _STAMP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    synthetic_file = bag_dir / "cloud.argfrm"
+    if synthetic_file.is_file():
+        stamps = []
+        with synthetic_file.open("rb") as fh:
+            if fh.read(8) != b"ARGFRM1\0":
+                return stamps
+            count = struct.unpack("<I", fh.read(4))[0]
+            for _ in range(count):
+                header = fh.read(20)
+                if len(header) != 20:
+                    break
+                stamp_s, n_raw, n_valid, n_nr = struct.unpack("<dIII", header)
+                stamps.append(str(int(stamp_s * 1e9)))
+                fh.seek(n_valid * 20 + n_nr * 4, 1)
+        _STAMP_CACHE[key] = stamps
+        return stamps
+    stamps: list[str] = []
+    for path, _count in _file_counts(bag_dir):
+        con = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+        try:
+            topic_id = _lidar_topic_id(con)
+            if topic_id is None:
+                continue
+            rows = con.execute(
+                "SELECT substr(data, 5, 8) FROM messages WHERE topic_id=? ORDER BY timestamp",
+                (topic_id,),
+            ).fetchall()
+        finally:
+            con.close()
+        for row in rows:
+            blob = b"\x00\x01\x00\x00" + bytes(row[0])
+            stamp = header_stamp_ns(blob)
+            if stamp is not None:
+                stamps.append(str(stamp))
+    _STAMP_CACHE[key] = stamps
+    return stamps
+
+
 def _messages(db3: Path, topic_id: int | None, offset: int, limit: int):
     con = sqlite3.connect(f"file:{db3}?mode=ro&immutable=1", uri=True)
     try:
         if topic_id is None:
-            topics = con.execute("SELECT id, name, type FROM topics").fetchall()
-            pc = [
-                t
-                for t in topics
-                if "PointCloud2" in (t[2] or "") or "pointcloud" in (t[1] or "")
-            ]
-            if not pc:
+            topic_id = _lidar_topic_id(con)
+            if topic_id is None:
                 return []
-            topic_id = max(
-                pc,
-                key=lambda t: con.execute(
-                    "SELECT COUNT(*) FROM messages WHERE topic_id=?",
-                    (t[0],),
-                ).fetchone()[0],
-            )[0]
         rows = con.execute(
             "SELECT timestamp, data FROM messages WHERE topic_id=? LIMIT ? OFFSET ?",
             (topic_id, limit, offset),
@@ -159,6 +220,45 @@ def _split_index(bag_dir: Path, frame: int) -> tuple[Path, int] | None:
 
 
 def load_frame(bag_dir: Path, frame: int) -> dict:
+    synthetic_file = bag_dir / "cloud.argfrm"
+    if synthetic_file.is_file():
+        with synthetic_file.open("rb") as fh:
+            magic = fh.read(8)
+            total = struct.unpack("<I", fh.read(4))[0]
+            frame = max(0, min(frame, total - 1))
+            points = np.zeros(0, dtype=np.dtype([
+                ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+            ]))
+            stamp_s = 0.0
+            n_valid = 0
+            for _ in range(frame + 1):
+                header = fh.read(20)
+                if len(header) != 20:
+                    break
+                stamp_s, n_raw, n_valid, n_nr = struct.unpack("<dIII", header)
+                points = np.frombuffer(fh.read(n_valid * 20), dtype=np.dtype([
+                    ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+                ]))
+                fh.seek(n_nr * 4, 1)
+        if magic != b"ARGFRM1\0" or total == 0:
+            return {
+                "frame": frame,
+                "total": 0,
+                "points": 0,
+                "raw_points": 0,
+                "xyz": np.zeros((0, 3), dtype=np.float32),
+                "stamp_ns": 0,
+            }
+        xyz = np.column_stack((points["x"], points["y"], points["z"])).astype(np.float32)
+        xyz = downsample(xyz)
+        return {
+            "frame": frame,
+            "total": total,
+            "points": int(xyz.shape[0]),
+            "raw_points": int(n_valid),
+            "xyz": xyz,
+            "stamp_ns": int(stamp_s * 1e9),
+        }
     meta = parse_metadata(bag_dir)
     total = meta["frames"] or 0
     located = _split_index(bag_dir, frame)
@@ -180,6 +280,7 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
     msg = parse_pointcloud2_cdr(bytes(blob))
     if msg is None:
         return empty
+    header = header_stamp_ns(bytes(blob))
     xyz = decode_xyz(msg)
     sampled = downsample(xyz)
     return {
@@ -188,7 +289,7 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
         "points": int(sampled.shape[0]),
         "raw_points": int(xyz.shape[0]),
         "xyz": sampled,
-        "stamp_ns": int(stamp),
+        "stamp_ns": int(header if header is not None else stamp),
         "width": int(msg.get("width") or 0),
     }
 

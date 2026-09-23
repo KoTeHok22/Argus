@@ -47,6 +47,8 @@ def load_params_text() -> str:
 
 def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
     os.environ["ARGUS_LATENCY_CSV"] = str(csv_path)
+    if bag.get("synthetic"):
+        raise ValueError("Для синтетической последовательности нужен ARGFRM1 detector runner")
     if Path("/entrypoint.sh").is_file():
         return ["bash", "/entrypoint.sh", "detect", bag["path"], str(rate)]
     docker = shutil.which("docker")

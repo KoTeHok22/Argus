@@ -59,6 +59,29 @@ def _read_rows(path: Path) -> tuple[list[str], list[dict]]:
     return fields, rows
 
 
+def _stamp_of(row: dict) -> int | None:
+    raw = row.get("stamp_ns")
+    if raw in (None, ""):
+        return None
+    text = str(raw).strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    if not text.lstrip("-").isdigit():
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _timed_row(row: dict) -> bool:
+    for key in ("t_alert_path_ms", "t_detect_ms", "t_filter_ms"):
+        value = _num(row.get(key))
+        if value is not None and value > 0:
+            return True
+    return False
+
+
 def _is_latency(fields: list[str]) -> bool:
     return "stamp_ns" in fields and "status" in fields
 
@@ -72,9 +95,9 @@ def summarize_latency(rows: list[dict]) -> dict:
     for row in rows:
         name = row.get("status") or "UNKNOWN"
         statuses[name] = statuses.get(name, 0) + 1
-    usable = [r for r in rows if (r.get("status") or "") not in ("", "DEGRADED")]
+    usable = [r for r in rows if (r.get("status") or "") not in ("", "DEGRADED") and _timed_row(r)]
     if not usable:
-        usable = rows
+        usable = [r for r in rows if _timed_row(r)] or rows
     blocked = [r for r in usable if r.get("status") == "BLOCKED"]
     clear = [r for r in usable if r.get("status") == "CLEAR"]
     nearest = [
@@ -94,12 +117,14 @@ def summarize_latency(rows: list[dict]) -> dict:
         frames_out.append(
             {
                 "index": i,
+                "stamp_ns": (str(stamp) if (stamp := _stamp_of(row)) is not None else None),
                 "status": row.get("status"),
                 "status_label": STATUS_LABEL.get(row.get("status") or "", row.get("status")),
                 "nearest_m": nearest_m if nearest_m and nearest_m > 0 else None,
                 "objects": int(_num(row.get("objects")) or 0),
                 "fps": _num(row.get("fps")),
                 "latency_ms": _num(row.get("t_alert_path_ms")),
+                "explain": (row.get("explain") or "").strip() or None,
             }
         )
     return {

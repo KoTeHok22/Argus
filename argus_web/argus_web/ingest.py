@@ -68,11 +68,11 @@ def _extract_zst(src: Path, dest: Path, job_id: str) -> None:
             _set(job_id, progress=min(0.95, 0.1 + members / 250.0))
 
 
-def ingest_archive(src: Path, dest_name: str) -> dict:
+def ingest_archive(src: Path, dest_name: str, notes: str = "") -> dict:
     dest = uploads_root() / dest_name
     dest.mkdir(parents=True, exist_ok=True)
     job_id = dest_name
-    _set(job_id, name=dest_name, status="parsing", progress=0.05, path=str(dest))
+    _set(job_id, name=dest_name, status="parsing", progress=0.05, path=str(dest), notes=(notes or "").strip())
     try:
         if src.suffix.lower() == ".zst" or src.name.endswith(".tar.zst"):
             _extract_zst(src, dest, job_id)
