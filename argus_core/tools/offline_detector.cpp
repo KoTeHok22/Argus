@@ -158,6 +158,8 @@ int main(int argc, char** argv) {
     uint32_t min_cluster_size_far = 3;
     uint32_t min_hits = 3;
     uint32_t min_hits_far = 5;
+    float geom_max_target_range = 45.0f;
+    bool ground_filter = false;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -203,6 +205,10 @@ int main(int argc, char** argv) {
             tunnel_mode = true;
         } else if (a == "--debug-clusters") {
             debug_clusters = true;
+        } else if (a == "--geom-max-range" && i + 1 < argc) {
+            geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--ground-filter") {
+            ground_filter = true;
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -216,7 +222,8 @@ int main(int argc, char** argv) {
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
                      "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
-                     "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N]\n";
+                     "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
+                     "[--geom-max-range M]\n";
         return 2;
     }
 
@@ -240,6 +247,7 @@ int main(int argc, char** argv) {
 
     argus::NoReturnParams nr_params;
     argus::GeometryResidualParams geom_params;
+    geom_params.max_target_range_m = geom_max_target_range;
     argus::NoReturnDetector no_return(nr_params);
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;
@@ -261,7 +269,7 @@ int main(int argc, char** argv) {
     fusion_params.clustering.min_extent_m = 0.20f;
     fusion_params.tracking.min_hits_to_confirm = min_hits;
     fusion_params.tracking.min_hits_to_confirm_far = min_hits_far;
-    fusion_params.ground_filter = false;
+    fusion_params.ground_filter = ground_filter;
     fusion_params.use_free_space = free_space_vote;
     fusion_params.free_space_warmup_frames = warmup_frames;
     fusion_params.model.min_observations = std::max<uint32_t>(1, warmup_frames / 10);
@@ -373,6 +381,12 @@ int main(int argc, char** argv) {
                 cp.max_extent_m = fusion_params.clustering.max_extent_m;
                 const auto cls = argus::cluster_anomalies(cloud, ri, merged, cp);
                 std::cerr << "  после фильтров: " << cls.size() << "\n";
+                for (const auto& c : cls) {
+                    const Eigen::Vector3f ext = c.max_corner - c.min_corner;
+                    std::cerr << "    kept n=" << c.point_count << " nearest=" << c.nearest_range
+                              << " fwd=" << c.forward_distance << " ext=" << ext.transpose()
+                              << " centroid=(" << c.centroid.transpose() << ")\n";
+                }
             }
             const argus::FusionResult r = fusion.update(cloud, ri, geom, nr, 0.1f, 0.0f);
             std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << r.clusters.size() << ','
