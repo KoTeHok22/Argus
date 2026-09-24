@@ -41,6 +41,9 @@ TEST(TrackCorridor, KeepsDistanceAlongCurvedPath) {
     float ahead = 0.0f;
     EXPECT_TRUE(corridor.contains({0.0f, 0.0f}, {-3.0f, -9.0f}, ahead));
     EXPECT_NEAR(ahead, 10.0f, 1e-4f);
+    float offset = 0.0f;
+    EXPECT_TRUE(corridor.contains({0.0f, 0.0f}, {-2.4f, -9.45f}, ahead, offset));
+    EXPECT_NEAR(offset, 0.75f, 1e-4f);
 }
 
 TEST(TrackCorridor, SupportsTwentySixtyAndHundredMetersOnlyWhenObserved) {

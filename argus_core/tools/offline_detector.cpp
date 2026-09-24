@@ -330,6 +330,7 @@ int main(int argc, char** argv) {
     uint32_t world_max_component_points = 120;
     float world_max_y_extent = 1.2f;
     uint32_t world_max_track_age = 8;
+    float world_max_axis_offset = 0.0f;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -428,6 +429,8 @@ int main(int argc, char** argv) {
             world_max_y_extent = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-max-track-age" && i + 1 < argc) {
             world_max_track_age = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--world-max-axis-offset" && i + 1 < argc) {
+            world_max_axis_offset = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -453,6 +456,7 @@ int main(int argc, char** argv) {
                      "[--world-max-component-points N] "
                      "[--world-max-y-extent M] "
                      "[--world-max-track-age N] "
+                     "[--world-max-axis-offset M] "
                      "[--track-corridor --track-centerline PATH] "
                      "[--odom-heading] "
                      "[--profile-gauge] "
@@ -475,6 +479,11 @@ int main(int argc, char** argv) {
     }
     if (world_max_track_age != 8 && !world_component_mode) {
         std::cerr << "--world-max-track-age requires a world component mode\n";
+        return 2;
+    }
+    if (!std::isfinite(world_max_axis_offset) || world_max_axis_offset < 0.0f ||
+        (world_max_axis_offset > 0.0f && !track_corridor_mode)) {
+        std::cerr << "--world-max-axis-offset requires track corridor mode and nonnegative value\n";
         return 2;
     }
     if (!std::isfinite(world_max_y_extent) || world_max_y_extent <= 0.0f ||
@@ -884,9 +893,37 @@ int main(int argc, char** argv) {
                                   << extent.x() << ',' << extent.y() << ',' << extent.z() << '\n';
                     }
                 }
-                const auto result = update_world_tracks(world_tracks, components, k, 0.9f,
-                                                        world_max_component_points,
-                                                        world_max_y_extent, world_max_track_age);
+                auto result = update_world_tracks(world_tracks, components, k, 0.9f,
+                                                  world_max_component_points, world_max_y_extent,
+                                                  world_max_track_age);
+                if (world_max_axis_offset > 0.0f) {
+                    const Eigen::Vector2f sensor =
+                        world_odom.pose.translation().head<2>().cast<float>();
+                    std::vector<WorldTrack> axis_tracks;
+                    for (const auto& track : result.confirmed) {
+                        float candidate_arc = 0.0f;
+                        float lateral_offset = 0.0f;
+                        if (track_corridor.contains(sensor, track.center.head<2>(), candidate_arc,
+                                                    lateral_offset) &&
+                            lateral_offset <= world_max_axis_offset) {
+                            axis_tracks.push_back(track);
+                        }
+                    }
+                    result.alert = !axis_tracks.empty();
+                    result.confirmed = std::move(axis_tracks);
+                    if (result.alert) {
+                        const auto& track =
+                            *std::min_element(result.confirmed.begin(), result.confirmed.end(),
+                                              [](const WorldTrack& a, const WorldTrack& b) {
+                                                  return a.forward < b.forward;
+                                              });
+                        result.forward = track.forward;
+                        result.center = track.center;
+                        result.extent = track.high - track.low;
+                        result.points = track.points;
+                        result.hits = track.hits;
+                    }
+                }
                 if (world_component_detail) {
                     for (const auto& track : result.confirmed) {
                         const Eigen::Vector3f extent = track.high - track.low;

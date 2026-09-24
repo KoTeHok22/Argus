@@ -19,6 +19,8 @@ public:
     bool set_centerline(const std::vector<Eigen::Vector2f>& centerline);
     bool contains(const Eigen::Vector2f& sensor, const Eigen::Vector2f& candidate,
                   float& distance_ahead) const;
+    bool contains(const Eigen::Vector2f& sensor, const Eigen::Vector2f& candidate,
+                  float& distance_ahead, float& lateral_offset) const;
 
 private:
     struct Segment {

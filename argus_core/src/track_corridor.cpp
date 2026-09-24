@@ -51,6 +51,12 @@ bool TrackCorridor::project(const Eigen::Vector2f& point, float& arc, float& off
 
 bool TrackCorridor::contains(const Eigen::Vector2f& sensor, const Eigen::Vector2f& candidate,
                              float& distance_ahead) const {
+    float lateral_offset = 0.0f;
+    return contains(sensor, candidate, distance_ahead, lateral_offset);
+}
+
+bool TrackCorridor::contains(const Eigen::Vector2f& sensor, const Eigen::Vector2f& candidate,
+                             float& distance_ahead, float& lateral_offset) const {
     float sensor_arc = 0.0f;
     float sensor_offset = 0.0f;
     float candidate_arc = 0.0f;
@@ -75,6 +81,7 @@ bool TrackCorridor::contains(const Eigen::Vector2f& sensor, const Eigen::Vector2
             (candidate - segment.start - along * segment.direction).norm() <=
                 params_.half_width_m) {
             distance_ahead = segment.arc_start + along - sensor_arc;
+            lateral_offset = (candidate - segment.start - along * segment.direction).norm();
             return distance_ahead > 0.0f;
         }
     }
