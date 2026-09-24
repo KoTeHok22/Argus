@@ -99,6 +99,10 @@ struct WorldComponentResult {
     float forward = -1.0f;
     uint32_t components = 0;
     uint32_t tracks = 0;
+    Eigen::Vector3f center = Eigen::Vector3f::Zero();
+    Eigen::Vector3f extent = Eigen::Vector3f::Zero();
+    uint32_t points = 0;
+    uint32_t hits = 0;
 };
 
 WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
@@ -153,9 +157,14 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
         const Eigen::Vector3f extent = track.high - track.low;
         if (track.last_frame == frame && track.hits >= 3 && frame - track.first_frame <= 8 &&
             track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= 1.2f) {
-            result.alert = true;
-            result.forward =
-                result.forward < 0.0f ? track.forward : std::min(result.forward, track.forward);
+            if (!result.alert || track.forward < result.forward) {
+                result.alert = true;
+                result.forward = track.forward;
+                result.center = track.center;
+                result.extent = extent;
+                result.points = track.points;
+                result.hits = track.hits;
+            }
         }
     }
     return result;
@@ -481,7 +490,8 @@ int main(int argc, char** argv) {
         }
         std::cout << '\n';
     } else if (world_component_mode) {
-        std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness\n";
+        std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness,"
+                     "world_x,world_y,world_z,extent_x,extent_y,extent_z,points,hits\n";
     } else if (fusion_mode) {
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
@@ -654,7 +664,11 @@ int main(int argc, char** argv) {
                 const auto result = update_world_tracks(world_tracks, components, k, 0.9f);
                 std::cout << k << ',' << (result.alert ? 1 : 0) << ',' << result.components << ','
                           << result.tracks << ',' << result.forward << ',' << world_samples.size()
-                          << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << '\n';
+                          << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << ','
+                          << result.center.x() << ',' << result.center.y() << ','
+                          << result.center.z() << ',' << result.extent.x() << ','
+                          << result.extent.y() << ',' << result.extent.z() << ',' << result.points
+                          << ',' << result.hits << '\n';
                 continue;
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
