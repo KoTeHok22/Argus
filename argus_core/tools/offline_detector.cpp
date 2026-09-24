@@ -6,6 +6,7 @@
 #include <argus_core/ground.hpp>
 #include <argus_core/odometry.hpp>
 #include <argus_core/range_image.hpp>
+#include <argus_core/track_corridor.hpp>
 #include <argus_core/tunnel_model.hpp>
 #include <argus_core/tunnel_profile.hpp>
 #include <argus_core/types.hpp>
@@ -19,6 +20,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -307,6 +309,8 @@ int main(int argc, char** argv) {
     float temporal_threshold = 1.0f;
     bool world_residual = false;
     bool world_component_mode = false;
+    bool track_corridor_mode = false;
+    std::string track_centerline_path;
     bool odom_heading = false;
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
@@ -385,6 +389,15 @@ int main(int argc, char** argv) {
         } else if (a == "--world-components") {
             world_residual = true;
             world_component_mode = true;
+        } else if (a == "--track-corridor") {
+            world_residual = true;
+            world_component_mode = true;
+            track_corridor_mode = true;
+        } else if (a == "--track-centerline" && i + 1 < argc) {
+            track_centerline_path = argv[++i];
+        } else if (a == "--track-centerline") {
+            std::cerr << "--track-centerline requires a file path\n";
+            return 2;
         } else if (a == "--world-voxel" && i + 1 < argc) {
             world_voxel = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-fitness" && i + 1 < argc) {
@@ -396,6 +409,10 @@ int main(int argc, char** argv) {
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
+            if (a.rfind("--", 0) == 0) {
+                std::cerr << "unknown or incomplete option: " << a << '\n';
+                return 2;
+            }
             path = a;
         }
     }
@@ -410,10 +427,37 @@ int main(int argc, char** argv) {
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--odom-heading] [--profile-gauge] "
+                     "[--world-components] [--track-corridor --track-centerline PATH] "
+                     "[--odom-heading] "
+                     "[--profile-gauge] "
                      "[--profile-residual M] [--free-space-freeze] "
                      "[--frozen-min-observations N] [--frozen-min-confidence C]\n";
         return 2;
+    }
+    argus::TrackCorridor track_corridor({gauge_half_width, 5.0f, 1.0f});
+    if (track_corridor_mode != !track_centerline_path.empty()) {
+        std::cerr << "--track-corridor requires --track-centerline and vice versa\n";
+        return 2;
+    }
+    if (track_corridor_mode) {
+        std::ifstream centerline_file(track_centerline_path);
+        std::vector<Eigen::Vector2f> centerline;
+        std::string line;
+        while (std::getline(centerline_file, line)) {
+            std::istringstream coordinates(line);
+            float x = 0.0f;
+            float y = 0.0f;
+            std::string extra;
+            if (!(coordinates >> x >> y) || (coordinates >> extra)) {
+                std::cerr << "invalid track centerline (expected two coordinates per line)\n";
+                return 2;
+            }
+            centerline.emplace_back(x, y);
+        }
+        if (!centerline_file.eof() || !track_corridor.set_centerline(centerline)) {
+            std::cerr << "invalid track centerline (expected world x y pairs, <=5 m apart)\n";
+            return 2;
+        }
     }
 
     std::ifstream in(path, std::ios::binary);
@@ -746,9 +790,15 @@ int main(int argc, char** argv) {
                         : gauge_params.forward_axis == argus::ForwardAxis::PosY ? -cloud.x[i]
                                                                                 : cloud.x[i];
                     const float relative_z = cloud.z[i] + gauge_sensor_height;
-                    if (forward < 15.0f || forward > geom_max_target_range ||
-                        std::fabs(lateral) > gauge_half_width || relative_z < 0.0f ||
-                        relative_z > gauge_height) {
+                    const bool track_mode = track_corridor_mode;
+                    const float range =
+                        std::sqrt(cloud.x[i] * cloud.x[i] + cloud.y[i] * cloud.y[i] +
+                                  cloud.z[i] * cloud.z[i]);
+                    if ((track_mode ? range : forward) < 15.0f ||
+                        (track_mode ? range : forward) > geom_max_target_range ||
+                        (!track_mode && std::fabs(lateral) > gauge_half_width) ||
+                        relative_z < 0.0f || relative_z > gauge_height ||
+                        (track_mode && !cloud.ground_mask.empty() && cloud.ground_mask[i])) {
                         continue;
                     }
                     const Eigen::Vector3d local(cloud.x[i], cloud.y[i], cloud.z[i]);
@@ -760,7 +810,15 @@ int main(int argc, char** argv) {
                     keys.push_back(key);
                     const bool first_in_frame = frame_keys.insert(key).second;
                     if (k >= world_warmup && world_component_mode && !seen_nearby(ix, iy, iz)) {
-                        world_samples.push_back({world.cast<float>(), forward});
+                        float path_distance = 0.0f;
+                        const Eigen::Vector2f sensor = pose.translation().head<2>().cast<float>();
+                        const Eigen::Vector2f candidate = world.head<2>().cast<float>();
+                        if (!track_corridor_mode ||
+                            track_corridor.contains(sensor, candidate, path_distance)) {
+                            world_samples.push_back({world.cast<float>(), track_corridor_mode
+                                                                              ? path_distance
+                                                                              : forward});
+                        }
                     } else if (k >= world_warmup && !world_component_mode && first_in_frame &&
                                !seen_nearby(ix, iy, iz) &&
                                ++world_evidence_counts[key] >= world_evidence) {
