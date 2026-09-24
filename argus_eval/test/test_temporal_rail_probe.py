@@ -50,3 +50,14 @@ def test_window_excludes_old_observations():
 def test_invalid_parameters_fail_closed():
     with pytest.raises(ValueError):
         accumulated_centerline([frame()], [pose()], 0, window=0)
+
+
+def test_support_reports_valid_bins_past_first_gap_without_extending_path():
+    frames = [frame(), frame()]
+    poses = [pose(), pose()]
+    line, support = accumulated_centerline(
+        frames, poses, 1, min_points=1, max_range_m=20,
+        return_support=True)
+    assert len(line) == 2
+    assert [entry[-1] for entry in support] == [True, True, False, True]
+    assert support[2][1:3] == (0, 0)
