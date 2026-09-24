@@ -105,11 +105,14 @@ struct WorldComponentResult {
     Eigen::Vector3f extent = Eigen::Vector3f::Zero();
     uint32_t points = 0;
     uint32_t hits = 0;
+    uint32_t oversized = 0;
 };
 
 WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
                                          const std::vector<WorldComponent>& components,
-                                         uint32_t frame, float match_radius) {
+                                         uint32_t frame, float match_radius,
+                                         uint32_t max_component_points,
+                                         float max_world_y_extent_m) {
     WorldComponentResult result;
     result.components = static_cast<uint32_t>(components.size());
     tracks.erase(
@@ -118,7 +121,11 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
         tracks.end());
     std::vector<uint8_t> matched(tracks.size(), 0);
     for (const auto& component : components) {
-        if (component.points < 2 || component.points > 120) {
+        if (component.points > max_component_points) {
+            ++result.oversized;
+            continue;
+        }
+        if (component.points < 2) {
             continue;
         }
         int best = -1;
@@ -158,7 +165,8 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
     for (const auto& track : tracks) {
         const Eigen::Vector3f extent = track.high - track.low;
         if (track.last_frame == frame && track.hits >= 3 && frame - track.first_frame <= 8 &&
-            track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= 1.2f) {
+            track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f &&
+            extent.y() <= max_world_y_extent_m) {
             if (!result.alert || track.forward < result.forward) {
                 result.alert = true;
                 result.forward = track.forward;
@@ -316,6 +324,8 @@ int main(int argc, char** argv) {
     float world_fitness = 0.03f;
     uint32_t world_warmup = 10;
     uint32_t world_evidence = 3;
+    uint32_t world_max_component_points = 120;
+    float world_max_y_extent = 1.2f;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -406,6 +416,10 @@ int main(int argc, char** argv) {
             world_warmup = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--world-evidence" && i + 1 < argc) {
             world_evidence = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--world-max-component-points" && i + 1 < argc) {
+            world_max_component_points = static_cast<uint32_t>(std::max(2, std::atoi(argv[++i])));
+        } else if (a == "--world-max-y-extent" && i + 1 < argc) {
+            world_max_y_extent = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -427,7 +441,9 @@ int main(int argc, char** argv) {
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--track-corridor --track-centerline PATH] "
+                     "[--world-components] [--world-max-component-points N] "
+                     "[--world-max-y-extent M] "
+                     "[--track-corridor --track-centerline PATH] "
                      "[--odom-heading] "
                      "[--profile-gauge] "
                      "[--profile-residual M] [--free-space-freeze] "
@@ -437,6 +453,15 @@ int main(int argc, char** argv) {
     argus::TrackCorridor track_corridor({gauge_half_width, 5.0f, 1.0f});
     if (track_corridor_mode != !track_centerline_path.empty()) {
         std::cerr << "--track-corridor requires --track-centerline and vice versa\n";
+        return 2;
+    }
+    if (world_max_component_points != 120 && !world_component_mode) {
+        std::cerr << "--world-max-component-points requires a world component mode\n";
+        return 2;
+    }
+    if (!std::isfinite(world_max_y_extent) || world_max_y_extent <= 0.0f ||
+        (world_max_y_extent != 1.2f && !world_component_mode)) {
+        std::cerr << "--world-max-y-extent requires a world component mode and positive value\n";
         return 2;
     }
     if (track_corridor_mode) {
@@ -570,7 +595,7 @@ int main(int argc, char** argv) {
         std::cout << '\n';
     } else if (world_component_mode) {
         std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness,"
-                     "world_x,world_y,world_z,extent_x,extent_y,extent_z,points,hits\n";
+                     "world_x,world_y,world_z,extent_x,extent_y,extent_z,points,hits,oversized\n";
     } else if (fusion_mode) {
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
@@ -832,14 +857,16 @@ int main(int argc, char** argv) {
             }
             if (world_component_mode) {
                 const auto components = world_components(world_samples, 0.65f);
-                const auto result = update_world_tracks(world_tracks, components, k, 0.9f);
+                const auto result =
+                    update_world_tracks(world_tracks, components, k, 0.9f,
+                                        world_max_component_points, world_max_y_extent);
                 std::cout << k << ',' << (result.alert ? 1 : 0) << ',' << result.components << ','
                           << result.tracks << ',' << result.forward << ',' << world_samples.size()
                           << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << ','
                           << result.center.x() << ',' << result.center.y() << ','
                           << result.center.z() << ',' << result.extent.x() << ','
                           << result.extent.y() << ',' << result.extent.z() << ',' << result.points
-                          << ',' << result.hits << '\n';
+                          << ',' << result.hits << ',' << result.oversized << '\n';
                 continue;
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
