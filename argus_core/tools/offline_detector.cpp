@@ -297,6 +297,8 @@ int main(int argc, char** argv) {
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
     bool ground_filter = false;
+    bool profile_gauge_mode = false;
+    float profile_residual_threshold = 1.0f;
     bool temporal_residual = false;
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
@@ -359,6 +361,10 @@ int main(int argc, char** argv) {
             geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--ground-filter") {
             ground_filter = true;
+        } else if (a == "--profile-gauge") {
+            profile_gauge_mode = true;
+        } else if (a == "--profile-residual" && i + 1 < argc) {
+            profile_residual_threshold = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--temporal-residual") {
             temporal_residual = true;
         } else if (a == "--temporal-window" && i + 1 < argc) {
@@ -395,7 +401,8 @@ int main(int argc, char** argv) {
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--odom-heading]\n";
+                     "[--world-components] [--odom-heading] [--profile-gauge] "
+                     "[--profile-residual M]\n";
         return 2;
     }
 
@@ -481,7 +488,11 @@ int main(int argc, char** argv) {
     if (tunnel_mode) {
         std::cout << std::fixed << std::setprecision(3);
         std::cout << "frame,alert,model_ready,model_updated,voxels,fs_rate,fs_points,"
-                     "profile_median_m,odom_valid,speed_mps\n";
+                     "profile_median_m,odom_valid,speed_mps";
+        if (profile_gauge_mode) {
+            std::cout << ",gauge_observed,gauge_residual,gauge_peak_m,gauge_nearest_m";
+        }
+        std::cout << '\n';
     } else if (odometry_mode) {
         std::cout << std::fixed << std::setprecision(3);
         std::cout << "frame,valid,x,y,z,speed,corr,down,fitness";
@@ -546,12 +557,48 @@ int main(int argc, char** argv) {
                                              : argus::AnomalySet{};
             const argus::FusionResult r =
                 fusion.update(cloud, ri, geom, nr, fs, 0.1f, 0.0f, o.pose, true, o.valid);
+            uint32_t gauge_observed = 0;
+            uint32_t gauge_residual = 0;
+            float gauge_peak = 0.0f;
+            float gauge_nearest = -1.0f;
+            if (profile_gauge_mode && profile.valid()) {
+                const auto& gauge = fusion.gauge();
+                for (size_t i = 0; i < cloud.size(); ++i) {
+                    const uint32_t raw = cloud.raw_idx[i];
+                    if (raw >= ri.range.size() ||
+                        (!cloud.ground_mask.empty() && cloud.ground_mask[i]) ||
+                        !gauge.contains(cloud.x[i], cloud.y[i], cloud.z[i])) {
+                        continue;
+                    }
+                    const float distance =
+                        gauge.forward_distance(cloud.x[i], cloud.y[i], cloud.z[i]);
+                    if (distance < 15.0f || distance > 100.0f) {
+                        continue;
+                    }
+                    const float deviation = profile.deviation(ri, raw / ri.height, raw % ri.height);
+                    if (!std::isfinite(deviation)) {
+                        continue;
+                    }
+                    ++gauge_observed;
+                    if (deviation > profile_residual_threshold) {
+                        ++gauge_residual;
+                        gauge_peak = std::max(gauge_peak, deviation);
+                        gauge_nearest =
+                            gauge_nearest < 0.0f ? distance : std::min(gauge_nearest, distance);
+                    }
+                }
+            }
             profile.update(ri, !r.alert);
             const float profile_median = profile.median_deviation(ri);
             std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << (r.model_ready ? 1 : 0) << ','
                       << (r.model_updated ? 1 : 0) << ',' << fusion.model().voxel_count() << ','
                       << r.free_space_violation_rate << ',' << fs.indices.size() << ','
-                      << profile_median << ',' << (o.valid ? 1 : 0) << ',' << o.speed_mps << '\n';
+                      << profile_median << ',' << (o.valid ? 1 : 0) << ',' << o.speed_mps;
+            if (profile_gauge_mode) {
+                std::cout << ',' << gauge_observed << ',' << gauge_residual << ',' << gauge_peak
+                          << ',' << gauge_nearest;
+            }
+            std::cout << '\n';
             continue;
         }
         if (fusion_mode) {
