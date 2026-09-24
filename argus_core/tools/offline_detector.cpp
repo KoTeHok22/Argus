@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
     float carve_half_width = 3.0f;
     float gauge_height = 2.10f;
     float gauge_half_width = 1.50f;
-    float gauge_sensor_height = 1.20f;
+    float gauge_sensor_height = 1.075f;
     float gauge_safety_margin = 0.10f;
     float gauge_base_offset = 0.20f;
     float gauge_chamfer = 0.20f;
@@ -591,7 +591,7 @@ int main(int argc, char** argv) {
     fusion_params.compute_free_space_violation_rate = true;
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
     argus::GroundParams ground_params;
-    ground_params.sensor_height = 1.2f;
+    ground_params.sensor_height = gauge_sensor_height;
     ground_params.forward_axis = axis;
     if (ground_method == "z" || ground_method == "z_threshold") {
         ground_params.method = argus::GroundMethod::ZThreshold;

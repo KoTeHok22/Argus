@@ -22,7 +22,7 @@
     ground_segmentation:
       enabled: true
       method: z_threshold
-      sensor_height: -1.20
+      sensor_height: -1.075
       num_zones: 4
       num_sectors: 0
       enable_RNR: true
@@ -115,7 +115,7 @@
       base_offset: 0.20
       chamfer: 0.20
       nose_offset: 0.00
-      sensor_height: 1.20
+      sensor_height: 1.075
       max_range: 300.0
       safety_margin: 0.10
 
