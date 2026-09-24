@@ -104,6 +104,27 @@ TEST(Fusion, LateralWallFilteredByGauge) {
     EXPECT_GT(f2.n_filtered_out, 0u);
 }
 
+TEST(Fusion, GaugeWidthControlsAlertWithoutIncludingSideWall) {
+    const auto cloud = make_scene(1.0f);
+    const auto ri = ri_of(cloud);
+    const auto geometry = geometry_of_box(cloud);
+
+    argus::ClearanceGaugeParams narrow;
+    narrow.forward_axis = argus::ForwardAxis::NegY;
+    narrow.half_width = 1.4f;
+    narrow.safety_margin = 0.1f;
+    argus::FusionPipeline narrow_pipe(argus::ClearanceGauge(narrow), fusion_params());
+    narrow_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    const auto excluded = narrow_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    EXPECT_FALSE(excluded.alert);
+
+    narrow.half_width = 1.7f;
+    argus::FusionPipeline wide_pipe(argus::ClearanceGauge(narrow), fusion_params());
+    wide_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    const auto included = wide_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    EXPECT_TRUE(included.alert);
+}
+
 TEST(Fusion, MinVotesGateRequiresSecondDetector) {
     const auto cloud = make_scene(0.0f);
     const auto ri = ri_of(cloud);

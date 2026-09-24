@@ -1400,6 +1400,7 @@ async function pageParams() {
     ["height", "Высота, м", gauge.height],
     ["sensor_height", "Высота сенсора, м", gauge.sensor_height],
     ["base_offset", "Смещение от рельса, м", gauge.base_offset],
+    ["safety_margin", "Запас по высоте и перед носом, м", gauge.safety_margin],
   ];
   view.innerHTML = `
     <div class="settings-grid">

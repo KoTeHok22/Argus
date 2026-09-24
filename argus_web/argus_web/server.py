@@ -17,9 +17,9 @@ from argus_web.align import gauge_profile, load_gauge, reset_gauge, save_gauge
 from argus_web.bags import get_bag, list_bags
 from argus_web.cloud import frame_stamps, load_frame, pack_xyz
 from argus_web.ingest import ingest_archive, job_status, list_jobs, save_upload
-from argus_web.paths import params_yaml, static_root, ui_params_yaml
+from argus_web.paths import static_root, ui_params_yaml
 from argus_web.reports import csv_to_text, get_report, list_reports
-from argus_web.runner import current_run, start_run
+from argus_web.runner import active_params_file, current_run, start_run
 
 HOST = os.environ.get("ARGUS_WEB_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ARGUS_WEB_PORT", "8080"))
@@ -153,7 +153,7 @@ class Handler(BaseHTTPRequestHandler):
             _json(self, gauge_profile(load_gauge()))
             return
         if route == "/api/params":
-            _text(self, params_yaml().read_text(encoding="utf-8"), mime="text/yaml; charset=utf-8")
+            _text(self, active_params_file().read_text(encoding="utf-8"), mime="text/yaml; charset=utf-8")
             return
         if route == "/api/stamps":
             bag_id = query.get("bag")

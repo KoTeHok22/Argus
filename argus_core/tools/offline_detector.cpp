@@ -300,6 +300,11 @@ int main(int argc, char** argv) {
     float gauge_height = 2.10f;
     float gauge_half_width = 1.50f;
     float gauge_sensor_height = 1.20f;
+    float gauge_safety_margin = 0.10f;
+    float gauge_base_offset = 0.20f;
+    float gauge_chamfer = 0.20f;
+    float gauge_nose_offset = 0.00f;
+    float gauge_max_range = 300.0f;
     float odom_max_range = 120.0f;
     uint32_t odom_iterations = 4;
     uint32_t min_cluster_size_near = 15;
@@ -342,6 +347,16 @@ int main(int argc, char** argv) {
             gauge_half_width = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--gauge-sensor-height" && i + 1 < argc) {
             gauge_sensor_height = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-safety-margin" && i + 1 < argc) {
+            gauge_safety_margin = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-base-offset" && i + 1 < argc) {
+            gauge_base_offset = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-chamfer" && i + 1 < argc) {
+            gauge_chamfer = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-nose-offset" && i + 1 < argc) {
+            gauge_nose_offset = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-max-range" && i + 1 < argc) {
+            gauge_max_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--odom-max-range" && i + 1 < argc) {
             odom_max_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--odom-iterations" && i + 1 < argc) {
@@ -446,6 +461,8 @@ int main(int argc, char** argv) {
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
+                     "[--gauge-safety-margin M] [--gauge-base-offset M] "
+                     "[--gauge-chamfer M] [--gauge-nose-offset M] [--gauge-max-range M] "
                      "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
@@ -551,6 +568,11 @@ int main(int argc, char** argv) {
     gauge_params.height = gauge_height;
     gauge_params.half_width = gauge_half_width;
     gauge_params.sensor_height = gauge_sensor_height;
+    gauge_params.safety_margin = gauge_safety_margin;
+    gauge_params.base_offset = gauge_base_offset;
+    gauge_params.chamfer = gauge_chamfer;
+    gauge_params.nose_offset = gauge_nose_offset;
+    gauge_params.max_range = gauge_max_range;
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size_near = min_cluster_size_near;
     fusion_params.clustering.min_cluster_size_mid = min_cluster_size_mid;
@@ -848,8 +870,10 @@ int main(int argc, char** argv) {
                                   cloud.z[i] * cloud.z[i]);
                     if ((track_mode ? range : forward) < 15.0f ||
                         (track_mode ? range : forward) > geom_max_target_range ||
-                        (!track_mode && std::fabs(lateral) > gauge_half_width) ||
-                        relative_z < 0.0f || relative_z > gauge_height ||
+                        (!track_mode &&
+                         !fusion.gauge().contains(cloud.x[i], cloud.y[i], cloud.z[i])) ||
+                        (track_mode && (relative_z < gauge_base_offset - gauge_safety_margin ||
+                                        relative_z > gauge_height + gauge_safety_margin)) ||
                         (track_mode && !cloud.ground_mask.empty() && cloud.ground_mask[i])) {
                         continue;
                     }

@@ -46,13 +46,15 @@ def load_params_text() -> str:
 
 
 def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
-    os.environ["ARGUS_LATENCY_CSV"] = str(csv_path)
+    params_path = (csv_path.parent / f"{csv_path.stem}_params.yaml").resolve()
     if bag.get("synthetic"):
         raise ValueError("Для синтетической последовательности нужен ARGFRM1 detector runner")
     if Path("/entrypoint.sh").is_file():
-        return ["bash", "/entrypoint.sh", "detect", bag["path"], str(rate)]
+        return ["bash", "/entrypoint.sh", "detect", bag["path"], str(rate),
+                str(params_path)]
     docker = shutil.which("docker")
     if docker:
+        params_mount = params_path.parent.resolve()
         return [
             docker,
             "run",
@@ -62,12 +64,17 @@ def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
             f"{Path(bag['path']).resolve()}:/data/{bag['id']}:ro",
             "-v",
             f"{csv_path.parent.resolve()}:/tmp/argus_runs",
+            "-v",
+            f"{params_mount}:/tmp/argus_params:ro",
             "-e",
             f"ARGUS_LATENCY_CSV=/tmp/argus_runs/{csv_path.name}",
+            "-e",
+            f"ARGUS_PARAMS_FILE=/tmp/argus_params/{params_path.name}",
             "argus",
             "detect",
             f"/data/{bag['id']}",
             str(rate),
+            f"/tmp/argus_params/{params_path.name}",
         ]
     raise RuntimeError("Нет образа argus и нет ROS в этом окружении")
 
@@ -105,6 +112,8 @@ def _execute(bag: dict, rate: float, csv_path: Path) -> None:
     env = os.environ.copy()
     env["ARGUS_LATENCY_CSV"] = str(csv_path)
     try:
+        params_snapshot = csv_path.parent / f"{csv_path.stem}_params.yaml"
+        shutil.copy2(active_params_file(), params_snapshot)
         cmd = _detect_cmd(bag, rate, csv_path)
     except Exception as exc:
         _update(status="error", error=str(exc))

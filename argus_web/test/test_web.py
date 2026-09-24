@@ -148,6 +148,57 @@ def test_save_gauge_then_reset(tmp_path: Path, monkeypatch):
     assert not (tmp_path / "ui" / "params.yaml").exists()
 
 
+def test_active_params_file_prefers_ui_override(tmp_path: Path, monkeypatch):
+    from argus_web import runner
+
+    base = tmp_path / "argus_params.yaml"
+    override = tmp_path / "params.yaml"
+    base.write_text("base", encoding="utf-8")
+    override.write_text("override", encoding="utf-8")
+    monkeypatch.setattr(runner, "params_yaml", lambda: base)
+    monkeypatch.setattr(runner, "ui_params_yaml", lambda: override)
+    assert runner.active_params_file() == override
+
+
+def test_saved_gauge_overrides_detector_configuration(tmp_path: Path, monkeypatch):
+    from argus_web import align, runner
+
+    base = tmp_path / "argus_params.yaml"
+    base.write_text(
+        "/**:\n  ros__parameters:\n    gauge:\n"
+        "      half_width: 1.50\n      safety_margin: 0.10\n"
+        "    fusion:\n      min_votes_for_alert: 1\n",
+        encoding="utf-8",
+    )
+    override = tmp_path / "params.yaml"
+    monkeypatch.setattr(align, "params_yaml", lambda: base)
+    monkeypatch.setattr(align, "ui_params_yaml", lambda: override)
+    monkeypatch.setattr(runner, "params_yaml", lambda: base)
+    monkeypatch.setattr(runner, "ui_params_yaml", lambda: override)
+    save_gauge({"half_width": 1.7, "safety_margin": 0.08})
+    assert runner.active_params_file() == override
+    text = override.read_text(encoding="utf-8")
+    assert text.startswith("/**:\n  ros__parameters:\n")
+    assert "half_width: 1.7000" in text
+    assert "safety_margin: 0.0800" in text
+    assert "min_votes_for_alert: 1" in text
+
+
+def test_docker_run_mounts_active_gauge(tmp_path: Path, monkeypatch):
+    from argus_web import runner
+
+    override = tmp_path / "params.yaml"
+    override.write_text("/**:\n", encoding="utf-8")
+    monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
+    cmd = runner._detect_cmd(
+        {"id": "sample", "path": str(tmp_path / "sample")},
+        1.0, tmp_path / "result.csv",
+    )
+    assert f"{tmp_path}:/tmp/argus_params:ro" in cmd
+    assert "ARGUS_PARAMS_FILE=/tmp/argus_params/result_params.yaml" in cmd
+    assert cmd[-1] == "/tmp/argus_params/result_params.yaml"
+
+
 def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):
     bag = tmp_path / "person20"
     bag.mkdir()

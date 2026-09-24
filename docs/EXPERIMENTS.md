@@ -4,6 +4,14 @@
 
 Сводный вывод по достижимости 20–100 м, ограничению видимости, поворотам и статусу диагностических результатов: `docs/range_feasibility_report.md`. T39–T50 не доказывают невозможность дальнего обнаружения, но ни один кандидат не прошёл одновременно проверку целевого сигнала и реальных пустых участков. Конверт production не расширен; held-out T33 не перезапускался.
 
+### T65: габарит должен быть одним и тем же в UI, ROS и CLI
+
+До T65 UI сохранял настройки в `data/ui/params.yaml`, а web-runner запускал ROS без `params_file`; ROS поэтому продолжал читать `argus_launch/config/argus_params.yaml`. Исправление сохраняет UI-изменения как полный YAML с заменённым блоком `gauge`, делает снимок рядом с latency CSV и передаёт его в ROS launch. Для Docker snapshot монтируется в `/tmp/argus_params`, а `ARGUS_PARAMS_FILE` указывает на него. `/api/params` также показывает активный файл, а UI добавляет поле зазора.
+
+Offline CLI теперь принимает `--gauge-height`, `--gauge-half-width`, `--gauge-sensor-height`, `--gauge-safety-margin`, `--gauge-base-offset`, `--gauge-chamfer`, `--gauge-nose-offset` и `--gauge-max-range`. Core уже отбрасывает cluster, если ни одна его точка не попадает в `ClearanceGauge`; добавлен тест: при half-width 1.4 м боковая цель отбрасывается, при 1.7 м принимается. Габаритная ширина остаётся без safety-margin: это сознательное правило T16, поскольку боковое расширение дало FP платформы. Safety margin действует по высоте и носу, а UI отображает его как отдельный зазор.
+
+Проверки: offline CLI `doubleT_obstacle` **17/20** тревог и `doubleT_platform` **0/300**; web tests **13/13**; полный CI **158 тестов, 0 ошибок**. Production default YAML и held-out T33 не менялись.
+
 ### T64: почему накопленный путь обрывается перед целью
 
 `python3 scripts/temporal_rail_probe.py <frames> --poses <odom.csv> --window 20 --support` пишет для всех 5-метровых интервалов число кадров с достаточной левой/правой опорой, ширину между медианами и `valid`. Основной `supported_m` не меняется: валидный дальний интервал за дырой не засчитывается в непрерывный путь. Unit-тест проверяет это отдельно.
