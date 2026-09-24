@@ -102,7 +102,7 @@ def save_gauge(values: dict) -> dict:
         else:
             lines.append(f"      {key}: {float(value):.4f}")
     source = params_yaml().read_text(encoding="utf-8")
-    block = re.compile(r"(?m)^    gauge:\s*\n(?:      \S.*\n)*")
+    block = re.compile(r"(?m)^    gauge:[ \t]*\n(?:      \S[^\n]*\n)*")
     if not block.search(source):
         raise ValueError("Габарит отсутствует в конфигурации детектора")
     ui_params_yaml().write_text(

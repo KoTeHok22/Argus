@@ -12,6 +12,12 @@ Offline CLI теперь принимает `--gauge-height`, `--gauge-half-widt
 
 Проверки: offline CLI `doubleT_obstacle` **17/20** тревог и `doubleT_platform` **0/300**; web tests **13/13**; полный CI **158 тестов, 0 ошибок**. Production default YAML и held-out T33 не менялись.
 
+### T66: живой ROS применяет выбранную ширину
+
+Проверочный образ `argus:gauge-validation` собран из ветки. Один и тот же `doubleT_obstacle_smoke` запущен через `entrypoint.sh detect <bag> 1 <params_file>` с полушириной 1.50 и 0.20 м. Стандартный прогон дал **9 BLOCKED**, nearest **16.9 м**, detector diagnostics на 12 кадрах. Повторный узкий прогон дал **0 BLOCKED** при detector diagnostics на 12 кадрах. Первый узкий прогон был DEGRADED из-за Fast DDS SHM и не засчитывался как отсутствие тревоги. В обоих валидных прогонах ROS fusion использовал переданный YAML.
+
+UI-generated `params.yaml` проверен как полный production-конфиг с заменённым gauge. Snapshot для каждого прогона находится рядом с CSV; Docker-runner монтирует этот каталог, а не отдельный второй путь. Web-тесты 13/13, полный CI 158/158. Production default YAML и held-out не менялись.
+
 ### T64: почему накопленный путь обрывается перед целью
 
 `python3 scripts/temporal_rail_probe.py <frames> --poses <odom.csv> --window 20 --support` пишет для всех 5-метровых интервалов число кадров с достаточной левой/правой опорой, ширину между медианами и `valid`. Основной `supported_m` не меняется: валидный дальний интервал за дырой не засчитывается в непрерывный путь. Unit-тест проверяет это отдельно.

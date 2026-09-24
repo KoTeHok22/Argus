@@ -194,9 +194,8 @@ def test_docker_run_mounts_active_gauge(tmp_path: Path, monkeypatch):
         {"id": "sample", "path": str(tmp_path / "sample")},
         1.0, tmp_path / "result.csv",
     )
-    assert f"{tmp_path}:/tmp/argus_params:ro" in cmd
-    assert "ARGUS_PARAMS_FILE=/tmp/argus_params/result_params.yaml" in cmd
-    assert cmd[-1] == "/tmp/argus_params/result_params.yaml"
+    assert f"{tmp_path}:/tmp/argus_runs" in cmd
+    assert cmd[-1] == "/tmp/argus_runs/result_params.yaml"
 
 
 def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):

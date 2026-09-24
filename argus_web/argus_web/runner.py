@@ -54,7 +54,6 @@ def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
                 str(params_path)]
     docker = shutil.which("docker")
     if docker:
-        params_mount = params_path.parent.resolve()
         return [
             docker,
             "run",
@@ -64,17 +63,13 @@ def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
             f"{Path(bag['path']).resolve()}:/data/{bag['id']}:ro",
             "-v",
             f"{csv_path.parent.resolve()}:/tmp/argus_runs",
-            "-v",
-            f"{params_mount}:/tmp/argus_params:ro",
             "-e",
             f"ARGUS_LATENCY_CSV=/tmp/argus_runs/{csv_path.name}",
-            "-e",
-            f"ARGUS_PARAMS_FILE=/tmp/argus_params/{params_path.name}",
             "argus",
             "detect",
             f"/data/{bag['id']}",
             str(rate),
-            f"/tmp/argus_params/{params_path.name}",
+            f"/tmp/argus_runs/{params_path.name}",
         ]
     raise RuntimeError("Нет образа argus и нет ROS в этом окружении")
 
