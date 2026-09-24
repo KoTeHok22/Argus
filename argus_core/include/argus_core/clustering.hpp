@@ -21,6 +21,8 @@ struct ClusteringParams {
     float size_near_range_m = 60.0f;
     float size_mid_range_m = 120.0f;
     float size_far_range_m = 200.0f;
+    uint32_t min_cluster_size_long = 2;
+    float size_long_range_m = 300.0f;
     uint32_t max_cluster_size = 20000;
     float min_extent_m = 0.20f;
     float max_extent_m = 5.00f;

@@ -310,6 +310,8 @@ int main(int argc, char** argv) {
     uint32_t min_cluster_size_near = 15;
     uint32_t min_cluster_size_mid = 6;
     uint32_t min_cluster_size_far = 3;
+    uint32_t min_cluster_size_long = 2;
+    float size_long_range = 300.0f;
     uint32_t min_hits = 3;
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
@@ -377,6 +379,10 @@ int main(int argc, char** argv) {
             min_cluster_size_mid = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--min-cluster-size-far" && i + 1 < argc) {
             min_cluster_size_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-cluster-size-long" && i + 1 < argc) {
+            min_cluster_size_long = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--size-long-range" && i + 1 < argc) {
+            size_long_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--min-hits" && i + 1 < argc) {
             min_hits = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--min-hits-far" && i + 1 < argc) {
@@ -466,6 +472,7 @@ int main(int argc, char** argv) {
                      "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
+                     "[--min-cluster-size-long N] [--size-long-range M] "
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
@@ -577,6 +584,8 @@ int main(int argc, char** argv) {
     fusion_params.clustering.min_cluster_size_near = min_cluster_size_near;
     fusion_params.clustering.min_cluster_size_mid = min_cluster_size_mid;
     fusion_params.clustering.min_cluster_size_far = min_cluster_size_far;
+    fusion_params.clustering.min_cluster_size_long = min_cluster_size_long;
+    fusion_params.clustering.size_long_range_m = size_long_range;
     fusion_params.clustering.min_extent_m = 0.20f;
     fusion_params.tracking.min_hits_to_confirm = min_hits;
     fusion_params.tracking.min_hits_to_confirm_far = min_hits_far;

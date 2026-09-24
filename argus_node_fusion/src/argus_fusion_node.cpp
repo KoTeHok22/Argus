@@ -211,6 +211,10 @@ private:
             declare_parameter<double>("clustering.size_mid_range_m", c.size_mid_range_m));
         c.size_far_range_m = static_cast<float>(
             declare_parameter<double>("clustering.size_far_range_m", c.size_far_range_m));
+        c.min_cluster_size_long = static_cast<uint32_t>(declare_parameter<int>(
+            "clustering.min_cluster_size_long", static_cast<int>(c.min_cluster_size_long)));
+        c.size_long_range_m = static_cast<float>(
+            declare_parameter<double>("clustering.size_long_range_m", c.size_long_range_m));
         c.max_cluster_size = static_cast<uint32_t>(declare_parameter<int>(
             "clustering.max_cluster_size", static_cast<int>(c.max_cluster_size)));
         c.min_extent_m = static_cast<float>(
