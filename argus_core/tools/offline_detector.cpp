@@ -106,13 +106,14 @@ struct WorldComponentResult {
     uint32_t points = 0;
     uint32_t hits = 0;
     uint32_t oversized = 0;
+    std::vector<WorldTrack> confirmed;
 };
 
 WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
                                          const std::vector<WorldComponent>& components,
                                          uint32_t frame, float match_radius,
-                                         uint32_t max_component_points,
-                                         float max_world_y_extent_m) {
+                                         uint32_t max_component_points, float max_world_y_extent_m,
+                                         uint32_t max_track_age) {
     WorldComponentResult result;
     result.components = static_cast<uint32_t>(components.size());
     tracks.erase(
@@ -164,9 +165,10 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
     result.tracks = static_cast<uint32_t>(tracks.size());
     for (const auto& track : tracks) {
         const Eigen::Vector3f extent = track.high - track.low;
-        if (track.last_frame == frame && track.hits >= 3 && frame - track.first_frame <= 8 &&
-            track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f &&
-            extent.y() <= max_world_y_extent_m) {
+        if (track.last_frame == frame && track.hits >= 3 &&
+            frame - track.first_frame <= max_track_age && track.points >= 15 &&
+            extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= max_world_y_extent_m) {
+            result.confirmed.push_back(track);
             if (!result.alert || track.forward < result.forward) {
                 result.alert = true;
                 result.forward = track.forward;
@@ -317,6 +319,7 @@ int main(int argc, char** argv) {
     float temporal_threshold = 1.0f;
     bool world_residual = false;
     bool world_component_mode = false;
+    bool world_component_detail = false;
     bool track_corridor_mode = false;
     std::string track_centerline_path;
     bool odom_heading = false;
@@ -326,6 +329,7 @@ int main(int argc, char** argv) {
     uint32_t world_evidence = 3;
     uint32_t world_max_component_points = 120;
     float world_max_y_extent = 1.2f;
+    uint32_t world_max_track_age = 8;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -399,6 +403,8 @@ int main(int argc, char** argv) {
         } else if (a == "--world-components") {
             world_residual = true;
             world_component_mode = true;
+        } else if (a == "--world-component-detail") {
+            world_component_detail = true;
         } else if (a == "--track-corridor") {
             world_residual = true;
             world_component_mode = true;
@@ -420,6 +426,8 @@ int main(int argc, char** argv) {
             world_max_component_points = static_cast<uint32_t>(std::max(2, std::atoi(argv[++i])));
         } else if (a == "--world-max-y-extent" && i + 1 < argc) {
             world_max_y_extent = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--world-max-track-age" && i + 1 < argc) {
+            world_max_track_age = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
@@ -441,8 +449,10 @@ int main(int argc, char** argv) {
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--world-max-component-points N] "
+                     "[--world-components] [--world-component-detail] "
+                     "[--world-max-component-points N] "
                      "[--world-max-y-extent M] "
+                     "[--world-max-track-age N] "
                      "[--track-corridor --track-centerline PATH] "
                      "[--odom-heading] "
                      "[--profile-gauge] "
@@ -457,6 +467,14 @@ int main(int argc, char** argv) {
     }
     if (world_max_component_points != 120 && !world_component_mode) {
         std::cerr << "--world-max-component-points requires a world component mode\n";
+        return 2;
+    }
+    if (world_component_detail && !world_component_mode) {
+        std::cerr << "--world-component-detail requires a world component mode\n";
+        return 2;
+    }
+    if (world_max_track_age != 8 && !world_component_mode) {
+        std::cerr << "--world-max-track-age requires a world component mode\n";
         return 2;
     }
     if (!std::isfinite(world_max_y_extent) || world_max_y_extent <= 0.0f ||
@@ -857,9 +875,28 @@ int main(int argc, char** argv) {
             }
             if (world_component_mode) {
                 const auto components = world_components(world_samples, 0.65f);
-                const auto result =
-                    update_world_tracks(world_tracks, components, k, 0.9f,
-                                        world_max_component_points, world_max_y_extent);
+                if (world_component_detail) {
+                    for (const auto& component : components) {
+                        const Eigen::Vector3f extent = component.high - component.low;
+                        std::cerr << "component," << k << ',' << component.forward << ','
+                                  << component.center.x() << ',' << component.center.y() << ','
+                                  << component.center.z() << ',' << component.points << ','
+                                  << extent.x() << ',' << extent.y() << ',' << extent.z() << '\n';
+                    }
+                }
+                const auto result = update_world_tracks(world_tracks, components, k, 0.9f,
+                                                        world_max_component_points,
+                                                        world_max_y_extent, world_max_track_age);
+                if (world_component_detail) {
+                    for (const auto& track : result.confirmed) {
+                        const Eigen::Vector3f extent = track.high - track.low;
+                        std::cerr << "confirmed," << k << ',' << track.forward << ','
+                                  << track.center.x() << ',' << track.center.y() << ','
+                                  << track.center.z() << ',' << track.points << ',' << extent.x()
+                                  << ',' << extent.y() << ',' << extent.z() << ',' << track.hits
+                                  << '\n';
+                    }
+                }
                 std::cout << k << ',' << (result.alert ? 1 : 0) << ',' << result.components << ','
                           << result.tracks << ',' << result.forward << ',' << world_samples.size()
                           << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << ','
