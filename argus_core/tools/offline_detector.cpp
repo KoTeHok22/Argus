@@ -36,6 +36,131 @@ struct Frame {
     std::vector<uint32_t> no_return_raw;
 };
 
+struct WorldSample {
+    Eigen::Vector3f world;
+    float forward = 0.0f;
+};
+
+struct WorldComponent {
+    Eigen::Vector3f center = Eigen::Vector3f::Zero();
+    Eigen::Vector3f low = Eigen::Vector3f::Constant(std::numeric_limits<float>::max());
+    Eigen::Vector3f high = Eigen::Vector3f::Constant(-std::numeric_limits<float>::max());
+    float forward = std::numeric_limits<float>::max();
+    uint32_t points = 0;
+};
+
+struct WorldTrack {
+    Eigen::Vector3f center = Eigen::Vector3f::Zero();
+    Eigen::Vector3f low = Eigen::Vector3f::Constant(std::numeric_limits<float>::max());
+    Eigen::Vector3f high = Eigen::Vector3f::Constant(-std::numeric_limits<float>::max());
+    uint32_t last_frame = 0;
+    uint32_t first_frame = 0;
+    uint32_t hits = 0;
+    uint32_t points = 0;
+    float forward = 0.0f;
+};
+
+std::vector<WorldComponent> world_components(const std::vector<WorldSample>& samples,
+                                             float radius) {
+    std::vector<WorldComponent> components;
+    std::vector<uint8_t> visited(samples.size(), 0);
+    const float radius_sq = radius * radius;
+    for (size_t i = 0; i < samples.size(); ++i) {
+        if (visited[i]) {
+            continue;
+        }
+        WorldComponent component;
+        std::vector<size_t> pending{i};
+        visited[i] = 1;
+        while (!pending.empty()) {
+            const size_t current = pending.back();
+            pending.pop_back();
+            const auto& sample = samples[current];
+            component.center += sample.world;
+            component.low = component.low.cwiseMin(sample.world);
+            component.high = component.high.cwiseMax(sample.world);
+            component.forward = std::min(component.forward, sample.forward);
+            ++component.points;
+            for (size_t j = 0; j < samples.size(); ++j) {
+                if (!visited[j] && (samples[j].world - sample.world).squaredNorm() <= radius_sq) {
+                    visited[j] = 1;
+                    pending.push_back(j);
+                }
+            }
+        }
+        component.center /= static_cast<float>(component.points);
+        components.push_back(component);
+    }
+    return components;
+}
+
+struct WorldComponentResult {
+    bool alert = false;
+    float forward = -1.0f;
+    uint32_t components = 0;
+    uint32_t tracks = 0;
+};
+
+WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
+                                         const std::vector<WorldComponent>& components,
+                                         uint32_t frame, float match_radius) {
+    WorldComponentResult result;
+    result.components = static_cast<uint32_t>(components.size());
+    tracks.erase(
+        std::remove_if(tracks.begin(), tracks.end(),
+                       [frame](const WorldTrack& track) { return frame - track.last_frame > 5; }),
+        tracks.end());
+    std::vector<uint8_t> matched(tracks.size(), 0);
+    for (const auto& component : components) {
+        if (component.points < 2 || component.points > 120) {
+            continue;
+        }
+        int best = -1;
+        float best_distance = match_radius * match_radius;
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            const float distance = (tracks[i].center - component.center).squaredNorm();
+            if (!matched[i] && distance < best_distance) {
+                best = static_cast<int>(i);
+                best_distance = distance;
+            }
+        }
+        if (best < 0) {
+            WorldTrack track;
+            track.center = component.center;
+            track.low = component.low;
+            track.high = component.high;
+            track.first_frame = frame;
+            track.last_frame = frame;
+            track.hits = 1;
+            track.points = component.points;
+            track.forward = component.forward;
+            tracks.push_back(track);
+            matched.push_back(1);
+            continue;
+        }
+        WorldTrack& track = tracks[best];
+        matched[best] = 1;
+        track.center = 0.5f * (track.center + component.center);
+        track.low = track.low.cwiseMin(component.low);
+        track.high = track.high.cwiseMax(component.high);
+        track.forward = component.forward;
+        track.last_frame = frame;
+        ++track.hits;
+        track.points += component.points;
+    }
+    result.tracks = static_cast<uint32_t>(tracks.size());
+    for (const auto& track : tracks) {
+        const Eigen::Vector3f extent = track.high - track.low;
+        if (track.last_frame == frame && track.hits >= 3 && frame - track.first_frame <= 8 &&
+            track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= 1.2f) {
+            result.alert = true;
+            result.forward =
+                result.forward < 0.0f ? track.forward : std::min(result.forward, track.forward);
+        }
+    }
+    return result;
+}
+
 bool read_u32(std::ifstream& in, uint32_t& v) {
     return static_cast<bool>(in.read(reinterpret_cast<char*>(&v), 4));
 }
@@ -167,6 +292,7 @@ int main(int argc, char** argv) {
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
     bool world_residual = false;
+    bool world_component_mode = false;
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
     uint32_t world_warmup = 10;
@@ -228,6 +354,9 @@ int main(int argc, char** argv) {
             temporal_threshold = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-residual") {
             world_residual = true;
+        } else if (a == "--world-components") {
+            world_residual = true;
+            world_component_mode = true;
         } else if (a == "--world-voxel" && i + 1 < argc) {
             world_voxel = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-fitness" && i + 1 < argc) {
@@ -252,7 +381,8 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
-                     "[--world-fitness M] [--world-warmup N] [--world-evidence N]\n";
+                     "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
+                     "[--world-components]\n";
         return 2;
     }
 
@@ -283,6 +413,7 @@ int main(int argc, char** argv) {
     std::vector<std::vector<float>> temporal_history;
     std::unordered_set<int64_t> world_history;
     std::unordered_map<int64_t, uint32_t> world_evidence_counts;
+    std::vector<WorldTrack> world_tracks;
 
     argus::ForwardAxis axis = argus::ForwardAxis::PosX;
     if (!argus::parse_forward_axis(forward_axis, axis)) {
@@ -341,6 +472,8 @@ int main(int argc, char** argv) {
     } else if (odometry_mode) {
         std::cout << std::fixed << std::setprecision(3);
         std::cout << "frame,valid,x,y,z,speed,corr,down,fitness\n";
+    } else if (world_component_mode) {
+        std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness\n";
     } else if (fusion_mode) {
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
@@ -390,6 +523,7 @@ int main(int argc, char** argv) {
         }
         if (fusion_mode) {
             argus::OdometryResult world_odom;
+            std::vector<WorldSample> world_samples;
             if (world_residual) {
                 world_odom = odom.update(cloud, f.stamp_s);
             }
@@ -479,8 +613,11 @@ int main(int argc, char** argv) {
                     const int64_t key = voxel_key(ix, iy, iz);
                     keys.push_back(key);
                     const bool first_in_frame = frame_keys.insert(key).second;
-                    if (k >= world_warmup && first_in_frame && !seen_nearby(ix, iy, iz) &&
-                        ++world_evidence_counts[key] >= world_evidence) {
+                    if (k >= world_warmup && world_component_mode && !seen_nearby(ix, iy, iz)) {
+                        world_samples.push_back({world.cast<float>(), forward});
+                    } else if (k >= world_warmup && !world_component_mode && first_in_frame &&
+                               !seen_nearby(ix, iy, iz) &&
+                               ++world_evidence_counts[key] >= world_evidence) {
                         geom.indices.push_back(static_cast<uint32_t>(i));
                         geom.score.push_back(1.0f);
                     }
@@ -488,6 +625,14 @@ int main(int argc, char** argv) {
                 if (k < world_warmup) {
                     world_history.insert(keys.begin(), keys.end());
                 }
+            }
+            if (world_component_mode) {
+                const auto components = world_components(world_samples, 0.65f);
+                const auto result = update_world_tracks(world_tracks, components, k, 0.9f);
+                std::cout << k << ',' << (result.alert ? 1 : 0) << ',' << result.components << ','
+                          << result.tracks << ',' << result.forward << ',' << world_samples.size()
+                          << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << '\n';
+                continue;
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
             if (debug_clusters) {
