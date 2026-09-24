@@ -217,7 +217,10 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
 
         const size_t cells = cand.cells.size();
-        if (cells < p_.min_cells) {
+        const bool far_candidate = nearest >= p_.far_range_m;
+        const uint32_t min_cells = far_candidate ? p_.min_cells_far : p_.min_cells;
+        const float min_fill = far_candidate ? p_.min_fill_far : p_.min_fill;
+        if (cells < min_cells) {
             continue;
         }
 
@@ -228,7 +231,7 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
         const float fill =
             static_cast<float>(cells) / static_cast<float>((span + 1) * (r1 - r0 + 1));
-        if (fill < p_.min_fill) {
+        if (fill < min_fill) {
             continue;
         }
         if (nearest < p_.min_range || nearest > p_.max_target_range_m) {

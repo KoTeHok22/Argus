@@ -50,6 +50,9 @@ struct GeometryResidualParams {
     float min_fill = 0.3f;
     float min_range = 4.0f;
     float max_target_range_m = 45.0f;
+    float far_range_m = 60.0f;
+    uint32_t min_cells_far = 8;
+    float min_fill_far = 0.12f;
     uint32_t min_stable_frames = 2;
     uint32_t az_tolerance = 20;
     float range_tolerance_m = 3.0f;

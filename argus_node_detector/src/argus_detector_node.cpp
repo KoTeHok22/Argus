@@ -66,6 +66,12 @@ public:
             static_cast<float>(declare_parameter<double>("detector_geometry.min_range", 4.0));
         geom.max_target_range_m = static_cast<float>(
             declare_parameter<double>("detector_geometry.max_target_range_m", 45.0));
+        geom.far_range_m =
+            static_cast<float>(declare_parameter<double>("detector_geometry.far_range_m", 60.0));
+        geom.min_cells_far =
+            static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_cells_far", 8));
+        geom.min_fill_far =
+            static_cast<float>(declare_parameter<double>("detector_geometry.min_fill_far", 0.12));
         geom.min_stable_frames =
             static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_stable_frames", 2));
         geom.az_tolerance =

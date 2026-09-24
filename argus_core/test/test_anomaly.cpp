@@ -16,14 +16,14 @@ constexpr float kWallRange = 25.5f;
 constexpr float kBoxRange = 16.9f;
 
 argus::CleanCloud make_wall_cloud(float box_range, uint32_t az0, uint32_t az1, uint32_t r0,
-                                  uint32_t r1) {
+                                  uint32_t r1, float wall_range = kWallRange) {
     argus::CleanCloud c;
     c.rings = kH;
     c.n_raw = kW * kH;
     for (uint32_t az = 0; az < kW; ++az) {
         for (uint32_t ring = 0; ring < kH; ++ring) {
             const bool in_box = az >= az0 && az <= az1 && ring >= r0 && ring <= r1;
-            const float d = in_box ? box_range : kWallRange;
+            const float d = in_box ? box_range : wall_range;
             c.x.push_back(d);
             c.y.push_back(0.0f);
             c.z.push_back(0.0f);
@@ -43,6 +43,9 @@ argus::GeometryResidualParams make_geom_params(uint32_t min_stable_frames) {
     p.min_fill = 0.3f;
     p.min_range = 4.0f;
     p.max_target_range_m = 45.0f;
+    p.far_range_m = 60.0f;
+    p.min_cells_far = 8;
+    p.min_fill_far = 0.12f;
     p.min_stable_frames = min_stable_frames;
     p.az_tolerance = 20;
     p.range_tolerance_m = 3.0f;
@@ -234,4 +237,28 @@ TEST(NoReturnDetector, DeadBaselineNotFlagged) {
     argus::NoReturnDetector det(p);
     const argus::AnomalySet set = det.detect(cloud, ri);
     EXPECT_TRUE(set.cells.empty());
+}
+
+TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.far_range_m = 60.0f;
+    params.min_cells = 50;
+    params.min_cells_far = 8;
+    params.min_fill = 0.3f;
+    params.min_fill_far = 0.12f;
+    argus::GeometryResidualDetector detector(params);
+    const auto set = detector.detect(cloud, ri);
+    EXPECT_EQ(set.indices.size(), 12u);
+
+    params.far_range_m = 120.0f;
+    argus::GeometryResidualDetector near_gate(params);
+    EXPECT_TRUE(near_gate.detect(cloud, ri).indices.empty());
+
+    params.far_range_m = 60.0f;
+    params.max_target_range_m = 90.0f;
+    argus::GeometryResidualDetector range_gate(params);
+    EXPECT_TRUE(range_gate.detect(cloud, ri).indices.empty());
 }
