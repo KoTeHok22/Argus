@@ -6,7 +6,7 @@
 
 ### T65: габарит должен быть одним и тем же в UI, ROS и CLI
 
-До T65 UI сохранял настройки в `data/ui/params.yaml`, а web-runner запускал ROS без `params_file`; ROS поэтому продолжал читать `argus_launch/config/argus_params.yaml`. Исправление сохраняет UI-изменения как полный YAML с заменённым блоком `gauge`, делает снимок рядом с latency CSV и передаёт его в ROS launch. Для Docker snapshot монтируется в `/tmp/argus_params`, а `ARGUS_PARAMS_FILE` указывает на него. `/api/params` также показывает активный файл, а UI добавляет поле зазора.
+До T65 UI сохранял настройки в `data/ui/params.yaml`, а web-runner запускал ROS без `params_file`; ROS поэтому продолжал читать `argus_launch/config/argus_params.yaml`. Исправление сохраняет UI-изменения как полный YAML с заменённым блоком `gauge`, делает снимок рядом с latency CSV и передаёт его в ROS launch. После T66 Docker-runner использует одно монтирование `/tmp/argus_runs` для CSV и snapshot параметров. `/api/params` показывает активный файл, а UI добавляет поле зазора.
 
 Offline CLI теперь принимает `--gauge-height`, `--gauge-half-width`, `--gauge-sensor-height`, `--gauge-safety-margin`, `--gauge-base-offset`, `--gauge-chamfer`, `--gauge-nose-offset` и `--gauge-max-range`. Core уже отбрасывает cluster, если ни одна его точка не попадает в `ClearanceGauge`; добавлен тест: при half-width 1.4 м боковая цель отбрасывается, при 1.7 м принимается. Габаритная ширина остаётся без safety-margin: это сознательное правило T16, поскольку боковое расширение дало FP платформы. Safety margin действует по высоте и носу, а UI отображает его как отдельный зазор.
 

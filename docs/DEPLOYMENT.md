@@ -38,7 +38,7 @@ docker run --rm --shm-size=256m -p 8080:8080 \
 
 Или `docker compose -f docker/docker-compose.yml up ui`. Открыть `http://localhost:8080`.
 
-На экране «Запись» можно положить `.zst` или выбрать уже распакованный bag. «Эфир» рисует облако из sqlite bag, без ROS. «Прогнать» запускает тот же `detect`, отчёт появляется из CSV.
+На экране «Запись» можно положить `.zst` или выбрать уже распакованный bag. «Эфир» рисует облако из sqlite bag, без ROS. «Прогнать» создаёт snapshot полного YAML с выбранным `gauge` и запускает тот же `detect`; отчёт появляется из CSV.
 
 Без Docker: `./scripts/run_ui.sh` (нужны Python 3 и numpy).
 
@@ -66,7 +66,9 @@ ros2 launch argus_launch argus.launch.py \
 
 ## Параметры
 
-Все пороги — в `argus_launch/config/argus_params.yaml`. Хэш сдачи: SHA-256 `9352a301b50514745a43b531debde2f6e27e21176c84554a3c1024f55906a344`.
+Все пороги — в `argus_launch/config/argus_params.yaml`. UI-runner передаёт snapshot этого файла через `params_file`. Хэш production-конфига: SHA-256 `9352a301b50514745a43b531debde2f6e27e21176c84554a3c1024f55906a344`.
+
+Диагностические флаги offline world-space runner (`--world-components`, `--track-corridor`) не входят в ROS-команду и не меняют production YAML. Они требуют внешней оси пути, а T68 показал чувствительность к ошибочной кривой оси.
 
 `fusion.publish_markers` (по умолчанию true) включает `/argus/markers`. `/argus/explain` — текст тревоги. `/argus/cloud` — облако для RViz (не сырой топик бэга). Видео G8: `docs/video/argus_demo.mp4`.
 
