@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import csv
 import json
 import os
 import struct
@@ -32,6 +33,9 @@ def ray_box_intersection(origin, directions, box_min, box_max):
             low = box_min[axis]
             high = box_max[axis]
             if abs(delta) < 1e-12:
+                if start < low or start > high:
+                    valid = False
+                    break
                 continue
             t1 = (low - start) / delta
             t2 = (high - start) / delta
@@ -71,8 +75,33 @@ def write_frames(path, frames):
             fh.write(nr.astype("<u4").tobytes())
 
 
+def read_poses(path, frames):
+    poses = []
+    with open(path, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        required = {"frame", "valid", "x", "y", "z", "heading_deg"}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError("pose CSV requires frame,valid,x,y,z,heading_deg")
+        for index, row in enumerate(reader):
+            if index == len(frames):
+                break
+            if int(row["frame"]) != index or int(row["valid"]) != 1:
+                raise ValueError(f"missing or invalid pose at frame {index}")
+            values = np.array([float(row[key]) for key in ("x", "y", "z")])
+            heading = np.deg2rad(float(row["heading_deg"]))
+            if not np.isfinite(values).all() or not np.isfinite(heading):
+                raise ValueError(f"non-finite pose at frame {index}")
+            c, s = np.cos(heading), np.sin(heading)
+            rotation = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+            poses.append((values, rotation))
+    if len(poses) != len(frames):
+        raise ValueError(f"pose CSV has {len(poses)} poses for {len(frames)} frames")
+    return poses
+
+
 def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
-               n_raw=None, no_return=None, pod=0.0, seed=0):
+               n_raw=None, no_return=None, pod=0.0, seed=0,
+               ray_origin=None, ray_rotation=None):
     length, width, height = PRESETS[preset]
     y0 = -(distance_m + length)
     y1 = -distance_m
@@ -82,8 +111,10 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
     xyz = np.stack([pts["x"], pts["y"], pts["z"]], axis=1).astype(np.float64)
     ranges = np.linalg.norm(xyz, axis=1)
     directions = xyz / np.maximum(ranges[:, None], 1e-9)
-    hit, tmin = ray_box_intersection(np.zeros(3), directions, box_min, box_max)
-    replace = hit & (tmin < ranges)
+    ray_origin = np.zeros(3) if ray_origin is None else np.asarray(ray_origin, dtype=np.float64)
+    ray_rotation = np.eye(3) if ray_rotation is None else np.asarray(ray_rotation, dtype=np.float64)
+    hit, tmin = ray_box_intersection(ray_origin, directions @ ray_rotation.T, box_min, box_max)
+    replace = hit & (tmin > 0.5) & (tmin < 400.0) & (tmin < ranges)
     out = pts.copy()
     entry = directions[replace] * tmin[replace, None]
     out["x"][replace] = entry[:, 0]
@@ -120,7 +151,7 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
             norms = np.linalg.norm(dirs, axis=1)
             usable = norms > 1e-6
             dirs[usable] /= norms[usable, None]
-            hit_e, tmin_e = ray_box_intersection(np.zeros(3), dirs, box_min, box_max)
+            hit_e, tmin_e = ray_box_intersection(ray_origin, dirs @ ray_rotation.T, box_min, box_max)
             take = usable & hit_e & (tmin_e > 0.5) & (tmin_e < 400.0)
             idx = np.nonzero(take)[0]
             if len(idx):
@@ -165,13 +196,27 @@ def main():
     ap.add_argument("--pod", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--truth", required=True)
+    ap.add_argument("--poses")
     args = ap.parse_args()
     frames = read_frames(args.src)[: args.frames]
+    if not frames:
+        raise ValueError("source has no frames")
+    if args.start_frame < 0 or args.start_frame >= len(frames):
+        raise ValueError("start-frame must select a source frame")
+    poses = read_poses(args.poses, frames) if args.poses else None
     changed = []
-    truth = None
+    truth_frames = []
     replaced = 0
     added = 0
+    if poses:
+        anchor_position, anchor_rotation = poses[args.start_frame]
     for k, (stamp, n_raw, pts, nr) in enumerate(frames):
+        ray_origin = None
+        ray_rotation = None
+        if poses:
+            position, rotation = poses[k]
+            ray_origin = anchor_rotation.T @ (position - anchor_position)
+            ray_rotation = anchor_rotation.T @ rotation
         if k < args.start_frame:
             pts2, nr2, info = pts, nr, {
                 "preset": args.preset,
@@ -187,14 +232,47 @@ def main():
         else:
             pts2, nr2, info = insert_box(
                 pts, args.distance, args.preset, args.lateral, args.vertical,
-                n_raw, nr, args.pod, args.seed + k,
+                n_raw, nr, args.pod, args.seed + k, ray_origin, ray_rotation,
             )
+        if poses:
+            box_min = np.asarray(info["box_min"])
+            box_max = np.asarray(info["box_max"])
+            corners = np.array([
+                [x, y, z]
+                for x in (box_min[0], box_max[0])
+                for y in (box_min[1], box_max[1])
+                for z in (box_min[2], box_max[2])
+            ]) if k >= args.start_frame else np.empty((0, 3))
+            sensor_corners = (corners - ray_origin) @ ray_rotation
+            if k >= args.start_frame:
+                near_corner = np.array([args.lateral, -args.distance, -1.2 + args.vertical])
+                current_near = ray_rotation.T @ (near_corner - ray_origin)
+                info["forward_m"] = float(-current_near[1])
+            else:
+                info["forward_m"] = None
+            info["initial_distance_m"] = args.distance
+            info["distance_m"] = info["forward_m"]
+            info["box_min_world"] = info["box_min"]
+            info["box_max_world"] = info["box_max"]
+            info["box_min"] = sensor_corners.min(axis=0).tolist() if len(corners) else []
+            info["box_max"] = sensor_corners.max(axis=0).tolist() if len(corners) else []
+            info["box_corners_sensor"] = sensor_corners.tolist()
+            info["sensor_position_m"] = position.tolist()
+            info["heading_deg"] = float(np.rad2deg(np.arctan2(rotation[1, 0], rotation[0, 0])))
+        if poses:
+            info["frame"] = k
         changed.append((stamp, n_raw, pts2, nr2))
         replaced += info["rays_replaced"]
         added += info["rays_added"]
-        truth = info
+        truth_frames.append(info)
+    truth = dict(truth_frames[-1])
     truth["rays_replaced"] = replaced
     truth["rays_added"] = added
+    if poses:
+        truth["mode"] = "world_fixed"
+        truth["poses"] = args.poses
+        truth["anchor_frame"] = args.start_frame
+        truth["frames"] = truth_frames
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     write_frames(args.out, changed)
     with open(args.truth, "w", encoding="utf-8") as fh:
