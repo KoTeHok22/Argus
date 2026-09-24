@@ -863,7 +863,6 @@ int main(int argc, char** argv) {
                         : gauge_params.forward_axis == argus::ForwardAxis::NegX ? -cloud.y[i]
                         : gauge_params.forward_axis == argus::ForwardAxis::PosY ? -cloud.x[i]
                                                                                 : cloud.x[i];
-                    const float relative_z = cloud.z[i] + gauge_sensor_height;
                     const bool track_mode = track_corridor_mode;
                     const float range =
                         std::sqrt(cloud.x[i] * cloud.x[i] + cloud.y[i] * cloud.y[i] +
@@ -872,8 +871,6 @@ int main(int argc, char** argv) {
                         (track_mode ? range : forward) > geom_max_target_range ||
                         (!track_mode &&
                          !fusion.gauge().contains(cloud.x[i], cloud.y[i], cloud.z[i])) ||
-                        (track_mode && (relative_z < gauge_base_offset - gauge_safety_margin ||
-                                        relative_z > gauge_height + gauge_safety_margin)) ||
                         (track_mode && !cloud.ground_mask.empty() && cloud.ground_mask[i])) {
                         continue;
                     }
@@ -887,10 +884,14 @@ int main(int argc, char** argv) {
                     const bool first_in_frame = frame_keys.insert(key).second;
                     if (k >= world_warmup && world_component_mode && !seen_nearby(ix, iy, iz)) {
                         float path_distance = 0.0f;
+                        float path_offset = 0.0f;
                         const Eigen::Vector2f sensor = pose.translation().head<2>().cast<float>();
                         const Eigen::Vector2f candidate = world.head<2>().cast<float>();
                         if (!track_corridor_mode ||
-                            track_corridor.contains(sensor, candidate, path_distance)) {
+                            (track_corridor.contains(sensor, candidate, path_distance,
+                                                     path_offset) &&
+                             fusion.gauge().contains_at_path(path_distance, path_offset,
+                                                             cloud.z[i]))) {
                             world_samples.push_back({world.cast<float>(), track_corridor_mode
                                                                               ? path_distance
                                                                               : forward});
@@ -920,16 +921,21 @@ int main(int argc, char** argv) {
                 auto result = update_world_tracks(world_tracks, components, k, 0.9f,
                                                   world_max_component_points, world_max_y_extent,
                                                   world_max_track_age);
-                if (world_max_axis_offset > 0.0f) {
+                if (track_corridor_mode) {
                     const Eigen::Vector2f sensor =
                         world_odom.pose.translation().head<2>().cast<float>();
                     std::vector<WorldTrack> axis_tracks;
                     for (const auto& track : result.confirmed) {
                         float candidate_arc = 0.0f;
                         float lateral_offset = 0.0f;
+                        const Eigen::Vector3d local =
+                            world_odom.pose.inverse() * track.center.cast<double>();
                         if (track_corridor.contains(sensor, track.center.head<2>(), candidate_arc,
                                                     lateral_offset) &&
-                            lateral_offset <= world_max_axis_offset) {
+                            (world_max_axis_offset == 0.0f ||
+                             lateral_offset <= world_max_axis_offset) &&
+                            fusion.gauge().contains_at_path(candidate_arc, lateral_offset,
+                                                            static_cast<float>(local.z()))) {
                             axis_tracks.push_back(track);
                         }
                     }
