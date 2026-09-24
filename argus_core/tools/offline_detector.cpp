@@ -293,6 +293,7 @@ int main(int argc, char** argv) {
     float temporal_threshold = 1.0f;
     bool world_residual = false;
     bool world_component_mode = false;
+    bool odom_heading = false;
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
     uint32_t world_warmup = 10;
@@ -338,6 +339,9 @@ int main(int argc, char** argv) {
             fusion_mode = true;
         } else if (a == "--odometry") {
             odometry_mode = true;
+        } else if (a == "--odom-heading") {
+            odometry_mode = true;
+            odom_heading = true;
         } else if (a == "--tunnel") {
             tunnel_mode = true;
         } else if (a == "--debug-clusters") {
@@ -382,7 +386,7 @@ int main(int argc, char** argv) {
                      "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components]\n";
+                     "[--world-components] [--odom-heading]\n";
         return 2;
     }
 
@@ -471,7 +475,11 @@ int main(int argc, char** argv) {
                      "profile_median_m,odom_valid,speed_mps\n";
     } else if (odometry_mode) {
         std::cout << std::fixed << std::setprecision(3);
-        std::cout << "frame,valid,x,y,z,speed,corr,down,fitness\n";
+        std::cout << "frame,valid,x,y,z,speed,corr,down,fitness";
+        if (odom_heading) {
+            std::cout << ",heading_deg";
+        }
+        std::cout << '\n';
     } else if (world_component_mode) {
         std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness\n";
     } else if (fusion_mode) {
@@ -496,7 +504,22 @@ int main(int argc, char** argv) {
             const Eigen::Vector3d t = r.pose.translation();
             std::cout << k << ',' << (r.valid ? 1 : 0) << ',' << t.x() << ',' << t.y() << ','
                       << t.z() << ',' << r.speed_mps << ',' << r.n_correspondences << ','
-                      << r.n_downsampled << ',' << r.fitness << '\n';
+                      << r.n_downsampled << ',' << r.fitness;
+            if (odom_heading) {
+                const Eigen::Vector3d forward_world =
+                    r.pose.linear() *
+                    Eigen::Vector3d(gauge_params.forward_axis == argus::ForwardAxis::PosX   ? 1.0
+                                    : gauge_params.forward_axis == argus::ForwardAxis::NegX ? -1.0
+                                                                                            : 0.0,
+                                    gauge_params.forward_axis == argus::ForwardAxis::PosY   ? 1.0
+                                    : gauge_params.forward_axis == argus::ForwardAxis::NegY ? -1.0
+                                                                                            : 0.0,
+                                    0.0);
+                std::cout << ','
+                          << std::atan2(forward_world.x(), -forward_world.y()) *
+                                 (180.0 / 3.14159265358979323846);
+            }
+            std::cout << '\n';
             continue;
         }
         const argus::RangeImage ri = argus::build_range_image(cloud, ri_params);
