@@ -299,6 +299,9 @@ int main(int argc, char** argv) {
     bool ground_filter = false;
     bool profile_gauge_mode = false;
     float profile_residual_threshold = 1.0f;
+    bool free_space_freeze = false;
+    uint32_t frozen_min_observations = 0;
+    float frozen_min_confidence = -1.0f;
     bool temporal_residual = false;
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
@@ -365,6 +368,12 @@ int main(int argc, char** argv) {
             profile_gauge_mode = true;
         } else if (a == "--profile-residual" && i + 1 < argc) {
             profile_residual_threshold = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--free-space-freeze") {
+            free_space_freeze = true;
+        } else if (a == "--frozen-min-observations" && i + 1 < argc) {
+            frozen_min_observations = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--frozen-min-confidence" && i + 1 < argc) {
+            frozen_min_confidence = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--temporal-residual") {
             temporal_residual = true;
         } else if (a == "--temporal-window" && i + 1 < argc) {
@@ -402,7 +411,8 @@ int main(int argc, char** argv) {
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
                      "[--world-components] [--odom-heading] [--profile-gauge] "
-                     "[--profile-residual M]\n";
+                     "[--profile-residual M] [--free-space-freeze] "
+                     "[--frozen-min-observations N] [--frozen-min-confidence C]\n";
         return 2;
     }
 
@@ -484,6 +494,16 @@ int main(int argc, char** argv) {
     free_space_params.min_free_observations = std::max<uint32_t>(1, warmup_frames / 10);
     argus::FreeSpaceDetector free_space(const_cast<argus::TunnelModel*>(&fusion.model()),
                                         free_space_params);
+    argus::TunnelModelParams frozen_params = fusion_params.model;
+    if (frozen_min_observations > 0) {
+        frozen_params.min_observations = frozen_min_observations;
+        free_space_params.min_free_observations = frozen_min_observations;
+    }
+    if (frozen_min_confidence >= 0.0f) {
+        free_space_params.min_confidence = frozen_min_confidence;
+    }
+    argus::TunnelModel frozen_model(frozen_params);
+    argus::FreeSpaceDetector frozen_free_space(&frozen_model, free_space_params);
 
     if (tunnel_mode) {
         std::cout << std::fixed << std::setprecision(3);
@@ -491,6 +511,10 @@ int main(int argc, char** argv) {
                      "profile_median_m,odom_valid,speed_mps";
         if (profile_gauge_mode) {
             std::cout << ",gauge_observed,gauge_residual,gauge_peak_m,gauge_nearest_m";
+        }
+        if (free_space_freeze) {
+            std::cout << ",gauge_points,gauge_prior_covered,gauge_contradictions,"
+                         "gauge_contradiction_nearest_m";
         }
         std::cout << '\n';
     } else if (odometry_mode) {
@@ -552,11 +576,49 @@ int main(int argc, char** argv) {
             const argus::OdometryResult o = odom.update(cloud, f.stamp_s);
             const argus::AnomalySet geom = geometry.detect(cloud, ri);
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
-            const argus::AnomalySet fs = (fusion.model().ready() && o.valid)
-                                             ? free_space.detect(cloud, ri, o.pose)
-                                             : argus::AnomalySet{};
+            const bool frozen_ready = frozen_model.ready();
+            const argus::AnomalySet fs =
+                free_space_freeze
+                    ? (frozen_ready && o.valid ? frozen_free_space.detect(cloud, ri, o.pose)
+                                               : argus::AnomalySet{})
+                    : ((fusion.model().ready() && o.valid) ? free_space.detect(cloud, ri, o.pose)
+                                                           : argus::AnomalySet{});
+            if (free_space_freeze && k < warmup_frames && o.valid) {
+                frozen_model.integrate(cloud, o.pose, false);
+            }
             const argus::FusionResult r =
                 fusion.update(cloud, ri, geom, nr, fs, 0.1f, 0.0f, o.pose, true, o.valid);
+            uint32_t gauge_points = 0;
+            uint32_t gauge_prior_covered = 0;
+            uint32_t gauge_contradictions = 0;
+            float contradiction_nearest = -1.0f;
+            if (free_space_freeze && k >= warmup_frames && o.valid) {
+                for (size_t i = 0; i < cloud.size(); ++i) {
+                    if ((!cloud.ground_mask.empty() && cloud.ground_mask[i]) ||
+                        !fusion.gauge().contains(cloud.x[i], cloud.y[i], cloud.z[i])) {
+                        continue;
+                    }
+                    const float forward =
+                        fusion.gauge().forward_distance(cloud.x[i], cloud.y[i], cloud.z[i]);
+                    if (forward < 15.0f || forward > 100.0f) {
+                        continue;
+                    }
+                    ++gauge_points;
+                    float confidence = 0.0f;
+                    const Eigen::Vector3f point(cloud.x[i], cloud.y[i], cloud.z[i]);
+                    if (frozen_model.violates_free_space(point, confidence, o.pose)) {
+                        ++gauge_prior_covered;
+                    }
+                    if (frozen_model.contradicts_free_space(
+                            point, confidence, o.pose, free_space_params.min_confidence,
+                            free_space_params.min_free_observations)) {
+                        ++gauge_contradictions;
+                        contradiction_nearest = contradiction_nearest < 0.0f
+                                                    ? forward
+                                                    : std::min(contradiction_nearest, forward);
+                    }
+                }
+            }
             uint32_t gauge_observed = 0;
             uint32_t gauge_residual = 0;
             float gauge_peak = 0.0f;
@@ -597,6 +659,10 @@ int main(int argc, char** argv) {
             if (profile_gauge_mode) {
                 std::cout << ',' << gauge_observed << ',' << gauge_residual << ',' << gauge_peak
                           << ',' << gauge_nearest;
+            }
+            if (free_space_freeze) {
+                std::cout << ',' << gauge_points << ',' << gauge_prior_covered << ','
+                          << gauge_contradictions << ',' << contradiction_nearest;
             }
             std::cout << '\n';
             continue;
