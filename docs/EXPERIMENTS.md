@@ -486,4 +486,12 @@ Linux-container CI после отката: **163 теста, 0 ошибок и 
 
 Смена проекции объекта не восстановила geometry anomalies, поэтому yaw сам по себе не объясняет пропуск на этом control. Production detector и YAML не менялись. Следующий synthetic контроль должен использовать калиброванные per-ring elevation angles и более реалистичную tunnel surface.
 
+### T85: raw-layout calibrated controls
+
+Предыдущие shell-контроли использовали равномерную сетку, которая не совпадала с production raw layout. В T85 сохранены реальные `raw_idx`, 128 колец и per-return elevation из `new_data_2931`, после чего каждый возврат перемещён вдоль собственного луча на фон 180 м. Цели созданы прямой заменой лучей.
+
+Production-sized target `3.0 × 2.1 м` дал **5/8, 5/8, 2/8, 4/8 matched alerts** на 40/60/80/100 м; empty control дал **0/8**. Малый target `0.8 × 1.1 м` дал **0/8** на всех дальностях. Coverage и geometry evidence растут вместе с физическим размером цели.
+
+Вывод: raw layout и target coverage критичны для synthetic evaluation. T85 не меняет production detector или YAML и не доказывает recall 150 м; он исправляет методику контроля. Следующий шаг — 40 кадров и несколько реальных backgrounds.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.
