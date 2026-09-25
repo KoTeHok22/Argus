@@ -91,7 +91,7 @@
       enabled: true
       median_half_window: 100
       residual_threshold_m: 1.0
-      residual_threshold_far_m: 2.5
+      residual_threshold_far_m: 1.0
       min_cells: 50
       min_fill: 0.3
       min_range: 4.0
