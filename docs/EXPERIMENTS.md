@@ -461,3 +461,17 @@ Known regression не изменилась: **197/200** `doubleT_obstacle`, **0/
 Для проверки гипотезы о неверном преобразовании world-fixed target выполнен прямой lidar-frame control на том же `new_data_2931` фоне. Для цели 60 м `insert_box` заменил 77 лучей, но detector выдал **0/40 alerts**. Это не подтверждает coordinate transform bug: world-fixed и прямой lidar-frame варианты оба не дают валидного end-to-end detection на этом фоне.
 
 T81 не менял detector или YAML. Для следующего synthetic контроля нужен фон с гарантированной planar surface дальше цели и явная проверка всех box corners через production `ClearanceGauge`; иначе residual baseline и target geometry остаются физически неоднозначными.
+
+### T82: planar дальний контроль
+
+Первоначальный planar control был построен сдвигом всех точек на y=-180 м; это меняло направления лучей и делало эксперимент невалидным. Этот результат исключён. Исправленный фон перемещает каждую точку вдоль собственного исходного луча к дальности 180 м.
+
+На ray-aligned фоне empty control дал **0/40 alerts**. Из box targets 20/40/60/80/100 м только цель 100 м получила **1/40 matched alerts**; остальные дали 0/40. Проверен диагностический far median half-window 30, но он не восстановил 60/100 м detection. Изменение полностью откачено; production YAML и detector совпадают с T81.
+
+Linux-container CI после отката: **163 теста, 0 ошибок и 0 падений**. Дальнейший тест должен варьировать angular coverage и ориентацию цели; текущий единственный planar фон недостаточен для выбора production thresholds.
+
+### T82: planar дальний контроль
+
+Создан пустой planar фон на 180 м из кадров `new_data_2931`, затем на тех же лучах построены lidar-frame box targets 20/60/100 м. Пустой фон дал **0/40 alerts**, цель 20 м — **35/40 matched alerts**. Цели 60/100 м не дали ни одного matched alert (**0/40**), хотя генератор заменил соответственно **44,446** и **51,766** лучей за 40 кадров.
+
+Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.
