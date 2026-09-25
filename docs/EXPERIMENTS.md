@@ -494,4 +494,19 @@ Production-sized target `3.0 × 2.1 м` дал **5/8, 5/8, 2/8, 4/8 matched aler
 
 Вывод: raw layout и target coverage критичны для synthetic evaluation. T85 не меняет production detector или YAML и не доказывает recall 150 м; он исправляет методику контроля. Следующий шаг — 40 кадров и несколько реальных backgrounds.
 
+### T86: multi-background calibrated controls
+
+Production-sized 100 м target (`3.0 × 2.1 м`) и paired empty controls сгенерированы на 40 кадрах для четырёх исходных cloud backgrounds. Для каждого фона точки перемещались на поверхность 180 м вдоль собственных raw-index лучей; target заменял те же лучи. Сопоставление использовало per-frame truth с допуском 3 м.
+
+| Background | Empty alerts | Target alerts | Truth matches | Truth-range geometry groups |
+| --- | ---: | ---: | ---: | ---: |
+| `new_data_23` | 0/40 | 0/40 | 0/40 | 0 |
+| `new_data_2931` | 0/40 | 5/40 | 1/40 | 16 |
+| `new_data_head` | 0/40 | 36/40 | 35/40 | 38 |
+| `new_data_45` | 0/40 | 5/40 | 1/40 | 5 |
+
+Условия генерации и размер цели одинаковы, но число truth-range geometry groups и recall резко различаются. Это указывает на зависимость от per-ring/azimuth coverage исходного кадра: `new_data_head` даёт связную target residual структуру, `new_data_23` — нет. Empty controls чисты во всех четырёх случаях.
+
+Detector и YAML не менялись: один фон с 35/40 не обосновывает общий порог, поскольку три других фона почти полностью пропускают ту же цель. Следующий шаг — измерить per-ring residual coverage и azimuth span для hit/miss backgrounds и искать общий confidence/eligibility сигнал.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.
