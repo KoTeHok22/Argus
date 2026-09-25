@@ -178,7 +178,9 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
             const uint32_t votes = static_cast<uint32_t>(t.votes_free_space) +
                                    static_cast<uint32_t>(t.votes_no_return) +
                                    static_cast<uint32_t>(t.votes_geometry);
-            if (t.confirmed && votes >= p_.min_votes_for_alert) {
+            const bool stale_far_track = t.nearest_range >= p_.strict_track_freshness_range_m &&
+                                         t.consecutive_misses > p_.max_confirmed_track_misses;
+            if (t.confirmed && !stale_far_track && votes >= p_.min_votes_for_alert) {
                 out.alert = true;
                 break;
             }

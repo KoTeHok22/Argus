@@ -27,6 +27,7 @@ struct Track {
     Eigen::Matrix<float, 6, 6> covariance = Eigen::Matrix<float, 6, 6>::Identity();
     uint32_t hits = 0;
     uint32_t misses = 0;
+    uint32_t consecutive_misses = 0;
     bool confirmed = false;
 
     float nearest_range = 0.0f;

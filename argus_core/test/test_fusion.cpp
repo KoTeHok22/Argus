@@ -91,6 +91,50 @@ TEST(Fusion, ObstacleAheadTriggersConfirmedAlert) {
     EXPECT_EQ(f2.n_filtered_out, 0u);
 }
 
+TEST(Fusion, ConfirmedFarTrackStopsAlertingAfterStaleGeometry) {
+    argus::CleanCloud cloud;
+    cloud.rings = 8;
+    cloud.n_raw = 80;
+    for (uint32_t az = 0; az < 10; ++az) {
+        for (uint32_t ring = 0; ring < 8; ++ring) {
+            cloud.x.push_back(0.1f * static_cast<float>(ring));
+            cloud.y.push_back(-100.0f - 0.01f * static_cast<float>(az));
+            cloud.z.push_back(0.2f * static_cast<float>(ring));
+            cloud.intensity.push_back(1.0f);
+            cloud.raw_idx.push_back(az * 8 + ring);
+        }
+    }
+    argus::RangeImageParams range_params;
+    range_params.rings_fallback = 8;
+    const auto ri = argus::build_range_image(cloud, range_params);
+    argus::AnomalySet geometry;
+    for (uint32_t i = 0; i < cloud.size(); ++i) {
+        geometry.indices.push_back(i);
+        geometry.score.push_back(1.0f);
+    }
+    argus::FusionParams params;
+    params.clustering.min_cluster_size_near = 1;
+    params.clustering.min_cluster_size_mid = 1;
+    params.clustering.min_cluster_size_far = 1;
+    params.clustering.min_cluster_size_long = 1;
+    params.clustering.min_extent_m = 0.0f;
+    params.clustering.max_extent_m = 10.0f;
+    params.tracking.min_hits_to_confirm = 1;
+    params.tracking.min_hits_to_confirm_far = 1;
+    params.strict_track_freshness_range_m = 90.0f;
+    params.max_confirmed_track_misses = 2;
+    argus::ClearanceGaugeParams gauge_params;
+    gauge_params.forward_axis = argus::ForwardAxis::NegY;
+    gauge_params.half_width = 2.0f;
+    gauge_params.height = 5.0f;
+    argus::FusionPipeline pipeline(argus::ClearanceGauge(gauge_params), params);
+    ASSERT_TRUE(pipeline.update(cloud, ri, geometry, {}, 0.1f, 0.0f).alert);
+    for (uint32_t i = 0; i < params.max_confirmed_track_misses; ++i) {
+        EXPECT_TRUE(pipeline.update(cloud, ri, {}, {}, 0.1f, 0.0f).alert);
+    }
+    EXPECT_FALSE(pipeline.update(cloud, ri, {}, {}, 0.1f, 0.0f).alert);
+}
+
 TEST(Fusion, LateralWallFilteredByGauge) {
     const auto cloud = make_scene(4.8f);
     const auto ri = ri_of(cloud);

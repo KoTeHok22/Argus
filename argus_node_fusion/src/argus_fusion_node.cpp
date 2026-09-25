@@ -186,6 +186,10 @@ private:
             declare_parameter<double>("fusion.critical_ttc_s", p.critical_ttc_s));
         p.min_votes_for_alert = static_cast<uint32_t>(declare_parameter<int>(
             "fusion.min_votes_for_alert", static_cast<int>(p.min_votes_for_alert)));
+        p.max_confirmed_track_misses = static_cast<uint32_t>(declare_parameter<int>(
+            "fusion.max_confirmed_track_misses", static_cast<int>(p.max_confirmed_track_misses)));
+        p.strict_track_freshness_range_m = static_cast<float>(declare_parameter<double>(
+            "fusion.strict_track_freshness_range_m", p.strict_track_freshness_range_m));
         p.ground_filter = declare_parameter<bool>("fusion.ground_filter", p.ground_filter);
         p.ground_clearance_m = static_cast<float>(
             declare_parameter<double>("fusion.ground_clearance_m", p.ground_clearance_m));

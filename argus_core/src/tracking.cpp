@@ -67,6 +67,7 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
 
             tr.hits++;
             tr.misses = 0;
+            tr.consecutive_misses = 0;
             tr.nearest_range = c.nearest_range;
             tr.confirmed = tr.confirmed || tr.hits >= required_hits_at(tr.nearest_range);
             tr.volume = c.volume;
@@ -79,6 +80,7 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
             tr.ttc = compute_ttc(tr, train_speed_mps);
         } else {
             tr.misses++;
+            tr.consecutive_misses++;
             tr.state.head<3>() += tr.state.tail<3>() * dt;
         }
     }
@@ -96,6 +98,7 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
         t.covariance = Eigen::Matrix<float, 6, 6>::Identity() * p_.measurement_noise;
         t.hits = 1;
         t.misses = 0;
+        t.consecutive_misses = 0;
         t.nearest_range = clusters[j].nearest_range;
         t.confirmed = t.hits >= required_hits_at(t.nearest_range);
         t.volume = clusters[j].volume;
