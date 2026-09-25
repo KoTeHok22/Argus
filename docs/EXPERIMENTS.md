@@ -589,3 +589,10 @@ Production detector/YAML не менялись. Следующий шаг — с
 После удаления неполного UI params override и повторного прогона с полным production YAML UI получил **31 BLOCKED, 221 CLEAR, 1264 DEGRADED**, совпадая с offline alert count. Latency path: **47.3 ms median, 59.0 ms p95, 91.6 ms max**. DEGRADED остаётся из-за FastDDS SHM errors; это отдельная инфраструктурная проблема, не пропуск detector.
 
 Web tests: **15 passed**; полный Linux CI: **167 tests, 0 errors, 0 failures**. Результат UI теперь совпадает с offline fusion по 31 BLOCKED interval.
+
+
+### T95: UDP-only FastDDS
+
+Проверен отдельный UDP-only FastDDS profile для UI child container. Полный прогон `cloud_with_fake_obj` дал **31 BLOCKED, 221 CLEAR, 1264 DEGRADED** — тот же результат, что и T94. Следовательно, shared-memory transport сам по себе не объясняет DEGRADED.
+
+Профиль и runtime override откачены. Следующий шаг — найти, почему fusion публикует `STATUS_DEGRADED` при наличии timing rows в diagnostics.
