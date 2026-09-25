@@ -101,8 +101,8 @@ def read_poses(path, frames):
 
 def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
                n_raw=None, no_return=None, pod=0.0, seed=0,
-               ray_origin=None, ray_rotation=None):
-    length, width, height = PRESETS[preset]
+               ray_origin=None, ray_rotation=None, dimensions=None):
+    length, width, height = PRESETS[preset] if dimensions is None else dimensions
     y0 = -(distance_m + length)
     y1 = -distance_m
     z0 = -1.2 + vertical_m
@@ -172,6 +172,7 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
                 added = len(idx)
     return out, nr_left, {
         "preset": preset,
+        "dimensions_m": [length, width, height],
         "distance_m": distance_m,
         "lateral_m": lateral_m,
         "vertical_m": vertical_m,
@@ -189,6 +190,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--distance", type=float, required=True)
     ap.add_argument("--preset", choices=sorted(PRESETS), default="cart")
+    ap.add_argument("--length", type=float)
+    ap.add_argument("--width", type=float)
+    ap.add_argument("--height", type=float)
     ap.add_argument("--lateral", type=float, default=0.0)
     ap.add_argument("--vertical", type=float, default=0.0)
     ap.add_argument("--frames", type=int, default=40)
@@ -198,6 +202,14 @@ def main():
     ap.add_argument("--truth", required=True)
     ap.add_argument("--poses")
     args = ap.parse_args()
+    dimension_values = (args.length, args.width, args.height)
+    if any(value is not None for value in dimension_values):
+        if any(value is None or not np.isfinite(value) or value <= 0
+               for value in dimension_values):
+            raise ValueError("length, width, and height must all be positive and finite")
+        dimensions = dimension_values
+    else:
+        dimensions = None
     frames = read_frames(args.src)[: args.frames]
     if not frames:
         raise ValueError("source has no frames")
@@ -220,6 +232,7 @@ def main():
         if k < args.start_frame:
             pts2, nr2, info = pts, nr, {
                 "preset": args.preset,
+                "dimensions_m": list(dimensions or PRESETS[args.preset]),
                 "distance_m": args.distance,
                 "lateral_m": args.lateral,
                 "vertical_m": args.vertical,
@@ -233,6 +246,7 @@ def main():
             pts2, nr2, info = insert_box(
                 pts, args.distance, args.preset, args.lateral, args.vertical,
                 n_raw, nr, args.pod, args.seed + k, ray_origin, ray_rotation,
+                dimensions,
             )
         if poses:
             box_min = np.asarray(info["box_min"])

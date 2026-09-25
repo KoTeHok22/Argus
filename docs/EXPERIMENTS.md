@@ -551,4 +551,18 @@ T86 повторно стратифицирован с предваритель�
 
 Режим evaluation-only: runtime detector, production YAML и протокол T70 не меняются.
 
+### T91: reproducible production-size targets
+
+Предыдущие калиброванные `3.0 × 2.1 м` targets строились ad hoc, а штатные presets меньше (`cart` 1.2×0.8×1.1 м). Для воспроизводимости `synth_obstacle.py` теперь принимает совместно `--length`, `--width`, `--height`, валидирует положительные finite значения и записывает фактические размеры в truth metadata. Без overrides presets не меняются.
+
+Повторный custom-size sweep на четырёх raw-layout backgrounds с reporting floor 8 rays/2 rings дал для production-sized `3.0 × 2.1 м` цели:
+
+| Distance | `new_data_23` | `new_data_2931` | `new_data_head` | `new_data_45` |
+| --- | ---: | ---: | ---: | ---: |
+| 20 m | 0/40 | 0/40 | 0/40 | 0/40 |
+| 60 m | 37/40 | 36/40 | 37/40 | 37/40 |
+| 100 m | 36/40 | 34/40 | 36/40 | 36/40 |
+
+Это существенно отличается от прежних малых/ad hoc targets и показывает, что production-sized geometry действительно даёт устойчивый сигнал на 60/100 м. Однако 20 м даёт 0/40 в том же fixture, поэтому результат нельзя объявлять общей победой: сначала нужно разобрать near-range/gauge convention и подтвердить custom control на реальном sensor background без искусственного ray relocation.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.

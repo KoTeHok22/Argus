@@ -19,6 +19,20 @@ def test_ray_hits_box_in_front():
     assert abs(tmin[0] - 10.0) < 1e-6
 
 
+def test_custom_dimensions_override_preset_and_are_recorded():
+    points = np.zeros(1, dtype=np.dtype([
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4"),
+    ]))
+    points["y"] = -150.0
+    points["raw"] = 0
+    output, _, truth = insert_box(
+        points, 60.0, "person", dimensions=(1.0, 3.0, 2.1),
+    )
+    assert truth["dimensions_m"] == [1.0, 3.0, 2.1]
+    assert truth["rays_replaced"] == 1
+    assert abs(float(output["y"][0]) + 60.0) < 1e-6
+
+
 def test_ray_misses_beside_box():
     origin = np.zeros(3)
     directions = np.array([[0.0, -1.0, 0.2]])
