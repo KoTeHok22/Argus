@@ -596,3 +596,10 @@ Web tests: **15 passed**; полный Linux CI: **167 tests, 0 errors, 0 failur
 Проверен отдельный UDP-only FastDDS profile для UI child container. Полный прогон `cloud_with_fake_obj` дал **31 BLOCKED, 221 CLEAR, 1264 DEGRADED** — тот же результат, что и T94. Следовательно, shared-memory transport сам по себе не объясняет DEGRADED.
 
 Профиль и runtime override откачены. Следующий шаг — найти, почему fusion публикует `STATUS_DEGRADED` при наличии timing rows в diagnostics.
+
+
+### T96: ускорение эфира
+
+Эфир читал каждый кадр из bag заново: около 170 тысяч точек, затем оставлял 18 000. Повторное открытие того же кадра занимало 40–70 мс и отдавало 210 КБ.
+
+Preview снижен до 6 000 точек, прореженный кадр сохраняется в `data/ui/preview`. Повторный HTTP-запрос кадра `cloud_with_fake_obj` занимает около 10 мс и 72 КБ. Первый просмотр кадра по-прежнему читает bag.

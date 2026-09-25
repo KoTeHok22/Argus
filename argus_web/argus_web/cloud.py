@@ -10,7 +10,7 @@ from argus_web.bags import bag_db3_files, parse_metadata
 
 MAX_ABS_COORD = 1.0e4
 RANGE_MIN, RANGE_MAX = 0.5, 400.0
-TARGET_POINTS = 18000
+TARGET_POINTS = 6000
 
 
 def header_stamp_ns(blob: bytes) -> int | None:
@@ -219,7 +219,52 @@ def _split_index(bag_dir: Path, frame: int) -> tuple[Path, int] | None:
     return path, max(0, min(remaining, max(count - 1, 0)))
 
 
+def _preview_cache(bag_dir: Path, frame: int) -> Path | None:
+    try:
+        from argus_web.paths import ui_root
+    except Exception:
+        return None
+    key = str(bag_dir.resolve()).encode()
+    import hashlib
+    digest = hashlib.sha1(key).hexdigest()[:16]
+    path = ui_root() / "preview" / digest
+    path.mkdir(parents=True, exist_ok=True)
+    return path / f"{frame}.npz"
+
+
+def _store_preview(bag_dir: Path, payload: dict) -> None:
+    path = _preview_cache(bag_dir, int(payload["frame"]))
+    if path is None:
+        return
+    np.savez(
+        path,
+        xyz=payload["xyz"],
+        total=np.int32(payload["total"]),
+        raw_points=np.int32(payload["raw_points"]),
+        stamp_ns=np.int64(payload["stamp_ns"]),
+    )
+
+
+def _load_preview(bag_dir: Path, frame: int) -> dict | None:
+    path = _preview_cache(bag_dir, frame)
+    if path is None or not path.is_file():
+        return None
+    data = np.load(path)
+    xyz = data["xyz"]
+    return {
+        "frame": frame,
+        "total": int(data["total"]),
+        "points": int(xyz.shape[0]),
+        "raw_points": int(data["raw_points"]),
+        "xyz": xyz,
+        "stamp_ns": int(data["stamp_ns"]),
+    }
+
+
 def load_frame(bag_dir: Path, frame: int) -> dict:
+    cached = _load_preview(bag_dir, frame)
+    if cached is not None:
+        return cached
     synthetic_file = bag_dir / "cloud.argfrm"
     if synthetic_file.is_file():
         with synthetic_file.open("rb") as fh:
@@ -251,7 +296,7 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
             }
         xyz = np.column_stack((points["x"], points["y"], points["z"])).astype(np.float32)
         xyz = downsample(xyz)
-        return {
+        payload = {
             "frame": frame,
             "total": total,
             "points": int(xyz.shape[0]),
@@ -259,6 +304,8 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
             "xyz": xyz,
             "stamp_ns": int(stamp_s * 1e9),
         }
+        _store_preview(bag_dir, payload)
+        return payload
     meta = parse_metadata(bag_dir)
     total = meta["frames"] or 0
     located = _split_index(bag_dir, frame)
@@ -283,7 +330,7 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
     header = header_stamp_ns(bytes(blob))
     xyz = decode_xyz(msg)
     sampled = downsample(xyz)
-    return {
+    payload = {
         "frame": frame,
         "total": total or frame + 1,
         "points": int(sampled.shape[0]),
@@ -292,6 +339,8 @@ def load_frame(bag_dir: Path, frame: int) -> dict:
         "stamp_ns": int(header if header is not None else stamp),
         "width": int(msg.get("width") or 0),
     }
+    _store_preview(bag_dir, payload)
+    return payload
 
 
 def pack_xyz(points: np.ndarray) -> bytes:
