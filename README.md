@@ -116,8 +116,10 @@ docker run --rm --shm-size=256m -p 8080:8080 \
 ## Проверки
 
 ```bash
-scripts/ci/all.sh      # lint + build + test
-scripts/fault_injection_test.sh   # fail-safe: kill детектора → DEGRADED
+scripts/ci/all.sh                    # lint + build + test
+scripts/fault_injection_test.sh      # fail-safe: kill детектора → DEGRADED
+scripts/eval/frozen_report.sh        # единый отчёт по замороженным наборам
+scripts/eval/metrics_report.py <csv> # события/км и FP/км
 ```
 
 ## Структура
