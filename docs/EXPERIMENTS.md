@@ -545,4 +545,10 @@ T86 повторно стратифицирован с предваритель�
 
 Вывод становится точнее: `new_data_23` не даёт оценивать recall вообще, `new_data_head` показывает хорошее обнаружение при достаточном evidence, а `new_data_2931` пропускает почти все eligible кадры. Значит, есть и coverage confound, и реальная background-dependent detector limitation. Порог coverage пока только для отчётности; использовать его для tuning запрещено до проверки на других дальностях и размерах.
 
+### T90: reproducible coverage report CLI
+
+Добавлен CLI-режим `paired_synthetic_eval.py --coverage FILE --min-rays N --min-rings N`. Он сохраняет построчный CSV на stdout и печатает JSON-сводку на stderr с категориями и rate-полями `total`, `eligible_rate`, `matched_rate`, `unknown_rate`. Это позволяет повторять T86/T89 без ручного подсчёта и не добавлять generated reports в git.
+
+Режим evaluation-only: runtime detector, production YAML и протокол T70 не меняются.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.

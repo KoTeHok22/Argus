@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.paired_synthetic_eval import evaluate, summarize_coverage
+from scripts.paired_synthetic_eval import coverage_report, evaluate, summarize_coverage
 
 
 def row(frame, alert=0, distance=-1):
@@ -72,3 +72,12 @@ def test_coverage_summary_counts_eligible_miss_separately():
     assert summary["eligible"] == 1
     assert summary["missed"] == 1
     assert summary["inactive"] == 0
+
+
+def test_coverage_report_adds_rates():
+    truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
+    result = evaluate([row(0)], [row(0, 1, 60)], truth, 3)
+    report = coverage_report([result[0]], [{"rays": 8, "rings": 2}], 8, 2)
+    assert report["total"] == 1
+    assert report["eligible_rate"] == 1.0
+    assert report["matched_rate"] == 1.0

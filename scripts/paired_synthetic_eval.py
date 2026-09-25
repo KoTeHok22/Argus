@@ -76,12 +76,28 @@ def summarize_coverage(results, coverage, min_rays=0, min_rings=0):
     return summary
 
 
+def coverage_report(results, coverage, min_rays=0, min_rings=0):
+    summary = summarize_coverage(results, coverage, min_rays, min_rings)
+    total = len(results)
+    summary["total"] = total
+    summary["eligible_rate"] = summary["eligible"] / total if total else 0.0
+    summary["matched_rate"] = (
+        summary["matched"] / summary["eligible"]
+        if summary["eligible"] else 0.0
+    )
+    summary["unknown_rate"] = summary["unknown"] / total if total else 0.0
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--empty", required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--truth", required=True)
     parser.add_argument("--tolerance-m", type=float, default=3.0)
+    parser.add_argument("--coverage", help="JSON file with per-frame rays and rings")
+    parser.add_argument("--min-rays", type=int, default=0)
+    parser.add_argument("--min-rings", type=int, default=0)
     args = parser.parse_args()
     with open(args.truth, encoding="utf-8") as fh:
         truth = json.load(fh)
@@ -89,6 +105,13 @@ def main():
         load_alerts(args.empty), load_alerts(args.target), truth,
         args.tolerance_m,
     )
+    if args.coverage:
+        with open(args.coverage, encoding="utf-8") as fh:
+            coverage = json.load(fh)
+        print(json.dumps(
+            coverage_report(rows, coverage, args.min_rays, args.min_rings),
+            sort_keys=True,
+        ), file=sys.stderr)
     writer = csv.writer(sys.stdout)
     writer.writerow((
         "frame", "truth_m", "alert_m", "baseline_m", "matched", "uncontested",
