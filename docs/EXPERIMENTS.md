@@ -522,4 +522,10 @@ Detector и YAML не менялись: один фон с 35/40 не обосн
 
 Это объясняет значительную часть разброса: на `new_data_head` detector получает связную target residual структуру, тогда как на `new_data_23` в типичном кадре всего два заменённых луча. T87 не меняет detector/YAML. Дальнейшая оценка должна стратифицировать кадры по minimum target rays/rings и маркировать недостаток evidence как unknown, а не missed.
 
+### T88: coverage-stratified evaluation
+
+В evaluation добавлена функция `summarize_coverage`, которая принимает per-frame `rays` и `rings`, считает кадр eligible только при достижении заданных минимумов и относит остальные к `unknown`. Это устраняет методическую ошибку, при которой кадр с двумя или нулём target rays считался missed detector.
+
+Добавлены тесты для under-covered unknown и eligible matched случаев. Production detector/YAML не менялись; thresholds coverage пока не выбираются по T70 и не используются для runtime alerting.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.

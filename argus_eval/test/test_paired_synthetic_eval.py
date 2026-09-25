@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.paired_synthetic_eval import evaluate
+from scripts.paired_synthetic_eval import evaluate, summarize_coverage
 
 
 def row(frame, alert=0, distance=-1):
@@ -43,3 +43,17 @@ def test_absent_target_and_misaligned_csv_are_rejected():
 def test_truth_without_per_frame_distance_is_rejected():
     with pytest.raises(ValueError, match="lengths"):
         evaluate([row(0)], [row(0)], {"distance_m": 60}, 3)
+
+
+def test_coverage_summary_marks_undercovered_frames_unknown():
+    truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
+    result = evaluate([row(0)], [row(0, 1, 60)], truth, 3)
+    summary = summarize_coverage([result[0]], [{"rays": 2, "rings": 4}], 8, 2)
+    assert summary == {"eligible": 0, "unknown": 1, "matched": 0, "uncontested": 0}
+
+
+def test_coverage_summary_counts_eligible_match():
+    truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
+    result = evaluate([row(0)], [row(0, 1, 60)], truth, 3)
+    summary = summarize_coverage([result[0]], [{"rays": 8, "rings": 2}], 8, 2)
+    assert summary == {"eligible": 1, "unknown": 0, "matched": 1, "uncontested": 1}

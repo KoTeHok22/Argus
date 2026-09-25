@@ -46,6 +46,30 @@ def evaluate(empty, target, truth, tolerance_m):
     return results
 
 
+def summarize_coverage(results, coverage, min_rays=0, min_rings=0):
+    if len(results) != len(coverage):
+        raise ValueError("results and coverage lengths must match")
+    if min_rays < 0 or min_rings < 0:
+        raise ValueError("coverage thresholds must be non-negative")
+    summary = {
+        "eligible": 0,
+        "unknown": 0,
+        "matched": 0,
+        "uncontested": 0,
+    }
+    for result, frame_coverage in zip(results, coverage):
+        rays = int(frame_coverage["rays"])
+        rings = int(frame_coverage["rings"])
+        eligible = rays >= min_rays and rings >= min_rings
+        if not eligible:
+            summary["unknown"] += 1
+            continue
+        summary["eligible"] += 1
+        summary["matched"] += int(result["matched"])
+        summary["uncontested"] += int(result["uncontested"])
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--empty", required=True)
