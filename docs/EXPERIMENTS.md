@@ -455,3 +455,9 @@ Known regression не изменилась: **197/200** `doubleT_obstacle`, **0/
 На актуальном moving synthetic `new_data_2931` цель 100 м не образует component в truth range. В диагностическом выводе первых 40 кадров было 347 kept-component строк: **336 с gauge=0** и только **11 с gauge>0**; оставшиеся компоненты лежат в основном на дальностях 4–15 м. Это объясняет, почему дальнейшее ослабление `min_cells`/residual не помогает: detector не получает корректно ассоциированный target component.
 
 Следующий шаг — проверить coordinate transform генератора moving world-fixed target и добавить отдельный lidar-frame truth control, прежде чем менять production detector.
+
+### T81: synthetic coordinate control
+
+Для проверки гипотезы о неверном преобразовании world-fixed target выполнен прямой lidar-frame control на том же `new_data_2931` фоне. Для цели 60 м `insert_box` заменил 77 лучей, но detector выдал **0/40 alerts**. Это не подтверждает coordinate transform bug: world-fixed и прямой lidar-frame варианты оба не дают валидного end-to-end detection на этом фоне.
+
+T81 не менял detector или YAML. Для следующего synthetic контроля нужен фон с гарантированной planar surface дальше цели и явная проверка всех box corners через production `ClearanceGauge`; иначе residual baseline и target geometry остаются физически неоднозначными.
