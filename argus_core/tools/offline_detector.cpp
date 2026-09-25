@@ -294,6 +294,8 @@ int main(int argc, char** argv) {
     bool debug_clusters = false;
     uint32_t warmup_frames = 10;
     bool free_space_vote = false;
+    bool verify_clusters = false;
+    float verify_min_score = 0.35f;
     uint32_t carve_stride = 1;
     float carve_max_range = 90.0f;
     float carve_half_width = 3.0f;
@@ -394,6 +396,10 @@ int main(int argc, char** argv) {
             min_hits_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--free-space-vote") {
             free_space_vote = true;
+        } else if (a == "--verify") {
+            verify_clusters = true;
+        } else if (a == "--verify-min-score" && i + 1 < argc) {
+            verify_min_score = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--fusion") {
             fusion_mode = true;
         } else if (a == "--odometry") {
@@ -480,7 +486,8 @@ int main(int argc, char** argv) {
     }
     if (path.empty()) {
         std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
-                     "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
+                     "[--tunnel] [--warmup N] [--free-space-vote] [--verify] "
+                     "[--verify-min-score C] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
                      "[--gauge-safety-margin M] [--gauge-base-offset M] "
@@ -622,6 +629,8 @@ int main(int argc, char** argv) {
     fusion_params.model.carve_max_range = carve_max_range;
     fusion_params.model.carve_half_width_m = carve_half_width;
     fusion_params.compute_free_space_violation_rate = true;
+    fusion_params.verifier.enabled = verify_clusters;
+    fusion_params.verifier.min_score = verify_min_score;
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
     argus::GroundParams ground_params;
     ground_params.sensor_height = gauge_sensor_height;

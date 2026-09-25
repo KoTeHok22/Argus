@@ -43,6 +43,7 @@ struct Cluster {
     uint8_t votes_no_return = 0;
     uint8_t votes_geometry = 0;
     uint8_t votes_temporal = 0;
+    float verify_score = -1.0f;
 };
 
 float neighbor_distance_at(float base, float d, float ref, bool adaptive);
