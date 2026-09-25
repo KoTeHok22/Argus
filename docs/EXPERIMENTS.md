@@ -571,4 +571,14 @@ T86 повторно стратифицирован с предваритель�
 
 Глобальное расширение median window отклонено и диагностический CLI override удалён. Production window остаётся 100. Следующее направление — range-specific baseline с отдельной защитой проверенного F-D, а не единое расширение окна.
 
+### T93: range-specific near baseline
+
+Добавлен отдельный near-window override: median half-window 200 применяется только к range-image returns в **18.5–40 м**, остальные диапазоны сохраняют окно 100. Это адресует широкую цель на 20 м без изменения окна для известного F-D на 16.9 м.
+
+На `new_data_2931` production-sized цель 3.0×2.1 м даёт **37/37 matched alerts** на 20 м. Unit tests подтверждают, что 100 м outputs и F-D 16.9 м outputs идентичны без/с override.
+
+Четыре calibrated backgrounds: 20 м **37/37** на каждом; 60 м **36–37/40**; 100 м **34–36/40**. Все paired empty controls дали **0/40**. Известная regression сохранилась: `doubleT_obstacle` **197/200**, `doubleT_platform` **0/300**. T93 принят как production candidate; это не доказывает 150 м и не даёт truth-based recall для T70.
+
+Полный Linux-container CI: **167 тестов, 0 ошибок и 0 падений**. Smoke/regression повторены: obstacle **197/200**, platform **0/300**, первые 300 T70 кадров **11 alerts**. p95 latency отдельной измерительной сессией ещё не подтверждена; это остаётся открытой проверкой перед production acceptance.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.

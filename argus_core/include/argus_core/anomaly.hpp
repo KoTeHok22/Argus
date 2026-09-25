@@ -45,6 +45,9 @@ private:
 
 struct GeometryResidualParams {
     uint32_t median_half_window = 100;
+    float median_window_override_min_range_m = 18.5f;
+    float median_window_override_max_range_m = 40.0f;
+    uint32_t median_half_window_override = 200;
     float residual_threshold_m = 1.0f;
     float residual_threshold_far_m = 1.0f;
     uint32_t min_cells = 50;

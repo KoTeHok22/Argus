@@ -276,3 +276,55 @@ TEST(GeometryResidualDetector, FarResidualThresholdIsIndependent) {
     argus::GeometryResidualDetector detector(params);
     EXPECT_TRUE(detector.detect(cloud, ri).indices.empty());
 }
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideRecoversWideTarget) {
+    const auto cloud = make_wall_cloud(20.0f, 160, 320, 1, 6, 180.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.median_window_override_min_range_m = 18.5f;
+    params.median_window_override_max_range_m = 40.0f;
+    params.median_half_window_override = 200;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_FALSE(detector.detect(cloud, ri).indices.empty());
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideLeavesFarTargetUnchanged) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto base = make_geom_params(1);
+    base.max_target_range_m = 150.0f;
+    auto overridden = base;
+    overridden.median_window_override_min_range_m = 18.5f;
+    overridden.median_window_override_max_range_m = 40.0f;
+    overridden.median_half_window_override = 200;
+    argus::GeometryResidualDetector base_detector(base);
+    argus::GeometryResidualDetector override_detector(overridden);
+    EXPECT_EQ(base_detector.detect(cloud, ri).indices, override_detector.detect(cloud, ri).indices);
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideLeavesFdTargetUnchanged) {
+    const auto cloud = make_wall_cloud(16.9f, 200, 203, 2, 4);
+    const auto ri = ri_of(cloud);
+    auto base = make_geom_params(1);
+    auto overridden = base;
+    overridden.median_window_override_min_range_m = 18.5f;
+    overridden.median_window_override_max_range_m = 40.0f;
+    overridden.median_half_window_override = 200;
+    argus::GeometryResidualDetector base_detector(base);
+    argus::GeometryResidualDetector override_detector(overridden);
+    EXPECT_EQ(base_detector.detect(cloud, ri).indices, override_detector.detect(cloud, ri).indices);
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideIsScoped) {
+    const auto cloud = make_wall_cloud(20.0f, 194, 209, 1, 6, 180.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.median_half_window = 100;
+    params.median_window_override_min_range_m = 18.5f;
+    params.median_window_override_max_range_m = 40.0f;
+    params.median_half_window_override = 200;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_FALSE(detector.detect(cloud, ri).indices.empty());
+}

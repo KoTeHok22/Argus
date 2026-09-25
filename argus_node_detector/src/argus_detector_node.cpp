@@ -56,6 +56,12 @@ public:
         GeometryResidualParams geom;
         geom.median_half_window = static_cast<uint32_t>(
             declare_parameter<int>("detector_geometry.median_half_window", 100));
+        geom.median_window_override_min_range_m = static_cast<float>(declare_parameter<double>(
+            "detector_geometry.median_window_override_min_range_m", 18.5));
+        geom.median_window_override_max_range_m = static_cast<float>(declare_parameter<double>(
+            "detector_geometry.median_window_override_max_range_m", 40.0));
+        geom.median_half_window_override = static_cast<uint32_t>(
+            declare_parameter<int>("detector_geometry.median_half_window_override", 200));
         geom.residual_threshold_m = static_cast<float>(
             declare_parameter<double>("detector_geometry.residual_threshold_m", 1.0));
         geom.residual_threshold_far_m = static_cast<float>(

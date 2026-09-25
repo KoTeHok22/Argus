@@ -316,6 +316,9 @@ int main(int argc, char** argv) {
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
     float geom_residual_threshold_far = 1.0f;
+    float diagnostic_near_baseline_min = 18.5f;
+    float diagnostic_near_baseline_max = 40.0f;
+    uint32_t diagnostic_near_baseline_window = 200;
     bool ground_filter = false;
     bool profile_gauge_mode = false;
     float profile_residual_threshold = 1.0f;
@@ -405,6 +408,13 @@ int main(int argc, char** argv) {
             geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--geom-residual-far" && i + 1 < argc) {
             geom_residual_threshold_far = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-min" && i + 1 < argc) {
+            diagnostic_near_baseline_min = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-max" && i + 1 < argc) {
+            diagnostic_near_baseline_max = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-window" && i + 1 < argc) {
+            diagnostic_near_baseline_window =
+                static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--ground-filter") {
             ground_filter = true;
         } else if (a == "--profile-gauge") {
@@ -477,6 +487,8 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--min-cluster-size-long N] [--size-long-range M] "
                      "[--geom-max-range M] [--geom-residual-far M] "
+                     "[--diagnostic-near-baseline-min M] [--diagnostic-near-baseline-max M] "
+                     "[--diagnostic-near-baseline-window N] "
                      "[--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
@@ -562,6 +574,9 @@ int main(int argc, char** argv) {
     argus::GeometryResidualParams geom_params;
     geom_params.max_target_range_m = geom_max_target_range;
     geom_params.residual_threshold_far_m = geom_residual_threshold_far;
+    geom_params.median_window_override_min_range_m = diagnostic_near_baseline_min;
+    geom_params.median_window_override_max_range_m = diagnostic_near_baseline_max;
+    geom_params.median_half_window_override = diagnostic_near_baseline_window;
     argus::NoReturnDetector no_return(nr_params);
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;

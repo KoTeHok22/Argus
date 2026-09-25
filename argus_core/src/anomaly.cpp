@@ -132,35 +132,49 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
     const uint32_t w = ri.width;
     const uint32_t h = ri.height;
     const size_t n_cells = static_cast<size_t>(w) * h;
-    const uint32_t half = std::min(p_.median_half_window, (w - 1) / 2);
-
-    std::vector<float> baseline(n_cells, std::numeric_limits<float>::quiet_NaN());
-    std::vector<float> win;
-    win.reserve(2 * static_cast<size_t>(half) + 1);
-    for (uint32_t r = 0; r < h; ++r) {
-        win.clear();
-        for (uint32_t d = 0; d <= 2 * half; ++d) {
-            const float v = ri.range[ri.idx(d % w, r)];
-            if (std::isfinite(v)) {
-                win.push_back(v);
+    const auto build_baseline = [&](uint32_t configured_half) {
+        const uint32_t half = std::min(configured_half, (w - 1) / 2);
+        std::vector<float> values(n_cells, std::numeric_limits<float>::quiet_NaN());
+        std::vector<float> win;
+        win.reserve(2 * static_cast<size_t>(half) + 1);
+        for (uint32_t r = 0; r < h; ++r) {
+            win.clear();
+            for (uint32_t d = 0; d <= 2 * half; ++d) {
+                const float value = ri.range[ri.idx(d % w, r)];
+                if (std::isfinite(value)) {
+                    win.push_back(value);
+                }
+            }
+            std::sort(win.begin(), win.end());
+            for (uint32_t az = half; az < w + half; ++az) {
+                const uint32_t c = az % w;
+                values[ri.idx(c, r)] = median_of_sorted(win);
+                const float out_v = ri.range[ri.idx((c + w - half) % w, r)];
+                const float in_v = ri.range[ri.idx((c + half + 1) % w, r)];
+                if (std::isfinite(out_v)) sorted_remove_one(win, out_v);
+                if (std::isfinite(in_v)) sorted_insert(win, in_v);
             }
         }
-        std::sort(win.begin(), win.end());
-        for (uint32_t az = half; az < w + half; ++az) {
-            const uint32_t c = az % w;
-            baseline[ri.idx(c, r)] = median_of_sorted(win);
-            const float out_v = ri.range[ri.idx((c + w - half) % w, r)];
-            const float in_v = ri.range[ri.idx((c + half + 1) % w, r)];
-            if (std::isfinite(out_v)) sorted_remove_one(win, out_v);
-            if (std::isfinite(in_v)) sorted_insert(win, in_v);
-        }
+        return values;
+    };
+    const auto baseline = build_baseline(p_.median_half_window);
+    const bool has_override = p_.median_half_window_override != p_.median_half_window;
+    const auto override_baseline =
+        has_override ? build_baseline(p_.median_half_window_override) : baseline;
+    std::vector<float> selected_baseline(n_cells);
+    for (size_t i = 0; i < n_cells; ++i) {
+        const float range = ri.range[i];
+        const bool use_override = has_override && std::isfinite(range) &&
+                                  range >= p_.median_window_override_min_range_m &&
+                                  range <= p_.median_window_override_max_range_m;
+        selected_baseline[i] = use_override ? override_baseline[i] : baseline[i];
     }
 
     std::vector<uint8_t> hit(n_cells, 0);
     std::vector<float> resid(n_cells, 0.0f);
     for (size_t i = 0; i < n_cells; ++i) {
         const float v = ri.range[i];
-        const float b = baseline[i];
+        const float b = selected_baseline[i];
         if (!std::isfinite(v) || !std::isfinite(b) || v < p_.min_range) {
             continue;
         }
