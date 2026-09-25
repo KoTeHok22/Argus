@@ -565,4 +565,10 @@ T86 повторно стратифицирован с предваритель�
 
 Это существенно отличается от прежних малых/ad hoc targets и показывает, что production-sized geometry действительно даёт устойчивый сигнал на 60/100 м. Однако 20 м даёт 0/40 в том же fixture, поэтому результат нельзя объявлять общей победой: сначала нужно разобрать near-range/gauge convention и подтвердить custom control на реальном sensor background без искусственного ray relocation.
 
+### T92: median-window tradeoff
+
+Проверен диагностический sweep `median_half_window`. Окно 200 восстанавливает near target на 20 м до **37/40** и сохраняет 60/100 м на уровне **37/40** и **34/40**; paired empty control остаётся чистым. Но тот же параметр разрушает известную obstacle regression: `doubleT_obstacle` падает с **197/200 до 6/200**. Окно 150 даёт частичное восстановление и также неприемлемо снижает obstacle detection.
+
+Глобальное расширение median window отклонено и диагностический CLI override удалён. Production window остаётся 100. Следующее направление — range-specific baseline с отдельной защитой проверенного F-D, а не единое расширение окна.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.
