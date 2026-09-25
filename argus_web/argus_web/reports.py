@@ -165,6 +165,7 @@ def summarize_latency(rows: list[dict]) -> dict:
         "blocked": len(blocked),
         "clear": len(clear),
         "degraded": statuses.get("DEGRADED", 0),
+        "unknown": statuses.get("UNKNOWN", 0),
         "statuses": statuses,
         "nearest_m": min(nearest) if nearest else None,
         "first_blocked_frame": first_blocked,

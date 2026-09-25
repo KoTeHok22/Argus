@@ -21,6 +21,7 @@ const STATUS = {
   WARNING: "ВНИМАНИЕ",
   BLOCKED: "ПРЕПЯТСТВИЕ",
   DEGRADED: "НЕТ ДАННЫХ",
+  UNKNOWN: "МАЛО УЛИК",
   ready: "ГОТОВО",
   incomplete: "НЕ СОБРАНА",
   holdout: "ОТЛОЖЕНА",
@@ -102,6 +103,9 @@ function verdictOf(report, row, view) {
   }
   if (row.status === "DEGRADED") {
     return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен: кадр обработан не полностью", meters: null };
+  }
+  if (row.status === "UNKNOWN") {
+    return { code: "unsure", chip: "МАЛО УЛИК", cls: "warn-text", phrase: "Мало проверенной дальности: путь не подтверждён свободным", meters: null };
   }
   if (row.status === "BLOCKED" && row.nearest_m != null) {
     return {
