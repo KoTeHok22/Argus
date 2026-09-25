@@ -5,15 +5,15 @@
 Вход — ROS 2 bag, storage plugin `sqlite3`, `rosbag2_bagfile_information version 5`.
 Каталог записи содержит `metadata.yaml` и файл данных `*.db3`.
 
-| Запись | Топик | `frame_id` | Точек/кадр | `point_step` |
+| Тип записи | Топик | `frame_id` | Точек/кадр | `point_step` |
 |---|---|---|---|---|
-| `doubleT_obstacle` | `/sensing/lidar/hesai128/pointcloud` | `lidar_livox` | 921 600 | 26 |
-| `doubleT_platform` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| `roundT_doubleT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| `roundT_pressureGate_roundT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| `roundT_squareT_pressureGate_squareT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| `squareT_platform_squareT_switch` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| `cloud_with_fake_obj` | `/lidar_points` | `hesai_lidar` | ~170 000 | 26 |
+| плотная (сенсор A) | `/sensing/lidar/hesai128/pointcloud` | `lidar_livox` | 921 600 | 26 |
+| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| разрежённая (сенсор B) | `/lidar_points` | `hesai_lidar` | ~170 000 | 26 |
 
 Тип сообщения — `sensor_msgs/msg/PointCloud2`, `serialization_format: cdr`, частота 10 Гц.
 Имя топика читается из `metadata.yaml` автоматически (`docker/bag_topic.py`), поэтому
@@ -37,8 +37,8 @@
 
 **Код не полагается на жёстко зашитые offsets.** `argus_core/cloud_filter.cpp:parse_layout`
 читает `fields[]`, `point_step` и `offset` из самого сообщения. Это нужно потому, что
-организаторы записывали разными пайплайнами: `doubleT_obstacle` отличается топиком,
-`frame_id` и тройной плотностью (921 600 = 3 × 307 200 точек).
+разные записи делались разными пайплайнами: одна отличается топиком, `frame_id` и
+тройной плотностью (921 600 = 3 × 307 200 точек).
 
 Внимание: поле `intensity` в ROS-сообщении — `FLOAT32`, хотя в SDK Hesai оно `uint8_t`.
 Парсить bag «по структуре SDK» (23 байта) нельзя — раскладка берётся только из `fields[]`.

@@ -221,7 +221,7 @@ git clone <repo> && cd Argus
 ./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
 docker run --rm --shm-size=256m -v "$PWD/Datas/dataset/for_hackathon":/data \
-    argus detect /data/doubleT_obstacle 0
+    argus detect /data/<recording> 0
 ```
 
 Ожидаемый вывод — строки `ALERT BLOCKED` около 16.9 м.
