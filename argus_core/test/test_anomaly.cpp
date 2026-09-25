@@ -249,6 +249,9 @@ TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
     params.min_cells_far = 8;
     params.min_fill = 0.3f;
     params.min_fill_far = 0.12f;
+    params.long_range_m = 120.0f;
+    params.min_cells_long = 20;
+    params.min_fill_long = 0.25f;
     argus::GeometryResidualDetector detector(params);
     const auto set = detector.detect(cloud, ri);
     EXPECT_EQ(set.indices.size(), 12u);
@@ -261,4 +264,9 @@ TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
     params.max_target_range_m = 90.0f;
     argus::GeometryResidualDetector range_gate(params);
     EXPECT_TRUE(range_gate.detect(cloud, ri).indices.empty());
+
+    params.max_target_range_m = 150.0f;
+    params.long_range_m = 90.0f;
+    argus::GeometryResidualDetector long_gate(params);
+    EXPECT_TRUE(long_gate.detect(cloud, ri).indices.empty());
 }

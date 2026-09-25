@@ -98,6 +98,9 @@
       far_range_m: 60.0
       min_cells_far: 8
       min_fill_far: 0.12
+      long_range_m: 90.0
+      min_cells_long: 20
+      min_fill_long: 0.25
       min_stable_frames: 2
       az_tolerance: 20
       range_tolerance_m: 3.0
