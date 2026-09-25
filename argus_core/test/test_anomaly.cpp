@@ -39,6 +39,7 @@ argus::GeometryResidualParams make_geom_params(uint32_t min_stable_frames) {
     argus::GeometryResidualParams p;
     p.median_half_window = 100;
     p.residual_threshold_m = 1.0f;
+    p.residual_threshold_far_m = 1.0f;
     p.min_cells = 50;
     p.min_fill = 0.3f;
     p.min_range = 4.0f;
@@ -249,9 +250,6 @@ TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
     params.min_cells_far = 8;
     params.min_fill = 0.3f;
     params.min_fill_far = 0.12f;
-    params.long_range_m = 120.0f;
-    params.min_cells_long = 20;
-    params.min_fill_long = 0.25f;
     argus::GeometryResidualDetector detector(params);
     const auto set = detector.detect(cloud, ri);
     EXPECT_EQ(set.indices.size(), 12u);
@@ -264,9 +262,17 @@ TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
     params.max_target_range_m = 90.0f;
     argus::GeometryResidualDetector range_gate(params);
     EXPECT_TRUE(range_gate.detect(cloud, ri).indices.empty());
+}
 
+TEST(GeometryResidualDetector, FarResidualThresholdIsIndependent) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
     params.max_target_range_m = 150.0f;
-    params.long_range_m = 90.0f;
-    argus::GeometryResidualDetector long_gate(params);
-    EXPECT_TRUE(long_gate.detect(cloud, ri).indices.empty());
+    params.far_range_m = 60.0f;
+    params.min_cells_far = 8;
+    params.min_fill_far = 0.12f;
+    params.residual_threshold_far_m = 60.0f;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_TRUE(detector.detect(cloud, ri).indices.empty());
 }

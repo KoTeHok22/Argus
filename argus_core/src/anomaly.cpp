@@ -165,7 +165,9 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             continue;
         }
         const float d = b - v;
-        if (d > p_.residual_threshold_m) {
+        const float residual_threshold =
+            v >= p_.far_range_m ? p_.residual_threshold_far_m : p_.residual_threshold_m;
+        if (d > residual_threshold) {
             hit[i] = 1;
             resid[i] = d;
         }
@@ -218,13 +220,8 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
 
         const size_t cells = cand.cells.size();
         const bool far_candidate = nearest >= p_.far_range_m;
-        const bool long_candidate = nearest >= p_.long_range_m;
-        const uint32_t min_cells = long_candidate  ? p_.min_cells_long
-                                   : far_candidate ? p_.min_cells_far
-                                                   : p_.min_cells;
-        const float min_fill = long_candidate  ? p_.min_fill_long
-                               : far_candidate ? p_.min_fill_far
-                                               : p_.min_fill;
+        const uint32_t min_cells = far_candidate ? p_.min_cells_far : p_.min_cells;
+        const float min_fill = far_candidate ? p_.min_fill_far : p_.min_fill;
         if (cells < min_cells) {
             continue;
         }

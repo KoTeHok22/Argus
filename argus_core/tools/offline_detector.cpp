@@ -315,6 +315,7 @@ int main(int argc, char** argv) {
     uint32_t min_hits = 3;
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
+    float geom_residual_threshold_far = 1.0f;
     bool ground_filter = false;
     bool profile_gauge_mode = false;
     float profile_residual_threshold = 1.0f;
@@ -402,6 +403,8 @@ int main(int argc, char** argv) {
             debug_clusters = true;
         } else if (a == "--geom-max-range" && i + 1 < argc) {
             geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--geom-residual-far" && i + 1 < argc) {
+            geom_residual_threshold_far = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--ground-filter") {
             ground_filter = true;
         } else if (a == "--profile-gauge") {
@@ -473,7 +476,8 @@ int main(int argc, char** argv) {
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
                      "[--min-cluster-size-long N] [--size-long-range M] "
-                     "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
+                     "[--geom-max-range M] [--geom-residual-far M] "
+                     "[--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
                      "[--world-components] [--world-component-detail] "
@@ -557,6 +561,7 @@ int main(int argc, char** argv) {
     argus::NoReturnParams nr_params;
     argus::GeometryResidualParams geom_params;
     geom_params.max_target_range_m = geom_max_target_range;
+    geom_params.residual_threshold_far_m = geom_residual_threshold_far;
     argus::NoReturnDetector no_return(nr_params);
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;

@@ -58,6 +58,8 @@ public:
             declare_parameter<int>("detector_geometry.median_half_window", 100));
         geom.residual_threshold_m = static_cast<float>(
             declare_parameter<double>("detector_geometry.residual_threshold_m", 1.0));
+        geom.residual_threshold_far_m = static_cast<float>(
+            declare_parameter<double>("detector_geometry.residual_threshold_far_m", 1.0));
         geom.min_cells =
             static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_cells", 50));
         geom.min_fill =
@@ -72,12 +74,6 @@ public:
             static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_cells_far", 8));
         geom.min_fill_far =
             static_cast<float>(declare_parameter<double>("detector_geometry.min_fill_far", 0.12));
-        geom.long_range_m =
-            static_cast<float>(declare_parameter<double>("detector_geometry.long_range_m", 90.0));
-        geom.min_cells_long =
-            static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_cells_long", 20));
-        geom.min_fill_long =
-            static_cast<float>(declare_parameter<double>("detector_geometry.min_fill_long", 0.25));
         geom.min_stable_frames =
             static_cast<uint32_t>(declare_parameter<int>("detector_geometry.min_stable_frames", 2));
         geom.az_tolerance =

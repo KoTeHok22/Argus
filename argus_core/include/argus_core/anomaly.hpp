@@ -46,6 +46,7 @@ private:
 struct GeometryResidualParams {
     uint32_t median_half_window = 100;
     float residual_threshold_m = 1.0f;
+    float residual_threshold_far_m = 1.0f;
     uint32_t min_cells = 50;
     float min_fill = 0.3f;
     float min_range = 4.0f;
@@ -53,9 +54,6 @@ struct GeometryResidualParams {
     float far_range_m = 60.0f;
     uint32_t min_cells_far = 8;
     float min_fill_far = 0.12f;
-    float long_range_m = 90.0f;
-    uint32_t min_cells_long = 20;
-    float min_fill_long = 0.25f;
     uint32_t min_stable_frames = 2;
     uint32_t az_tolerance = 20;
     float range_tolerance_m = 3.0f;
