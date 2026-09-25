@@ -139,6 +139,8 @@ public:
             declare_parameter<double>("vehicle.visibility_max_range_m", visibility_.max_range_m));
         visibility_margin_m_ =
             static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
+        unknown_visibility_m_ =
+            static_cast<float>(declare_parameter<double>("vehicle.unknown_visibility_m", 30.0));
         classification_.person_min_height_m = static_cast<float>(declare_parameter<double>(
             "classification.person_min_height_m", classification_.person_min_height_m));
         classification_.person_max_height_m = static_cast<float>(declare_parameter<double>(
@@ -508,6 +510,18 @@ private:
         if (!sensor_ok_ && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
+        unknown_reason_.clear();
+        if (status == ObstacleArray::STATUS_CLEAR) {
+            const float verified = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
+            if (verified < unknown_visibility_m_) {
+                status = ObstacleArray::STATUS_UNKNOWN;
+                char why[96];
+                std::snprintf(
+                    why, sizeof(why), "недостаточно улик: проверенная дальность %.1f м < %.1f м",
+                    static_cast<double>(verified), static_cast<double>(unknown_visibility_m_));
+                unknown_reason_ = why;
+            }
+        }
         out.status = status;
         out.nearest_range_m = result.alert ? result.nearest_range_m : -1.0f;
         out.obstacles_detected = static_cast<uint32_t>(out.obstacles.size());
@@ -571,6 +585,10 @@ private:
             } else {
                 text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
             }
+        } else if (out.status == ObstacleArray::STATUS_UNKNOWN) {
+            text += "UNKNOWN: ";
+            text += unknown_reason_.empty() ? "недостаточно улик для достоверного CLEAR\n"
+                                            : unknown_reason_ + "\n";
         } else {
             text += format_clear(frames_processed_, fps_);
             text += "\n";
@@ -609,6 +627,8 @@ private:
                 return "WARNING";
             case ObstacleArray::STATUS_DEGRADED:
                 return "DEGRADED";
+            case ObstacleArray::STATUS_UNKNOWN:
+                return "UNKNOWN";
             default:
                 return "CLEAR";
         }
@@ -797,6 +817,8 @@ private:
     BrakingParams braking_;
     VisibilityParams visibility_;
     float visibility_margin_m_ = 10.0f;
+    float unknown_visibility_m_ = 30.0f;
+    std::string unknown_reason_;
     ClassificationParams classification_;
     std::chrono::steady_clock::time_point last_speed_at_{};
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;

@@ -12,6 +12,7 @@ STATUS_LABEL = {
     "WARNING": "внимание",
     "BLOCKED": "препятствие",
     "DEGRADED": "нет данных",
+    "UNKNOWN": "недостаточно улик",
 }
 
 
