@@ -1,0 +1,88 @@
+# Формат входных данных
+
+## Записи
+
+Вход — ROS 2 bag, storage plugin `sqlite3`, `rosbag2_bagfile_information version 5`.
+Каталог записи содержит `metadata.yaml` и файл данных `*.db3`.
+
+| Запись | Топик | `frame_id` | Точек/кадр | `point_step` |
+|---|---|---|---|---|
+| `doubleT_obstacle` | `/sensing/lidar/hesai128/pointcloud` | `lidar_livox` | 921 600 | 26 |
+| `doubleT_platform` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| `roundT_doubleT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| `roundT_pressureGate_roundT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| `roundT_squareT_pressureGate_squareT` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| `squareT_platform_squareT_switch` | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
+| `cloud_with_fake_obj` | `/lidar_points` | `hesai_lidar` | ~170 000 | 26 |
+
+Тип сообщения — `sensor_msgs/msg/PointCloud2`, `serialization_format: cdr`, частота 10 Гц.
+Имя топика читается из `metadata.yaml` автоматически (`docker/bag_topic.py`), поэтому
+запись с другим топиком не требует ручной настройки.
+
+## Раскладка PointCloud2
+
+Все записи используют один и тот же `point_step = 26` и набор полей:
+
+| Поле | offset | Тип ROS | Размер |
+|---|---|---|---|
+| `x` | 0 | `FLOAT32` | 4 |
+| `y` | 4 | `FLOAT32` | 4 |
+| `z` | 8 | `FLOAT32` | 4 |
+| `intensity` | 12 | `FLOAT32` | 4 |
+| `ring` | 16 | `UINT16` | 2 |
+| `timestamp` | 18 | `FLOAT64` | 8 |
+| — | 26 | конец записи | — |
+
+`height = 1`, `width = N`, `row_step = width × point_step`, `is_dense = false`.
+
+**Код не полагается на жёстко зашитые offsets.** `argus_core/cloud_filter.cpp:parse_layout`
+читает `fields[]`, `point_step` и `offset` из самого сообщения. Это нужно потому, что
+организаторы записывали разными пайплайнами: `doubleT_obstacle` отличается топиком,
+`frame_id` и тройной плотностью (921 600 = 3 × 307 200 точек).
+
+Внимание: поле `intensity` в ROS-сообщении — `FLOAT32`, хотя в SDK Hesai оно `uint8_t`.
+Парсить bag «по структуре SDK» (23 байта) нельзя — раскладка берётся только из `fields[]`.
+
+## Облако хранится как развёртка [кольцо][азимут]
+
+Индексация подтверждена экспериментально: для исходного индекса `i` в сообщении
+
+```
+ring = i mod 128
+azimuth = i div 128
+```
+
+Первые 128 записей имеют `ring = 0…127`, `z` монотонно не убывает по столбцу. Это
+позволяет построить range image (2D-развёртку `azimuth × ring`) за O(N) без KD-tree.
+
+В коде используется `raw_idx` — исходный индекс точки в сообщении. По нему
+`range_image.cpp:build_range_image` восстанавливает ячейку `(az, ring)` и кладёт
+дальность. `detect_rings` определяет число колец по периоду повторения `ring[0]`,
+если `rings` не задан явно.
+
+## Что в данных считается мусором
+
+| Значение | Смысл | Действие |
+|---|---|---|
+| `(0,0,0)` | нет возврата | отбросить, пометить луч (drop_zero_xyz) |
+| `\|coord\| > 1e4` | невалидные/мусорные записи | отбросить (max_abs_coord) |
+| `\|coord\| ≈ 4e35` | субнормальные артефакты | отбросить |
+| не-числа (`nan`, `inf`) | аппаратный шум | отбросить (drop_nonfinite) |
+| `d < 0.5` или `d > 400` | вне диапазона | отбросить |
+| `25.52670669555664` | доминирующий «стеночный» возврат | валидная точка, не мусор |
+
+В типичном кадре 50–75 % точек — мусор. `cloud_filter` выполняет отбраковку первой,
+до построения range image и кластеризации.
+
+## Выходной формат
+
+Система публикует:
+
+- `/argus/obstacles` — `argus_msgs/ObstacleArray` (`status`, `obstacles[]`, `candidates[]`, `nearest_m`);
+- `/argus/gauge_state` — `argus_msgs/GaugeState` (скорость, тормозной путь, свободная дальность, лимит скорости);
+- `/argus/system_health` — `argus_msgs/Diagnostics` (`OK` / `DEAD:<узлы>` / `STATUS_DEGRADED`);
+- `/argus/cloud`, `/argus/markers`, `/argus/model` — для визуализации в RViz2.
+
+Статусы `ObstacleArray`: `CLEAR`, `WARNING`, `BLOCKED`, `DEGRADED`. `DEGRADED` означает,
+что система не может дать достоверный `CLEAR` (нет кадра, нет позы, неисправен сенсор,
+молчит узел), и публикуется явно, не маскируется под «путь свободен».

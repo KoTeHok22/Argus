@@ -1,34 +1,81 @@
 # Argus
 
-Инструмент обработки пространственных данных и анализа последовательностей измерений.
+Система обнаружения посторонних объектов в габарите беспилотного поезда метро по данным
+3D-лидара. На каждом кадре отвечает, есть ли препятствие впереди и на каком расстоянии.
 
-## Быстрый старт
+Это не нейросеть и не общий детектор объектов. Система описывает **нормальную геометрию
+тоннеля** и ищет всё, что в неё не вписывается внутри габарита движения поезда. Работает
+на CPU, GPU не нужен.
 
-```bash
-docker compose -f docker/docker-compose.yml up --build ui
-```
-
-Панель открывается на `http://localhost:8080`.
-
-Прогон записи:
+## Быстрый старт: от нуля до результата
 
 ```bash
-docker compose -f docker/docker-compose.yml run --rm argus detect /data/<recording>
-```
-
-Без compose:
-
-```bash
+git clone <repo> && cd Argus
 ./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
-docker run --rm --ipc=host --shm-size=256m \
-     -v "$PWD/data/recordings":/data \
-     argus detect /data/<recording>
+docker run --rm --shm-size=256m \
+    -v "$PWD/Datas/dataset/for_hackathon":/data \
+    argus detect /data/doubleT_obstacle 0
 ```
 
-`--ipc=host` и `--shm-size=256m` нужны для крупных сообщений.
+Через несколько секунд система печатает решения по кадрам. На записи с препятствием
+ожидаются строки примерно такого вида:
 
-Панель без Docker: `./scripts/run_ui.sh`, в Windows — `$env:PYTHONPATH="argus_web"; python -m argus_web`.
+```
+ALERT BLOCKED nearest=16.90 m objects=1
+CLEAR
+```
+
+На записи с пустым тоннелем (`doubleT_platform`) тревог нет: `CLEAR`.
+
+Панель в браузере (`http://localhost:8080`): загрузка записи, эфир облака, отчёт.
+
+```bash
+docker run --rm --shm-size=256m -p 8080:8080 \
+    -v "$PWD/Datas/dataset":/data -v "$PWD/results":/ws/results argus ui
+```
+
+Без Docker панель: `./scripts/run_ui.sh`, в Windows — `$env:PYTHONPATH="argus_web"; python -m argus_web`.
+
+`--shm-size=256m` обязателен: один кадр занимает около 24 МБ.
+
+## Что проверено
+
+| Запись | Результат |
+|---|---|
+| `doubleT_obstacle`, 200 кадров | **197 тревог**, с 3-го кадра, объект на 16.9 м |
+| `doubleT_platform`, 300 кадров | **0 ложных** тревог |
+| `new_data`, полный набор (11 271 кадр) | 167 тревог (1.48 %) |
+| held-out `squareT_platform_squareT_switch`, 876 кадров | 26 BLOCKED (3.0 %) |
+| p95 пути принятия решения | 32 мс (бюджет ТЗ — 100 мс) |
+| Тесты | 167 тестов, 0 ошибок |
+
+## Чего система не делает (ограничения)
+
+- **Дальность.** Устойчивое обнаружение на реальных данных — 12–15 м для человека.
+  На синтетических целях размера габарита (3.0 × 2.1 м) сигнал есть на 60–100 м,
+  но это не подтверждает реальный recall. В узком/кривом тоннеле стена физически
+  закрывает обзор на 20–30 м, и «дальность 300 м» там недостижима.
+- **Реклассификация.** Класс объекта (`person`/`debris`/`equipment`) — грубая эвристика
+  по размеру, не обученная модель; на вырожденных целях отдаётся `unknown`.
+- **Free-space и temporal** каналы в production выключены: на платформе и поворотах
+  давали ложные тревоги.
+- **Одометрия** в тоннеле деградирует продольно; world-space признаки используются
+  только при подтверждённом качестве позы.
+- Система **не даёт команду торможения**. `DEGRADED` означает, что достоверный `CLEAR`
+  невозможен (нет кадра/позы, неисправен сенсор, молчит узел) — это публикуется явно,
+  а не маскируется под «путь свободен».
+
+## Как работает (кратко)
+
+1. Читает `PointCloud2` по фактической раскладке `fields[]` (не по зашитым offsets).
+2. Отбрасывает мусор (50–75 % точек кадра) и помечает лучи без возврата.
+3. Вычитает пол и рельсы порогом по Z (Patchwork++ — опция).
+4. Строит range image по раскладке `ring = i mod 128`, `az = i div 128`.
+5. Геометрический residual: точка ближе скользящей медианы профиля на азимуте → аномалия.
+6. Подтверждает аномалии во времени и проверяет принадлежность габариту поезда.
+
+Подробно: [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
 
 ## Режимы контейнера
 
@@ -41,18 +88,11 @@ docker run --rm --ipc=host --shm-size=256m \
 | `shell` | Оболочка внутри образа |
 | `help` | Справка (по умолчанию) |
 
-## Что делает система
-
-1. Читает `PointCloud2` по фактической раскладке `fields[]`.
-2. Отбрасывает мусор и помечает лучи без возврата.
-3. Вычитает пол и рельсы порогом по Z. Метод по умолчанию — `z_threshold`; Patchwork++ доступен как опция.
-4. Ищет геометрические отклонения и подтверждает их во времени.
-5. Формирует результат и диагностические события.
-
 ## Проверки
 
 ```bash
 scripts/ci/all.sh      # lint + build + test
+scripts/fault_injection_test.sh   # fail-safe: kill детектора → DEGRADED
 ```
 
 ## Структура
@@ -61,8 +101,8 @@ scripts/ci/all.sh      # lint + build + test
 |---|---|
 | `argus_core` | Алгоритмы, C++ тесты, CLI `offline_detector` |
 | `argus_msgs` | Сообщения ROS 2 |
-| `argus_node_*` | Ноды обработки и watchdog живости |
-| `argus_launch` | Launch-файлы и конфиги |
+| `argus_node_*` | Ноды обработки, watchdog живости, recorder |
+| `argus_launch` | Launch-файлы и `config/argus_params.yaml` |
 | `argus_eval` | Метрики и оценка |
 | `argus_web` | Панель в браузере |
 | `docker` | Образы и точка входа |
@@ -73,6 +113,10 @@ scripts/ci/all.sh      # lint + build + test
 
 | Документ | О чём |
 |---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Компоненты и потоки данных |
+| [`docs/ALGORITHM.md`](docs/ALGORITHM.md) | Алгоритм и математика |
+| [`docs/DATA_FORMAT.md`](docs/DATA_FORMAT.md) | Формат bag и PointCloud2 |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Сборка, запуск, параметры |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали, что отвергли и почему |
 
 ## Требования

@@ -83,6 +83,10 @@ AGENTS.md
 *.md
 !/README.md
 !docs/EXPERIMENTS.md
+!docs/ARCHITECTURE.md
+!docs/ALGORITHM.md
+!docs/DEPLOYMENT.md
+!docs/DATA_FORMAT.md
 
 # --- Данные, макеты и артефакты прогонов: вне репозитория ---
 data/
