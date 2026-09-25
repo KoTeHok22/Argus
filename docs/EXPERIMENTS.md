@@ -480,4 +480,10 @@ Linux-container CI после отката: **163 теста, 0 ошибок и 
 
 Создан пустой planar фон на 180 м из кадров `new_data_2931`, затем на тех же лучах построены lidar-frame box targets 20/60/100 м. Пустой фон дал **0/40 alerts**, цель 20 м — **35/40 matched alerts**. Цели 60/100 м не дали ни одного matched alert (**0/40**), хотя генератор заменил соответственно **44,446** и **51,766** лучей за 40 кадров.
 
+### T84: target orientation sweep
+
+На ray-aligned 180 м shell проверены yaw -45/-30/-15/0/15/30/45° и дальности 40/60/80/100 м. Coverage составил **72–504 заменённых луча за 12 кадров**. Пустой shell дал 0 alerts; каждая orientation/range комбинация также дала **0/12 alerts**.
+
+Смена проекции объекта не восстановила geometry anomalies, поэтому yaw сам по себе не объясняет пропуск на этом control. Production detector и YAML не менялись. Следующий synthetic контроль должен использовать калиброванные per-ring elevation angles и более реалистичную tunnel surface.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.
