@@ -148,6 +148,7 @@ scripts/eval/metrics_report.py <csv> # события/км и FP/км
 | [`docs/RANGE.md`](docs/RANGE.md) | Дальность: реальные и синтетические результаты |
 | [`docs/COVERAGE.md`](docs/COVERAGE.md) | Стратификация matched / unknown / missed |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | Задержки, CPU и память |
+| [`docs/PITCH.md`](docs/PITCH.md) | Сценарий выступления и слайды |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали, что отвергли и почему |
 
 ## Требования
