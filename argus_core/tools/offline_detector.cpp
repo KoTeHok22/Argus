@@ -11,6 +11,8 @@
 #include <argus_core/tunnel_profile.hpp>
 #include <argus_core/types.hpp>
 
+#include "cli_options.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -285,235 +287,78 @@ void report(uint32_t frame, const argus::AnomalySet& set, const argus::RangeImag
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string path;
-    std::string forward_axis = "-y";
-    uint32_t limit = 0;
-    bool fusion_mode = false;
-    bool odometry_mode = false;
-    bool tunnel_mode = false;
-    bool debug_clusters = false;
-    uint32_t warmup_frames = 10;
-    bool free_space_vote = false;
-    bool verify_clusters = false;
-    float verify_min_score = 0.35f;
-    uint32_t carve_stride = 1;
-    float carve_max_range = 90.0f;
-    float carve_half_width = 3.0f;
-    float gauge_height = 2.10f;
-    float gauge_half_width = 1.50f;
-    float gauge_sensor_height = 1.075f;
-    float gauge_safety_margin = 0.10f;
-    float gauge_base_offset = 0.20f;
-    float gauge_chamfer = 0.20f;
-    float gauge_nose_offset = 0.00f;
-    float gauge_max_range = 300.0f;
-    float odom_max_range = 120.0f;
-    uint32_t odom_iterations = 4;
-    uint32_t min_cluster_size_near = 15;
-    uint32_t min_cluster_size_mid = 6;
-    uint32_t min_cluster_size_far = 3;
-    uint32_t min_cluster_size_long = 2;
-    float size_long_range = 300.0f;
-    uint32_t min_hits = 3;
-    uint32_t min_hits_far = 5;
-    float geom_max_target_range = 45.0f;
-    float geom_residual_threshold_far = 1.0f;
-    float diagnostic_near_baseline_min = 18.5f;
-    float diagnostic_near_baseline_max = 40.0f;
-    uint32_t diagnostic_near_baseline_window = 200;
-    bool ground_filter = false;
-    bool profile_gauge_mode = false;
-    float profile_residual_threshold = 1.0f;
-    bool free_space_freeze = false;
-    uint32_t frozen_min_observations = 0;
-    float frozen_min_confidence = -1.0f;
-    bool temporal_residual = false;
-    uint32_t temporal_window = 5;
-    float temporal_threshold = 1.0f;
-    bool temporal_vote = false;
-    bool world_residual = false;
-    bool world_component_mode = false;
-    bool world_component_detail = false;
-    bool track_corridor_mode = false;
-    std::string track_centerline_path;
-    bool odom_heading = false;
-    float world_voxel = 0.30f;
-    float world_fitness = 0.03f;
-    uint32_t world_warmup = 10;
-    uint32_t world_evidence = 3;
-    uint32_t world_max_component_points = 120;
-    float world_max_y_extent = 1.2f;
-    uint32_t world_max_track_age = 8;
-    float world_max_axis_offset = 0.0f;
-    std::string ground_method = "z";
-    for (int i = 1; i < argc; ++i) {
-        const std::string a = argv[i];
-        if (a == "--frames" && i + 1 < argc) {
-            limit = static_cast<uint32_t>(std::atoi(argv[++i]));
-        } else if (a == "--gauge-height" && i + 1 < argc) {
-            gauge_height = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-half-width" && i + 1 < argc) {
-            gauge_half_width = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-sensor-height" && i + 1 < argc) {
-            gauge_sensor_height = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-safety-margin" && i + 1 < argc) {
-            gauge_safety_margin = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-base-offset" && i + 1 < argc) {
-            gauge_base_offset = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-chamfer" && i + 1 < argc) {
-            gauge_chamfer = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-nose-offset" && i + 1 < argc) {
-            gauge_nose_offset = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--gauge-max-range" && i + 1 < argc) {
-            gauge_max_range = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--odom-max-range" && i + 1 < argc) {
-            odom_max_range = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--odom-iterations" && i + 1 < argc) {
-            odom_iterations = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--ground-method" && i + 1 < argc) {
-            ground_method = argv[++i];
-        } else if (a == "--carve-stride" && i + 1 < argc) {
-            carve_stride = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--carve-max-range" && i + 1 < argc) {
-            carve_max_range = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--carve-half-width" && i + 1 < argc) {
-            carve_half_width = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--warmup" && i + 1 < argc) {
-            warmup_frames = static_cast<uint32_t>(std::atoi(argv[++i]));
-        } else if (a == "--min-cluster-size" && i + 1 < argc) {
-            min_cluster_size_near = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--min-cluster-size-mid" && i + 1 < argc) {
-            min_cluster_size_mid = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--min-cluster-size-far" && i + 1 < argc) {
-            min_cluster_size_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--min-cluster-size-long" && i + 1 < argc) {
-            min_cluster_size_long = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--size-long-range" && i + 1 < argc) {
-            size_long_range = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--min-hits" && i + 1 < argc) {
-            min_hits = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--min-hits-far" && i + 1 < argc) {
-            min_hits_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--free-space-vote") {
-            free_space_vote = true;
-        } else if (a == "--verify") {
-            verify_clusters = true;
-        } else if (a == "--verify-min-score" && i + 1 < argc) {
-            verify_min_score = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--fusion") {
-            fusion_mode = true;
-        } else if (a == "--odometry") {
-            odometry_mode = true;
-        } else if (a == "--odom-heading") {
-            odometry_mode = true;
-            odom_heading = true;
-        } else if (a == "--tunnel") {
-            tunnel_mode = true;
-        } else if (a == "--debug-clusters") {
-            debug_clusters = true;
-        } else if (a == "--geom-max-range" && i + 1 < argc) {
-            geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--geom-residual-far" && i + 1 < argc) {
-            geom_residual_threshold_far = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--diagnostic-near-baseline-min" && i + 1 < argc) {
-            diagnostic_near_baseline_min = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--diagnostic-near-baseline-max" && i + 1 < argc) {
-            diagnostic_near_baseline_max = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--diagnostic-near-baseline-window" && i + 1 < argc) {
-            diagnostic_near_baseline_window =
-                static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--ground-filter") {
-            ground_filter = true;
-        } else if (a == "--profile-gauge") {
-            profile_gauge_mode = true;
-        } else if (a == "--profile-residual" && i + 1 < argc) {
-            profile_residual_threshold = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--free-space-freeze") {
-            free_space_freeze = true;
-        } else if (a == "--frozen-min-observations" && i + 1 < argc) {
-            frozen_min_observations = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--frozen-min-confidence" && i + 1 < argc) {
-            frozen_min_confidence = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--temporal-residual") {
-            temporal_residual = true;
-        } else if (a == "--temporal-vote") {
-            temporal_vote = true;
-        } else if (a == "--temporal-window" && i + 1 < argc) {
-            temporal_window = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--temporal-threshold" && i + 1 < argc) {
-            temporal_threshold = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--world-residual") {
-            world_residual = true;
-        } else if (a == "--world-components") {
-            world_residual = true;
-            world_component_mode = true;
-        } else if (a == "--world-component-detail") {
-            world_component_detail = true;
-        } else if (a == "--track-corridor") {
-            world_residual = true;
-            world_component_mode = true;
-            track_corridor_mode = true;
-        } else if (a == "--track-centerline" && i + 1 < argc) {
-            track_centerline_path = argv[++i];
-        } else if (a == "--track-centerline") {
-            std::cerr << "--track-centerline requires a file path\n";
-            return 2;
-        } else if (a == "--world-voxel" && i + 1 < argc) {
-            world_voxel = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--world-fitness" && i + 1 < argc) {
-            world_fitness = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--world-warmup" && i + 1 < argc) {
-            world_warmup = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--world-evidence" && i + 1 < argc) {
-            world_evidence = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--world-max-component-points" && i + 1 < argc) {
-            world_max_component_points = static_cast<uint32_t>(std::max(2, std::atoi(argv[++i])));
-        } else if (a == "--world-max-y-extent" && i + 1 < argc) {
-            world_max_y_extent = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--world-max-track-age" && i + 1 < argc) {
-            world_max_track_age = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
-        } else if (a == "--world-max-axis-offset" && i + 1 < argc) {
-            world_max_axis_offset = static_cast<float>(std::atof(argv[++i]));
-        } else if (a == "--forward-axis" && i + 1 < argc) {
-            forward_axis = argv[++i];
-        } else {
-            if (a.rfind("--", 0) == 0) {
-                std::cerr << "unknown or incomplete option: " << a << '\n';
-                return 2;
-            }
-            path = a;
-        }
-    }
-    if (path.empty()) {
-        std::cerr << "usage: offline_detector <frames.bin> [--frames N] [--fusion] [--odometry] "
-                     "[--tunnel] [--warmup N] [--free-space-vote] [--verify] "
-                     "[--verify-min-score C] [--carve-stride N] "
-                     "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
-                     "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
-                     "[--gauge-safety-margin M] [--gauge-base-offset M] "
-                     "[--gauge-chamfer M] [--gauge-nose-offset M] [--gauge-max-range M] "
-                     "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
-                     "[--min-cluster-size N] [--min-cluster-size-mid N] "
-                     "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
-                     "[--min-cluster-size-long N] [--size-long-range M] "
-                     "[--geom-max-range M] [--geom-residual-far M] "
-                     "[--diagnostic-near-baseline-min M] [--diagnostic-near-baseline-max M] "
-                     "[--diagnostic-near-baseline-window N] "
-                     "[--temporal-residual] [--temporal-window N] "
-                     "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
-                     "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--world-component-detail] "
-                     "[--world-max-component-points N] "
-                     "[--world-max-y-extent M] "
-                     "[--world-max-track-age N] "
-                     "[--world-max-axis-offset M] "
-                     "[--track-corridor --track-centerline PATH] "
-                     "[--odom-heading] "
-                     "[--profile-gauge] "
-                     "[--profile-residual M] [--free-space-freeze] "
-                     "[--frozen-min-observations N] [--frozen-min-confidence C]\n";
+    const argus::cli::ParseResult parsed = argus::cli::parse_cli(argc, argv);
+    if (parsed.status == argus::cli::ParseStatus::Error) {
+        std::cerr << parsed.error << '\n';
         return 2;
     }
+    if (parsed.status == argus::cli::ParseStatus::Help) {
+        std::cerr << argus::cli::usage_text() << '\n';
+        return 2;
+    }
+    const argus::cli::Options& opt = parsed.options;
+
+    const std::string& path = opt.path;
+    const std::string& forward_axis = opt.forward_axis;
+    const uint32_t limit = opt.limit;
+    const bool fusion_mode = opt.fusion_mode;
+    const bool odometry_mode = opt.odometry_mode;
+    const bool tunnel_mode = opt.tunnel_mode;
+    const bool debug_clusters = opt.debug_clusters;
+    const uint32_t warmup_frames = opt.warmup_frames;
+    const bool free_space_vote = opt.free_space_vote;
+    const bool verify_clusters = opt.verify_clusters;
+    const float verify_min_score = opt.verify_min_score;
+    const uint32_t carve_stride = opt.carve_stride;
+    const float carve_max_range = opt.carve_max_range;
+    const float carve_half_width = opt.carve_half_width;
+    const float gauge_height = opt.gauge_height;
+    const float gauge_half_width = opt.gauge_half_width;
+    const float gauge_sensor_height = opt.gauge_sensor_height;
+    const float gauge_safety_margin = opt.gauge_safety_margin;
+    const float gauge_base_offset = opt.gauge_base_offset;
+    const float gauge_chamfer = opt.gauge_chamfer;
+    const float gauge_nose_offset = opt.gauge_nose_offset;
+    const float gauge_max_range = opt.gauge_max_range;
+    const float odom_max_range = opt.odom_max_range;
+    const uint32_t odom_iterations = opt.odom_iterations;
+    const uint32_t min_cluster_size_near = opt.min_cluster_size_near;
+    const uint32_t min_cluster_size_mid = opt.min_cluster_size_mid;
+    const uint32_t min_cluster_size_far = opt.min_cluster_size_far;
+    const uint32_t min_cluster_size_long = opt.min_cluster_size_long;
+    const float size_long_range = opt.size_long_range;
+    const uint32_t min_hits = opt.min_hits;
+    const uint32_t min_hits_far = opt.min_hits_far;
+    const float geom_max_target_range = opt.geom_max_target_range;
+    const float geom_residual_threshold_far = opt.geom_residual_threshold_far;
+    const float diagnostic_near_baseline_min = opt.diagnostic_near_baseline_min;
+    const float diagnostic_near_baseline_max = opt.diagnostic_near_baseline_max;
+    const uint32_t diagnostic_near_baseline_window = opt.diagnostic_near_baseline_window;
+    const bool ground_filter = opt.ground_filter;
+    const bool profile_gauge_mode = opt.profile_gauge_mode;
+    const float profile_residual_threshold = opt.profile_residual_threshold;
+    const bool free_space_freeze = opt.free_space_freeze;
+    const uint32_t frozen_min_observations = opt.frozen_min_observations;
+    const float frozen_min_confidence = opt.frozen_min_confidence;
+    const bool temporal_residual = opt.temporal_residual;
+    const uint32_t temporal_window = opt.temporal_window;
+    const float temporal_threshold = opt.temporal_threshold;
+    const bool temporal_vote = opt.temporal_vote;
+    const bool world_residual = opt.world_residual;
+    const bool world_component_mode = opt.world_component_mode;
+    const bool world_component_detail = opt.world_component_detail;
+    const bool track_corridor_mode = opt.track_corridor_mode;
+    const std::string& track_centerline_path = opt.track_centerline_path;
+    const bool odom_heading = opt.odom_heading;
+    const float world_voxel = opt.world_voxel;
+    const float world_fitness = opt.world_fitness;
+    const uint32_t world_warmup = opt.world_warmup;
+    const uint32_t world_evidence = opt.world_evidence;
+    const uint32_t world_max_component_points = opt.world_max_component_points;
+    const float world_max_y_extent = opt.world_max_y_extent;
+    const uint32_t world_max_track_age = opt.world_max_track_age;
+    const float world_max_axis_offset = opt.world_max_axis_offset;
+    const std::string& ground_method = opt.ground_method;
     argus::TrackCorridor track_corridor({gauge_half_width, 5.0f, 1.0f});
     if (track_corridor_mode != !track_centerline_path.empty()) {
         std::cerr << "--track-corridor requires --track-centerline and vice versa\n";
