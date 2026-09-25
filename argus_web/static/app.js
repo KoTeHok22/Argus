@@ -380,6 +380,8 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
+  const image = ctx.createImageData(w, h);
+  const pixels = image.data;
   for (let i = 0; i < n; i += 1) {
     const [fwd, side] = planOf(xyz[i * 3], xyz[i * 3 + 1], gauge);
     if (fwd < 0.3 || fwd > 90) continue;
@@ -389,15 +391,21 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     if (layers.ground && (!view || view.ground !== false) && z < floor) continue;
     if (Math.abs(side) > hw * 2.4) continue;
     const [px, py] = project(fwd, side, z);
-    if (px < -2 || py < -2 || px >= w + 2 || py >= h + 2) continue;
+    const x = px | 0;
+    const y = py | 0;
+    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    const offset = (y * w + x) * 4;
     const b = Math.max(46, Math.min(215, 215 - fwd * 2.3));
-    ctx.fillStyle = `rgb(${b},${b + 6},${b + 12})`;
-    ctx.fillRect(px, py, 1.4, 1.4);
+    pixels[offset] = b;
+    pixels[offset + 1] = b + 6;
+    pixels[offset + 2] = b + 12;
+    pixels[offset + 3] = 255;
     if (near != null && fwd > near - 1.5 && fwd < near + 1.5 && Math.abs(side) <= hw) {
       sides.push(side);
       zs.push(z);
     }
   }
+  ctx.putImageData(image, 0, 0);
   if (gauge && gauge.near && gauge.far && layers.gauge) {
     ctx.strokeStyle = "rgba(91,122,140,0.9)";
     ctx.lineWidth = Math.max(1, w / 1400);
@@ -476,6 +484,8 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const yOf = (side) => Math.round(h / 2 - ((side - focusSide) / lateral) * (h * 0.42));
+  const image = ctx.createImageData(w, h);
+  const pixels = image.data;
   for (let i = 0; i < n; i += 1) {
     const [fwd, side] = planOf(xyz[i * 3], xyz[i * 3 + 1], gauge);
     if (fwd < 0 || fwd > span) continue;
@@ -487,21 +497,18 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     const px = Math.round((fwd / span) * (w - 24) + 12);
     const py = yOf(side);
     if (px < 0 || py < 0 || px >= w || py >= h) continue;
-    const key = py * w + px;
+    const offset = (py * w + px) * 4;
     const inside = Math.abs(side) <= hw;
-    const prev = bins.get(key);
-    if (!prev || inside) bins.set(key, inside);
+    pixels[offset] = inside ? 215 : 89;
+    pixels[offset + 1] = inside ? 228 : 98;
+    pixels[offset + 2] = inside ? 236 : 107;
+    pixels[offset + 3] = 255;
     if (near != null && fwd > near - 1.5 && fwd < near + 1.5 && inside) {
       sides.push(side);
       zs.push(z);
     }
   }
-  bins.forEach((inside, key) => {
-    const px = key % w;
-    const py = (key - px) / w;
-    ctx.fillStyle = inside ? "#d7e4ec" : "#59626b";
-    ctx.fillRect(px, py, 1, 1);
-  });
+  ctx.putImageData(image, 0, 0);
   if (gauge && gauge.left && gauge.right && layers.gauge) {
     ctx.strokeStyle = "rgba(91,122,140,0.95)";
     ctx.lineWidth = Math.max(1, w / 1200);
@@ -543,20 +550,28 @@ function paintScene(mode) {
   };
 }
 
+const cloudCache = new Map();
+
 function fetchCloud(bagId, frame, synthetic = false) {
   const url = synthetic
     ? `/api/synthetic/${encodeURIComponent(bagId)}?frame=${frame}`
     : `/api/cloud?bag=${encodeURIComponent(bagId)}&frame=${frame}`;
+  const key = `${bagId}:${frame}:${synthetic ? 1 : 0}`;
+  const cached = cloudCache.get(key);
+  if (cached) return cached;
   return fetch(url).then(async (res) => {
     if (!res.ok) throw new Error("Нет кадра");
     const buf = await res.arrayBuffer();
-    return {
+    const cloud = {
       xyz: new Float32Array(buf),
       points: Number(res.headers.get("X-Argus-Points") || 0),
       raw: Number(res.headers.get("X-Argus-Raw") || 0),
       total: Number(res.headers.get("X-Argus-Total") || 0),
       stamp: res.headers.get("X-Argus-Stamp") || "",
     };
+    cloudCache.set(key, cloud);
+    if (cloudCache.size > 40) cloudCache.delete(cloudCache.keys().next().value);
+    return cloud;
   });
 }
 

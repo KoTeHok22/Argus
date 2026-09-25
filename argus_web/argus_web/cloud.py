@@ -10,7 +10,7 @@ from argus_web.bags import bag_db3_files, parse_metadata
 
 MAX_ABS_COORD = 1.0e4
 RANGE_MIN, RANGE_MAX = 0.5, 400.0
-TARGET_POINTS = 6000
+TARGET_POINTS = 2500
 
 
 def header_stamp_ns(blob: bytes) -> int | None:
@@ -259,6 +259,18 @@ def _load_preview(bag_dir: Path, frame: int) -> dict | None:
         "xyz": xyz,
         "stamp_ns": int(data["stamp_ns"]),
     }
+
+
+def warm_preview(bag_dir: Path, frames: int | None = None) -> int:
+    meta = parse_metadata(bag_dir)
+    total = frames if frames is not None else int(meta.get("frames") or 0)
+    built = 0
+    for frame in range(max(0, total)):
+        if _preview_cache(bag_dir, frame) is not None and _preview_cache(bag_dir, frame).is_file():
+            continue
+        load_frame(bag_dir, frame)
+        built += 1
+    return built
 
 
 def load_frame(bag_dir: Path, frame: int) -> dict:
