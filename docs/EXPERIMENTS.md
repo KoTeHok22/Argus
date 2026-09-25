@@ -528,4 +528,21 @@ Detector и YAML не менялись: один фон с 35/40 не обосн
 
 Добавлены тесты для under-covered unknown и eligible matched случаев. Production detector/YAML не менялись; thresholds coverage пока не выбираются по T70 и не используются для runtime alerting.
 
+### T89: explicit coverage categories
+
+Coverage summary теперь различает четыре причины результата: `unknown` для недостаточного target evidence, `inactive` для eligible empty/inactive truth frames, `missed` для eligible active frames без matched alert и `matched`/`uncontested` для корректно обнаруженных целей. Это предотвращает смешивание физически недоступных кадров с настоящими detector misses.
+
+Добавлен unit test для eligible active miss. Runtime detector и production YAML не менялись; provisional eligibility threshold для T86 будет документирован отдельно и не используется для tuning.
+
+T86 повторно стратифицирован с предварительным reporting floor **8 target rays и 2 rings**. Это диагностический минимум, близкий к текущему geometry far-component floor, а не benchmark standard:
+
+| Background | Eligible | Unknown | Matched | Missed |
+| --- | ---: | ---: | ---: | ---: |
+| `new_data_23` | 0 | 40 | 0 | 0 |
+| `new_data_2931` | 40 | 0 | 1 | 39 |
+| `new_data_head` | 29 | 11 | 28 | 1 |
+| `new_data_45` | 2 | 38 | 0 | 2 |
+
+Вывод становится точнее: `new_data_23` не даёт оценивать recall вообще, `new_data_head` показывает хорошее обнаружение при достаточном evidence, а `new_data_2931` пропускает почти все eligible кадры. Значит, есть и coverage confound, и реальная background-dependent detector limitation. Порог coverage пока только для отчётности; использовать его для tuning запрещено до проверки на других дальностях и размерах.
+
 Production detector/YAML не менялись. Следующий шаг — сравнить per-frame raw target residual support до и после local median baseline, чтобы определить, подавляется ли цель самим baseline или пропадает при connectivity/fill gate.

@@ -49,11 +49,26 @@ def test_coverage_summary_marks_undercovered_frames_unknown():
     truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
     result = evaluate([row(0)], [row(0, 1, 60)], truth, 3)
     summary = summarize_coverage([result[0]], [{"rays": 2, "rings": 4}], 8, 2)
-    assert summary == {"eligible": 0, "unknown": 1, "matched": 0, "uncontested": 0}
+    assert summary == {
+        "eligible": 0, "unknown": 1, "inactive": 0, "missed": 0,
+        "matched": 0, "uncontested": 0,
+    }
 
 
 def test_coverage_summary_counts_eligible_match():
     truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
     result = evaluate([row(0)], [row(0, 1, 60)], truth, 3)
     summary = summarize_coverage([result[0]], [{"rays": 8, "rings": 2}], 8, 2)
-    assert summary == {"eligible": 1, "unknown": 0, "matched": 1, "uncontested": 1}
+    assert summary == {
+        "eligible": 1, "unknown": 0, "inactive": 0, "missed": 0,
+        "matched": 1, "uncontested": 1,
+    }
+
+
+def test_coverage_summary_counts_eligible_miss_separately():
+    truth = {"frames": [{"frame": 0, "distance_m": 60.0}]}
+    result = evaluate([row(0)], [row(0)], truth, 3)
+    summary = summarize_coverage([result[0]], [{"rays": 8, "rings": 2}], 8, 2)
+    assert summary["eligible"] == 1
+    assert summary["missed"] == 1
+    assert summary["inactive"] == 0

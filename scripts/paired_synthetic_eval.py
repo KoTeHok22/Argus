@@ -54,6 +54,8 @@ def summarize_coverage(results, coverage, min_rays=0, min_rings=0):
     summary = {
         "eligible": 0,
         "unknown": 0,
+        "inactive": 0,
+        "missed": 0,
         "matched": 0,
         "uncontested": 0,
     }
@@ -64,9 +66,13 @@ def summarize_coverage(results, coverage, min_rays=0, min_rings=0):
         if not eligible:
             summary["unknown"] += 1
             continue
+        if result["truth_m"] is None:
+            summary["inactive"] += 1
+            continue
         summary["eligible"] += 1
         summary["matched"] += int(result["matched"])
         summary["uncontested"] += int(result["uncontested"])
+        summary["missed"] += int(not result["matched"])
     return summary
 
 
