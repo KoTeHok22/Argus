@@ -876,12 +876,8 @@ int main(int argc, char** argv) {
                               << " ext=" << (c.max_corner - c.min_corner).transpose()
                               << " centroid=(" << c.centroid.transpose() << ")\n";
                 }
-                argus::ClusteringParams cp;
-                cp.min_cluster_size_near = fusion_params.clustering.min_cluster_size_near;
-                cp.min_cluster_size_far = fusion_params.clustering.min_cluster_size_far;
-                cp.min_extent_m = fusion_params.clustering.min_extent_m;
-                cp.max_extent_m = fusion_params.clustering.max_extent_m;
-                const auto cls = argus::cluster_anomalies(cloud, ri, merged, cp);
+                const auto cls =
+                    argus::cluster_anomalies(cloud, ri, merged, fusion_params.clustering);
                 std::cerr << "  после фильтров: " << cls.size() << "\n";
                 for (const auto& c : cls) {
                     const Eigen::Vector3f ext = c.max_corner - c.min_corner;
@@ -892,10 +888,15 @@ int main(int argc, char** argv) {
                             ++gauge_points;
                         }
                     }
+                    const double gauge_frac =
+                        c.point_count > 0
+                            ? static_cast<double>(gauge_points) / static_cast<double>(c.point_count)
+                            : 0.0;
                     std::cerr << "    kept n=" << c.point_count << " nearest=" << c.nearest_range
-                              << " gauge=" << gauge_points << " fwd=" << c.forward_distance
-                              << " ext=" << ext.transpose() << " centroid=("
-                              << c.centroid.transpose() << ")\n";
+                              << " gauge=" << gauge_points << " frac=" << std::fixed
+                              << std::setprecision(2) << gauge_frac << std::defaultfloat
+                              << " fwd=" << c.forward_distance << " ext=" << ext.transpose()
+                              << " centroid=(" << c.centroid.transpose() << ")\n";
                 }
             }
             const argus::FusionResult r =
