@@ -100,7 +100,7 @@ rate по умолчанию 1 (реальное время). --shm-size=256m о
 Пример:
   docker run --rm --shm-size=256m \
       -v "$PWD/data/recordings":/data argus \
-      detect /data/doubleT_obstacle 0
+      detect /data/<recording> 0
 
   docker run --rm --shm-size=256m -p 8080:8080 \
       -v "$PWD/data/recordings":/data argus ui

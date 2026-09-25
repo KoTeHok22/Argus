@@ -60,21 +60,25 @@ run_set() {
   printf '  %-28s alerts=%-4s first=%s\n' "$name" "$alerts" "$first"
 }
 
-echo "[frozen-report] obstacle / platform (регрессия)"
-run_set doubleT_obstacle      data/frames/doubleT_obstacle.frames --frames 200 --fusion
-run_set doubleT_platform      data/frames/doubleT_platform.frames --frames 300 --fusion
-
-echo "[frozen-report] пустые фоны"
-run_set roundT_doubleT        data/frames/roundT_doubleT.frames --frames 100 --fusion
-run_set new_data_head         data/frames/new_data_head.frames --frames 100 --fusion
-run_set new_data_23           data/frames/new_data_23.frames --frames 100 --fusion
-run_set new_data_2931         data/frames/new_data_2931.frames --frames 100 --fusion
-
-if [ "${ARGUS_FROZEN_INCLUDE_CLOUD:-0}" = "1" ]; then
-  echo "[frozen-report] независимый набор с объектами (долго)"
-  run_set cloud_with_fake_obj data/frames/cloud_with_fake_obj.frames --frames 1510 --fusion
-else
-  echo "[frozen-report] cloud_with_fake_obj пропущен (включить: ARGUS_FROZEN_INCLUDE_CLOUD=1)"
+# Список наборов задаётся данными: каждая пара "кадры:кадров".
+# По умолчанию берутся локальные файлы из data/frames, метки генерируются нейтрально.
+FRAME_DIR="${ARGUS_FRAMES_DIR:-data/frames}"
+SETS="${ARGUS_FROZEN_SETS:-}"
+if [ -z "$SETS" ]; then
+  n=0
+  for f in "$FRAME_DIR"/*.frames; do
+    [ -f "$f" ] || continue
+    n=$((n + 1))
+    SETS="${SETS}${SETS:+ }$(basename "$f" .frames):200"
+  done
 fi
+
+idx=0
+for item in $SETS; do
+  idx=$((idx + 1))
+  stem="${item%%:*}"
+  frames="${item##*:}"
+  run_set "set-${idx}" "$FRAME_DIR/${stem}.frames" --frames "$frames" --fusion
+done
 
 echo "[frozen-report] отчёт: $REPORT"

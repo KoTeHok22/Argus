@@ -13,19 +13,16 @@
 *.zst
 *.head
 *.frames
-
 data/ui/
 data/recordings/
 data/dataset/
 results/
-
 # --- Артефакты сборки ROS 2 ---
 build/
 install/
 log/
 .deps/
 compile_commands.json
-
 # --- Артефакты сборки C++ ---
 *.o
 *.so
@@ -39,7 +36,6 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 CTestTestfile.cmake
-
 # --- Python ---
 __pycache__/
 *.py[cod]
@@ -53,11 +49,9 @@ __pycache__/
 venv/
 env/
 .conda/
-
 # --- Третьи стороны (подтягиваются через vcs import) ---
 third_party/*/
 !third_party/argus.repos
-
 # --- Инструменты и редакторы ---
 .vscode/
 .idea/
@@ -67,19 +61,16 @@ third_party/*/
 .DS_Store
 Thumbs.db
 desktop.ini
-
 # --- Секреты ---
 .env
 .env.*
 *.pem
 *.key
 secrets.yaml
-
 # --- Индексы инструментов ---
 .repowise/
 .tmp_comment_cleanup/
 AGENTS.md
-
 *.md
 !/README.md
 !docs/EXPERIMENTS.md
@@ -87,21 +78,17 @@ AGENTS.md
 !docs/ALGORITHM.md
 !docs/DEPLOYMENT.md
 !docs/DATA_FORMAT.md
-
 # --- Данные, макеты и артефакты прогонов: вне репозитория ---
 data/
 design/
-results/
 third_party/patchworkpp/
 docs/img/
 docs/video/
-
 # --- Скриншоты и служебные файлы инструментов ---
 *.png
 .kilo/
 .mcp.json
 codex_settings.json
-
 # --- Разведка и разовые прогоны: вне репозитория ---
 scripts/alert_summary.py
 scripts/bag2frames.py
@@ -109,23 +96,20 @@ scripts/bag2npz.py
 scripts/bag_range_hunt.py
 scripts/bench_compare.py
 scripts/extract_dataset.sh
-scripts/extract_new_data_head.py
-scripts/extract_new_data_sample.py
+scripts/*_data*.py
 scripts/frames_stats.py
 scripts/fusion_report.py
-scripts/inspect_new_data.py
 scripts/manual_extract.py
 scripts/manual_pages.py
 scripts/play_bag.sh
 scripts/run_eval.sh
-scripts/run_new_data_full.py
 scripts/slice_bag.py
 scripts/t20_matrix.sh
 scripts/t21_odom200.sh
 scripts/t21_odom_bench.sh
 scripts/t22_confirm.sh
 scripts/t22_ground_bench.sh
-scripts/t23_new_data_sample.sh
+scripts/*_data*.sh
 scripts/t32_batch_once.sh
 scripts/t32_fill.sh
 scripts/t32_watch.sh
