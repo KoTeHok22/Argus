@@ -15,18 +15,33 @@ git clone <repo> && cd Argus
 docker build -f docker/Dockerfile -t argus .
 docker run --rm --shm-size=256m \
     -v "$PWD/Datas/dataset/for_hackathon":/data \
-    argus detect /data/doubleT_obstacle 0
+    argus detect /data/doubleT_obstacle 1
 ```
 
 Через несколько секунд система печатает решения по кадрам. На записи с препятствием
 ожидаются строки примерно такого вида:
 
 ```
-ALERT BLOCKED nearest=16.90 m objects=1
-CLEAR
+ALERT BLOCKED objects=2 nearest=16.9m fps=10.0 fusion=0.9ms path=100.6ms
+CLEAR objects=0 nearest=-1.0m
 ```
 
-На записи с пустым тоннелем (`doubleT_platform`) тревог нет: `CLEAR`.
+На записи с пустым тоннелем тревог нет: `CLEAR`. Для коротких записей используйте
+`--rate 0.5` (аргумент после пути): на общем CPU контейнера 10 Гц из 307 k точек может
+не укладываться, и часть кадров теряется в очередях; на 0.5 приходят все кадры.
+
+Плеер чтения bag свой (`docker/bag_play.py` на `rosbag2_py`), а не `ros2 bag play`:
+CLI в целевом образе открывает базу, но не публикует сообщения из-за мисматча плагинов
+хранилища. Вернуть CLI можно переменной `ARGUS_PLAYER=cli`.
+
+## Проверено живым E2E
+
+| Сценарий | Результат |
+|---|---|
+| Препятствие (`doubleT_obstacle_smoke`), `detect … 0.5` | 9 × `ALERT BLOCKED`, ближайшее **16.9 м** |
+| Пустой тоннель (`run_110111`), `detect … 0.5` | 111 кадров, **0 тревог** |
+| Отказ узла (`scripts/fault_injection_test.sh`) | `OK → DEAD:argus_detector → STATUS_DEGRADED` |
+| `ros2 launch … bag:=` (demo-путь) | `/argus/obstacles` = `CLEAR` на пустой записи |
 
 Панель в браузере (`http://localhost:8080`): загрузка записи, эфир облака, отчёт.
 
