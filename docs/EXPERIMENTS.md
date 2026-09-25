@@ -435,3 +435,9 @@ Known regression не изменилась: **197/200** `doubleT_obstacle`, **0/
 При предельно мягких диагностических cluster/hit gates результат составил **0/35** matched alerts на 60 м для `new_data_23`, **14/35** на 60 м для `new_data_2931` и **0/35** на 100 м для обоих наборов. Три paired empty controls дали **0/40** alerts при тех же параметрах. Однако ослабление порогов также показывало ложные дальние alerts вне truth range; это не кандидат для production.
 
 Однокадровый rail proxy, проверенный на `doubleT_obstacle`, `doubleT_platform`, `roundT_doubleT` и четырёх `new_data` сценах, в первых 100 кадрах не давал устойчивой опоры ≥60 м. Даже расширенные допуски по высоте/ширине не продлили centerline на этих наборах. T77 зафиксировал диагностику, но не менял детектор или YAML.
+
+### T78: sparse long-range gate experiment
+
+Проверен ultra-sparse geometry gate от 90 м: минимум 3 connected range-image cells и fill 0.05. После пересборки актуального `offline_detector` moving synthetic прогоны на 60 и 100 м дали **0/35 truth matches** на `new_data_23` и `new_data_2931`. Ослабление `min_cells_long` до 1 и повышение дальнего residual threshold также не дали воспроизводимого matched alert.
+
+Эксперимент отклонён и откатан. Known regression сохранён: **197/200** obstacle, **0/300** platform; T70 **31/1510**. Полный Linux-container CI после отката: **163 теста, 0 ошибок, 0 падений**. Следующее направление — spatial association и per-return target evidence, а не дальнейшее ослабление component gates.
