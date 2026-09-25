@@ -447,3 +447,11 @@ Known regression не изменилась: **197/200** `doubleT_obstacle`, **0/
 На актуальном бинарнике воспроизведён loose moving baseline для `new_data_2931`: на цели 60 м получено **14/35** truth matches, на 100 м **0/35**. Sweep дальнего residual threshold `2/4/6/10 м` при одинаковых предельно слабых cluster/hit gates дал на 100 м соответственно **30/26/26/22 alert frames**, но во всех случаях **0/35 matches**.
 
 Следствие: уменьшение числа дальних компонент не превращает их в цель. Ошибка находится раньше или в spatial association: target returns не образуют устойчивого компонента на truth-дальности, который одновременно проходит gauge и tracker. Production code и YAML не менялись.
+
+### T80: gauge membership diagnostics
+
+В `offline_detector --debug-clusters` добавлен диагностический `gauge=` для каждой kept component. Поле считает точки компоненты, проходящие тот же `ClearanceGauge`, который использует fusion; основной output и production behavior не меняются.
+
+На актуальном moving synthetic `new_data_2931` цель 100 м не образует component в truth range. В диагностическом выводе первых 40 кадров было 347 kept-component строк: **336 с gauge=0** и только **11 с gauge>0**; оставшиеся компоненты лежат в основном на дальностях 4–15 м. Это объясняет, почему дальнейшее ослабление `min_cells`/residual не помогает: detector не получает корректно ассоциированный target component.
+
+Следующий шаг — проверить coordinate transform генератора moving world-fixed target и добавить отдельный lidar-frame truth control, прежде чем менять production detector.

@@ -1012,9 +1012,17 @@ int main(int argc, char** argv) {
                 std::cerr << "  после фильтров: " << cls.size() << "\n";
                 for (const auto& c : cls) {
                     const Eigen::Vector3f ext = c.max_corner - c.min_corner;
+                    uint32_t gauge_points = 0;
+                    for (uint32_t idx : c.indices) {
+                        if (idx < cloud.size() &&
+                            fusion.gauge().contains(cloud.x[idx], cloud.y[idx], cloud.z[idx])) {
+                            ++gauge_points;
+                        }
+                    }
                     std::cerr << "    kept n=" << c.point_count << " nearest=" << c.nearest_range
-                              << " fwd=" << c.forward_distance << " ext=" << ext.transpose()
-                              << " centroid=(" << c.centroid.transpose() << ")\n";
+                              << " gauge=" << gauge_points << " fwd=" << c.forward_distance
+                              << " ext=" << ext.transpose() << " centroid=("
+                              << c.centroid.transpose() << ")\n";
                 }
             }
             const argus::FusionResult r = fusion.update(cloud, ri, geom, nr, 0.1f, 0.0f);
