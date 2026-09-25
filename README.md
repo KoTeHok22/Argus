@@ -40,6 +40,7 @@ CLI в целевом образе открывает базу, но не пуб
 |---|---|
 | Препятствие (`doubleT_obstacle_smoke`), `detect … 0.5` | 9 × `ALERT BLOCKED`, ближайшее **16.9 м** |
 | Пустой тоннель (`run_110111`), `detect … 0.5` | 111 кадров, **0 тревог** |
+| Поворот (`roundT_doubleT`), `detect … 0.5` | 60 кадров, **0 тревог** |
 | Отказ узла (`scripts/fault_injection_test.sh`) | `OK → DEAD:argus_detector → STATUS_DEGRADED` |
 | `ros2 launch … bag:=` (demo-путь) | `/argus/obstacles` = `CLEAR` на пустой записи |
 
