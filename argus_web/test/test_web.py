@@ -149,7 +149,7 @@ def test_load_report_fusion(tmp_path: Path):
         encoding="utf-8",
     )
     report = load_report(path)
-    assert report["name"] == "scene-obstacle"
+    assert report["name"] == "fusion_obstacle"
     assert report["blocked"] == 1
     assert report["clear"] == 1
     assert abs(report["nearest_m"] - 16.9) < 1e-6
