@@ -441,3 +441,9 @@ Known regression не изменилась: **197/200** `doubleT_obstacle`, **0/
 Проверен ultra-sparse geometry gate от 90 м: минимум 3 connected range-image cells и fill 0.05. После пересборки актуального `offline_detector` moving synthetic прогоны на 60 и 100 м дали **0/35 truth matches** на `new_data_23` и `new_data_2931`. Ослабление `min_cells_long` до 1 и повышение дальнего residual threshold также не дали воспроизводимого matched alert.
 
 Эксперимент отклонён и откатан. Known regression сохранён: **197/200** obstacle, **0/300** platform; T70 **31/1510**. Полный Linux-container CI после отката: **163 теста, 0 ошибок, 0 падений**. Следующее направление — spatial association и per-return target evidence, а не дальнейшее ослабление component gates.
+
+### T79: spatial association diagnostics
+
+На актуальном бинарнике воспроизведён loose moving baseline для `new_data_2931`: на цели 60 м получено **14/35** truth matches, на 100 м **0/35**. Sweep дальнего residual threshold `2/4/6/10 м` при одинаковых предельно слабых cluster/hit gates дал на 100 м соответственно **30/26/26/22 alert frames**, но во всех случаях **0/35 matches**.
+
+Следствие: уменьшение числа дальних компонент не превращает их в цель. Ошибка находится раньше или в spatial association: target returns не образуют устойчивого компонента на truth-дальности, который одновременно проходит gauge и tracker. Production code и YAML не менялись.
