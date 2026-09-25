@@ -780,6 +780,7 @@ pacing по штампам с учётом `--rate`, поддерживает `-
 | Препятствие, smoke-запись | `detect /data/smoke 0.5` | 21 | **9 × ALERT BLOCKED, ближайшее 16.9 м** |
 | Пустой тоннель | `detect /data/empty 0.5` | 111 | **0 тревог** |
 | Поворот, `scn-3` | `detect /data/round 0.5` | 60 | **0 тревог** |
+| Held-out `scn-6` (7 ГБ, 877 сообщений) | `detect /data/held 0.5` | 186 из 877 | **0 тревог, без сбоев** |
 | Fault injection | `scripts/fault_injection_test.sh` | — | `OK → DEAD:argus_detector → STATUS_DEGRADED` (**PASS**) |
 | `ros2 launch ... bag:=` | demo-путь | 102 | `/argus/obstacles` = `CLEAR` на пустой записи |
 
