@@ -470,6 +470,12 @@ T81 не менял detector или YAML. Для следующего synthetic 
 
 Linux-container CI после отката: **163 теста, 0 ошибок и 0 падений**. Дальнейший тест должен варьировать angular coverage и ориентацию цели; текущий единственный planar фон недостаточен для выбора production thresholds.
 
+### T83: ray-aligned coverage controls
+
+Построен spherical shell на 180 м с сохранением направления каждого исходного луча регулярной LiDAR-сетки. На нём проверены person/case/cart targets на 40/60/100 м. За 20 кадров target заменял **40–840 лучей** в зависимости от пресета и дальности. Ни production, ни loose cluster/hit settings не дали matched alert.
+
+Эксперимент не считается recall benchmark: spherical shell не воспроизводит реальную tunnel geometry, вертикальное распределение LiDAR и достаточную per-frame coverage. Production code и YAML не менялись. Regression сохранена: **197/200** obstacle, **0/300** platform; T70 run превысил timeout, последний зафиксированный результат остаётся **31/1510**.
+
 ### T82: planar дальний контроль
 
 Создан пустой planar фон на 180 м из кадров `new_data_2931`, затем на тех же лучах построены lidar-frame box targets 20/60/100 м. Пустой фон дал **0/40 alerts**, цель 20 м — **35/40 matched alerts**. Цели 60/100 м не дали ни одного matched alert (**0/40**), хотя генератор заменил соответственно **44,446** и **51,766** лучей за 40 кадров.
