@@ -78,6 +78,9 @@ AGENTS.md
 !docs/ALGORITHM.md
 !docs/DEPLOYMENT.md
 !docs/DATA_FORMAT.md
+!docs/RANGE.md
+!docs/COVERAGE.md
+!docs/PERFORMANCE.md
 # --- Данные, макеты и артефакты прогонов: вне репозитория ---
 data/
 design/

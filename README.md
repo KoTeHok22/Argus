@@ -145,6 +145,9 @@ scripts/eval/metrics_report.py <csv> # события/км и FP/км
 | [`docs/ALGORITHM.md`](docs/ALGORITHM.md) | Алгоритм и математика |
 | [`docs/DATA_FORMAT.md`](docs/DATA_FORMAT.md) | Формат записи и облака точек |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Сборка, запуск, параметры |
+| [`docs/RANGE.md`](docs/RANGE.md) | Дальность: реальные и синтетические результаты |
+| [`docs/COVERAGE.md`](docs/COVERAGE.md) | Стратификация matched / unknown / missed |
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | Задержки, CPU и память |
 | [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали, что отвергли и почему |
 
 ## Требования
