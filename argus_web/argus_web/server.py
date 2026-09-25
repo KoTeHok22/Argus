@@ -107,11 +107,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route.startswith("/static/"):
             rel = unquote(route[len("/static/"):])
-            path = (static_root() / rel).resolve()
-            if not str(path).startswith(str(static_root().resolve())):
+            if rel not in {"app.css", "app.js", "index.html"}:
                 self.send_error(HTTPStatus.FORBIDDEN)
                 return
-            _file(self, path)
+            _file(self, static_root() / rel)
             return
         if route == "/api/overview":
             _json(self, overview())

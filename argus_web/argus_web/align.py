@@ -105,8 +105,7 @@ def save_gauge(values: dict) -> dict:
     block = re.compile(r"(?m)^    gauge:[ \t]*\n(?:      \S[^\n]*\n)*")
     if not block.search(source):
         raise ValueError("Габарит отсутствует в конфигурации детектора")
-    ui_params_yaml().write_text(
-        block.sub("\n".join(lines) + "\n", source, count=1), encoding="utf-8")
+    ui_params_yaml().write_text(block.sub("\n".join(lines) + "\n", source, count=1), encoding="utf-8")
     return gauge_profile(current)
 
 

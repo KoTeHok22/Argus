@@ -44,6 +44,17 @@ def test_summarize_latency_blocked():
     assert out["rows"][1]["status_label"] == "препятствие"
 
 
+def test_summarize_latency_includes_unprofiled_blocked_rows():
+    rows = [
+        {"status": "BLOCKED", "nearest_m": "12.5", "objects": "1", "fps": "10", "t_alert_path_ms": ""},
+        {"status": "CLEAR", "nearest_m": "-1", "objects": "0", "fps": "10", "t_alert_path_ms": ""},
+    ]
+    out = summarize_latency(rows)
+    assert out["frames"] == 2
+    assert out["blocked"] == 1
+    assert out["clear"] == 1
+
+
 def test_load_report_fusion(tmp_path: Path):
     path = tmp_path / "fusion_obstacle.csv"
     path.write_text(
@@ -196,6 +207,20 @@ def test_docker_run_mounts_active_gauge(tmp_path: Path, monkeypatch):
     )
     assert f"{tmp_path}:/tmp/argus_runs" in cmd
     assert cmd[-1] == "/tmp/argus_runs/result_params.yaml"
+
+
+def test_docker_runner_preserves_workspace_absolute_paths(monkeypatch):
+    from argus_web import runner
+
+    monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
+    cmd = runner._detect_cmd(
+        {"id": "cloud_with_fake_obj", "path": "/data/cloud_with_fake_obj"},
+        0.0,
+        Path("/ws/data/ui/runs/cloud_with_fake_obj_run.csv"),
+    )
+    assert "/ws:/ws" in cmd
+    assert "ARGUS_LATENCY_CSV=/ws/data/ui/runs/cloud_with_fake_obj_run.csv" in cmd
+    assert "/ws/data/ui/runs/cloud_with_fake_obj_run_params.yaml" in cmd
 
 
 def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):

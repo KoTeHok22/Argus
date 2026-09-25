@@ -83,7 +83,9 @@ def _timed_row(row: dict) -> bool:
 
 
 def _is_latency(fields: list[str]) -> bool:
-    return "stamp_ns" in fields and "status" in fields
+    return "status" in fields and (
+        "stamp_ns" in fields or "t_alert_path_ms" in fields or "t_detect_ms" in fields
+    )
 
 
 def _is_fusion(fields: list[str]) -> bool:
@@ -95,9 +97,9 @@ def summarize_latency(rows: list[dict]) -> dict:
     for row in rows:
         name = row.get("status") or "UNKNOWN"
         statuses[name] = statuses.get(name, 0) + 1
-    usable = [r for r in rows if (r.get("status") or "") not in ("", "DEGRADED") and _timed_row(r)]
+    usable = [r for r in rows if (r.get("status") or "") not in ("", "DEGRADED")]
     if not usable:
-        usable = [r for r in rows if _timed_row(r)] or rows
+        usable = rows
     blocked = [r for r in usable if r.get("status") == "BLOCKED"]
     clear = [r for r in usable if r.get("status") == "CLEAR"]
     nearest = [
