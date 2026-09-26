@@ -90,6 +90,21 @@ def test_summarize_latency_reads_obstacle_geometry():
     assert row["obstacles"][0]["extent"] == [0.3, 0.4, 0.8]
 
 
+def test_summarize_latency_exposes_candidates_without_confirming_them():
+    row = summarize_latency([
+        {
+            "stamp_ns": "123",
+            "status": "DEGRADED",
+            "nearest_m": "-1",
+            "objects": "1",
+            "obstacles_json": '[{"track_id":9,"position":[0.4,-12,0.3],"extent":[0.3,0.4,0.8],"point_count":6,"reason":"geometry"}]',
+        }
+    ])["rows"][0]
+    assert row["status"] == "DEGRADED"
+    assert row["obstacles"][0]["track_id"] == 9
+    assert row["obstacles"][0]["extent"] == [0.3, 0.4, 0.8]
+
+
 def test_load_report_fusion(tmp_path: Path):
     path = tmp_path / "fusion_obstacle.csv"
     path.write_text(

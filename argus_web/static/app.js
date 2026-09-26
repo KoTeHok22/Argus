@@ -382,6 +382,7 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.obstacles || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const image = ctx.createImageData(w, h);
@@ -470,6 +471,27 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
       ctx.stroke();
     }
   }
+  if (candidates.length) {
+    ctx.strokeStyle = "#d5a84f";
+    ctx.lineWidth = Math.max(1, w / 1500);
+    candidates.forEach((candidate) => {
+      const position = candidate.position || [];
+      const extent = candidate.extent || [];
+      if (position.length !== 3 || extent.length !== 3) return;
+      const fwd = -Number(position[1]);
+      const side = Number(position[0]);
+      const halfFwd = Number(extent[1]) / 2;
+      const halfSide = Number(extent[0]) / 2;
+      const a = project(fwd - halfFwd, side - halfSide, Number(position[2]));
+      const b = project(fwd + halfFwd, side + halfSide, Number(position[2]) + Number(extent[2]));
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(a[0], b[1], b[0] - a[0], a[1] - b[1]);
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#f1d48a";
+      ctx.font = `${Math.round(h / 42)}px Consolas, monospace`;
+      ctx.fillText("КАНДИДАТ", a[0] + 6, Math.max(16, b[1] - 6));
+    });
+  }
 }
 
 function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
@@ -485,6 +507,7 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.obstacles || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const yOf = (side) => Math.round(h / 2 - ((side - focusSide) / lateral) * (h * 0.42));
@@ -544,6 +567,27 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     ctx.font = `${Math.round(h / 34)}px Consolas, monospace`;
     ctx.fillText(label, Math.min(w - 60, mx + 8), Math.max(14, y0 - 6));
     void my;
+  }
+  if (candidates.length) {
+    ctx.strokeStyle = "#d5a84f";
+    ctx.lineWidth = Math.max(1, w / 1300);
+    ctx.setLineDash([6, 4]);
+    candidates.forEach((candidate) => {
+      const position = candidate.position || [];
+      const extent = candidate.extent || [];
+      if (position.length !== 3 || extent.length !== 3) return;
+      const fwd = -Number(position[1]);
+      const side = Number(position[0]);
+      const x0 = ((fwd - Number(extent[1]) / 2) / span) * (w - 24) + 12;
+      const x1 = ((fwd + Number(extent[1]) / 2) / span) * (w - 24) + 12;
+      const y0 = yOf(side + Number(extent[0]) / 2);
+      const y1 = yOf(side - Number(extent[0]) / 2);
+      ctx.strokeRect(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0));
+      ctx.fillStyle = "#f1d48a";
+      ctx.font = `${Math.round(h / 34)}px Consolas, monospace`;
+      ctx.fillText("КАНДИДАТ", Math.min(w - 90, x0 + 6), Math.max(14, Math.min(y0, y1) - 6));
+    });
+    ctx.setLineDash([]);
   }
 }
 
@@ -1122,7 +1166,7 @@ async function pageLive(bagId) {
         pair("Дальность", v.meters != null ? fmtMeters(v.meters) : "—"),
         pair("Вперёд", row && row.forward_m != null ? fmtMeters(row.forward_m) : "—"),
         pair("Объектов", row ? fmtInt(row.objects) : "—"),
-        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(`Габариты трека ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
+        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(row.status === "BLOCKED" ? `Габариты трека ${obstacle.track_id}` : `Кандидат ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
         pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_covered" ? '<span class="warn-text">НЕТ РЕЗУЛЬТАТА</span>' : v.code === "unsure" ? '<span class="warn-text">НЕ УВЕРЕН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
       ].join("");
       document.getElementById("frame-kv").innerHTML = [
