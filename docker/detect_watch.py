@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 from collections import defaultdict
 
@@ -22,6 +23,7 @@ CSV_FIELDS = (
     "status",
     "nearest_m",
     "objects",
+    "obstacles_json",
     "fps",
     "t_filter_ms",
     "t_range_image_ms",
@@ -94,6 +96,20 @@ class Watch(Node):
         row["status"] = name
         row["nearest_m"] = msg.nearest_range_m
         row["objects"] = msg.obstacles_detected
+        row["obstacles_json"] = json.dumps(
+            [
+                {
+                    "track_id": obstacle.track_id,
+                    "position": [obstacle.position.x, obstacle.position.y, obstacle.position.z],
+                    "extent": [obstacle.extent.x, obstacle.extent.y, obstacle.extent.z],
+                    "range_m": obstacle.range_m,
+                    "point_count": obstacle.point_count,
+                    "reason": obstacle.reason,
+                }
+                for obstacle in msg.obstacles
+            ],
+            separators=(",", ":"),
+        )
         row["fps"] = msg.fps
         row["t_fusion_ms"] = msg.processing_ms
         pre = (

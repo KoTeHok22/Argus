@@ -10,7 +10,7 @@ from argus_web.bags import bag_db3_files, parse_metadata
 
 MAX_ABS_COORD = 1.0e4
 RANGE_MIN, RANGE_MAX = 0.5, 400.0
-TARGET_POINTS = 2500
+TARGET_POINTS = 18000
 
 
 def header_stamp_ns(blob: bytes) -> int | None:
@@ -229,7 +229,7 @@ def _preview_cache(bag_dir: Path, frame: int) -> Path | None:
     digest = hashlib.sha1(key).hexdigest()[:16]
     path = ui_root() / "preview" / digest
     path.mkdir(parents=True, exist_ok=True)
-    return path / f"{frame}.npz"
+    return path / f"v3-{frame}.npz"
 
 
 def _store_preview(bag_dir: Path, payload: dict) -> None:

@@ -93,9 +93,6 @@
       median_window_override_min_range_m: 18.5
       median_window_override_max_range_m: 40.0
       median_half_window_override: 200
-      median_window_override_min_range_m: 18.5
-      median_window_override_max_range_m: 40.0
-      median_half_window_override: 200
       residual_threshold_m: 1.0
       residual_threshold_far_m: 1.0
       min_cells: 50

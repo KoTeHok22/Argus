@@ -92,6 +92,66 @@ def _query(path: str) -> dict:
     return {k: v[-1] for k, v in parse_qs(parsed.query).items()}
 
 
+def _report_frame(handler: BaseHTTPRequestHandler, route: str, query: dict) -> None:
+    report_id = unquote(route.split("/")[-2])
+    report = get_report(report_id)
+    if report is None or not report.get("bag_id"):
+        handler.send_error(HTTPStatus.NOT_FOUND)
+        return
+    bag = get_bag(report["bag_id"])
+    if bag is None:
+        handler.send_error(HTTPStatus.NOT_FOUND)
+        return
+    bag_path = Path(bag["path"])
+    frame = int(query.get("frame") or "0")
+    stamp = query.get("stamp")
+    stamps = frame_stamps(bag_path) if stamp else []
+    resolved_stamp = stamp if stamp in stamps else None
+    if resolved_stamp:
+        frame = stamps.index(resolved_stamp)
+    cloud = load_frame(bag_path, frame)
+    frame = cloud["frame"]
+    from io import BytesIO
+    from PIL import Image, ImageDraw
+    import numpy as np
+
+    points = cloud["xyz"]
+    image = Image.new("RGB", (1200, 700), (16, 21, 26))
+    draw = ImageDraw.Draw(image)
+    half_width = load_gauge().get("half_width", 1.5)
+    forward = -points[:, 1] if len(points) else np.zeros(0)
+    lateral = points[:, 0] if len(points) else []
+    scale = 5.0
+    center_x, base_y = 600, 640
+    draw.line((center_x - half_width * scale, base_y, center_x - half_width * scale, 60), fill=(240, 188, 70), width=2)
+    draw.line((center_x + half_width * scale, base_y, center_x + half_width * scale, 60), fill=(240, 188, 70), width=2)
+    for distance, side in zip(forward, lateral):
+        if 0 <= distance <= 110:
+            draw.point((center_x + float(side) * scale, base_y - float(distance) * scale), fill=(94, 174, 203))
+    row = next(
+        (item for item in report.get("rows", []) if resolved_stamp and str(item.get("stamp_ns")) == resolved_stamp),
+        report.get("rows", [])[frame] if frame < len(report.get("rows", [])) else None,
+    )
+    for obstacle in (row or {}).get("obstacles", []):
+        position = obstacle.get("position") or []
+        extent = obstacle.get("extent") or []
+        if len(position) != 3 or len(extent) != 3:
+            continue
+        object_forward = -float(position[1])
+        object_side = float(position[0])
+        half_forward = float(extent[1]) / 2.0
+        half_side = float(extent[0]) / 2.0
+        left = center_x + (object_side - half_side) * scale
+        right = center_x + (object_side + half_side) * scale
+        top = base_y - (object_forward + half_forward) * scale
+        bottom = base_y - (object_forward - half_forward) * scale
+        draw.rectangle((left, top, right, bottom), outline=(255, 95, 82), width=3)
+        draw.text((left, max(8, top - 18)), f"{obstacle.get('track_id', '')} {extent[0]:.2f} x {extent[1]:.2f} x {extent[2]:.2f} m", fill=(255, 220, 210))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    _bytes(handler, buffer.getvalue(), "image/png")
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -137,7 +197,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _text(self, csv_to_text(report), mime="text/csv; charset=utf-8")
             return
-        if route.startswith("/api/reports/"):
+        if route.startswith("/api/reports/") and route.endswith("/frame.png"):
+            _report_frame(self, route, query)
+            return
+        if route.startswith("/api/reports/") and not route.endswith(".csv"):
+            report_id = unquote(route.split("/")[-1])
+            report = get_report(report_id)
+            if report is None:
+                _json(self, {"error": "Отчёт не найден"}, 404)
+                return
+            _json(self, report)
+            return
+        if route.startswith("/api/reports/") and not route.endswith("/frame.png"):
             report_id = unquote(route.split("/")[-1])
             report = get_report(report_id)
             if report is None:
@@ -230,25 +301,77 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/upload":
             filename = unquote(self.headers.get("X-Filename") or "upload.bin")
+            if not filename.lower().endswith((".zst", ".db3")):
+                _json(self, {"error": "Загрузите архив .zst или файл .db3"}, 415)
+                return
             dest_name = unquote(self.headers.get("X-Name") or Path(filename).stem)
             dest_name = re.sub(r"[^A-Za-z0-9._-]+", "_", dest_name) or "upload"
             notes = unquote(self.headers.get("X-Notes") or "")
-            remaining = length
-            chunks = []
-            while remaining > 0:
-                chunk = self.rfile.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            saved = save_upload(filename, chunks)
+
+            def upload_chunks():
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+            saved = save_upload(filename, upload_chunks())
+            from argus_web.ingest import _set
+
+            _set(dest_name, id=dest_name, name=dest_name, status="queued", progress=0.0)
             thread = threading.Thread(
-                target=ingest_archive, args=(saved, dest_name, notes), daemon=True
+                target=_ingest_and_run, args=(saved, dest_name, notes), daemon=True
             )
             thread.start()
             _json(self, {"id": dest_name, "status": "parsing"}, 202)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+
+def _ingest_and_run(saved: Path, dest_name: str, notes: str) -> None:
+    job = ingest_archive(saved, dest_name, notes)
+    if job.get("status") != "ready":
+        return
+    try:
+        run = start_run(dest_name)
+        from argus_web.ingest import _set
+
+        _set(dest_name, status="analyzing", run_id=run.get("id"), report_id=None)
+        if run.get("status") == "error":
+            _set(dest_name, status="error", error=run.get("error"))
+            return
+        threading.Thread(
+            target=_follow_run,
+            args=(dest_name, run.get("id")),
+            daemon=True,
+        ).start()
+    except Exception as exc:
+        from argus_web.ingest import _set
+
+        _set(dest_name, status="error", error=str(exc))
+    finally:
+        try:
+            saved.unlink()
+        except OSError:
+            pass
+
+
+def _follow_run(job_id: str, run_id: str | None) -> None:
+    from argus_web.ingest import _set
+
+    while True:
+        run = current_run()
+        if not run or run.get("id") != run_id:
+            return
+        if run.get("status") not in ("starting", "running"):
+            if run.get("status") == "ready":
+                _set(job_id, status="ready", report_id=run.get("report_id"))
+            else:
+                _set(job_id, status="error", error=run.get("error") or "Прогон детектора завершился с ошибкой")
+            return
+        time.sleep(2)
 
 
 def main(argv: list[str] | None = None) -> int:

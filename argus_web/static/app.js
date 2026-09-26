@@ -86,7 +86,8 @@ function proofLine(report) {
 
 function reportForBag(reports, bagId) {
   if (!bagId) return null;
-  return (reports || []).find((item) => item.name === bagId) || null;
+  const items = (reports || []).filter((item) => item.name === bagId || item.name.startsWith(`${bagId}_`));
+  return items.find((item) => item.blocked > 0) || items[0] || null;
 }
 
 function verdictOf(report, row, view) {
@@ -328,7 +329,7 @@ function planOf(x, y, gauge) {
 
 function fitCanvas(canvas) {
   const rect = canvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = 1;
   const width = Math.max(1, Math.round(rect.width * ratio));
   const height = Math.max(1, Math.round(rect.height * ratio));
   if (canvas.width !== width || canvas.height !== height) {
@@ -778,7 +779,7 @@ async function pageBags() {
   const items = data.items || [];
   const jobRows = jobs.length
     ? jobs.map((j) => {
-        if (j.status === "parsing") {
+        if (["queued", "parsing", "analyzing", "starting", "running"].includes(j.status)) {
           const pct = Math.round((j.progress || 0) * 100);
           return `
             <div class="job">
@@ -786,10 +787,10 @@ async function pageBags() {
               ${ringSvg(j.progress)}
               <div class="info">
                 <div class="name">${j.name}</div>
-                <div class="sub">Распаковка архива${j.notes ? ` · ${j.notes}` : ""}</div>
+                <div class="sub">${j.status === "queued" ? "Файл принят" : j.status === "parsing" ? "Распаковка архива" : "Детектор обрабатывает запись"}${j.notes ? ` · ${j.notes}` : ""}</div>
                 <div class="bar"><div class="progress"><span style="width:${pct}%"></span></div></div>
               </div>
-              ${chip(STATUS.parsing, "warn")}
+              ${chip(STATUS[j.status] || "ОБРАБОТКА", "warn")}
               <span></span>
             </div>`;
         }
@@ -801,8 +802,8 @@ async function pageBags() {
               <div class="name">${j.name}</div>
               <div class="sub">${j.error ? j.error : j.bag ? `${fmtSize(j.bag.size_bytes)} · ${fmtInt(j.bag.frames)} кадров` : ""}</div>
             </div>
-            ${chip(STATUS[j.status] || j.status, kind)}
-            ${j.status === "ready" && j.bag ? `<a href="#/efir/${encodeURIComponent(j.bag.id)}"><button class="btn sq" type="button" title="Эфир">${ICO.play}</button></a>` : "<span></span>"}
+            ${chip(STATUS[j.status] || (j.status === "ready" ? "ГОТОВО" : j.status === "incomplete" ? "НЕ СОБРАНА" : j.status === "error" ? "ОШИБКА" : j.status), kind)}
+            ${j.report_id ? `<a href="#/otchet/${encodeURIComponent(j.report_id)}"><button class="btn tiny accent" type="button">Отчёт</button></a>` : j.status === "ready" && j.bag ? `<a href="#/efir/${encodeURIComponent(j.bag.id)}"><button class="btn sq" type="button" title="Эфир">${ICO.play}</button></a>` : "<span></span>"}
           </div>`;
       }).join("")
     : '<p class="muted" style="margin:6px 0">Очередь пуста.</p>';
@@ -876,7 +877,7 @@ async function pageBags() {
     document.getElementById("dz-file").value = "";
     msg.textContent = "";
   });
-  if (jobs.some((j) => j.status === "parsing")) addTimer(setTimeout(() => route(), 3000));
+  if (jobs.some((j) => ["queued", "parsing", "analyzing", "starting", "running"].includes(j.status))) addTimer(setTimeout(() => route(), 3000));
 }
 
 async function pageLive(bagId) {
@@ -909,6 +910,9 @@ async function pageLive(bagId) {
     return;
   }
   const firstAlert = report && report.first_blocked_frame != null ? report.first_blocked_frame : -1;
+  const requestedParams = new URLSearchParams(location.hash.split("?")[1] || "");
+  const requestedFrame = requestedParams.get("frame");
+  const requestedStamp = requestedParams.get("stamp");
   view.innerHTML = `
     <div class="live-grid">
       <section class="card vp-card">
@@ -985,7 +989,7 @@ async function pageLive(bagId) {
     if (row.stamp_ns != null) byStamp.set(String(row.stamp_ns), row);
   });
   let stamps = [];
-  let frame = firstAlert >= 0 ? firstAlert : 0;
+  let frame = requestedFrame != null ? Number(requestedFrame) : firstAlert >= 0 ? firstAlert : 0;
   scrub.value = String(frame);
   let playing = false;
   let loading = false;
@@ -1115,6 +1119,7 @@ async function pageLive(bagId) {
         pair("Дальность", v.meters != null ? fmtMeters(v.meters) : "—"),
         pair("Вперёд", row && row.forward_m != null ? fmtMeters(row.forward_m) : "—"),
         pair("Объектов", row ? fmtInt(row.objects) : "—"),
+        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(`Габариты трека ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
         pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
       ].join("");
       document.getElementById("frame-kv").innerHTML = [
@@ -1151,6 +1156,14 @@ async function pageLive(bagId) {
   api(`/api/stamps?bag=${encodeURIComponent(selected.id)}`)
     .then((data2) => {
       stamps = data2.stamps || [];
+      if (requestedStamp) {
+        const stampFrame = stamps.indexOf(requestedStamp);
+        if (stampFrame >= 0) {
+          frame = stampFrame;
+          drawFrame();
+          return;
+        }
+      }
       const matched = stamps.findIndex((stamp) => {
         const row = byStamp.get(String(stamp));
         return row && row.status === "BLOCKED";
@@ -1292,7 +1305,11 @@ async function pageReports(reportId) {
   const clearSeries = rows.map((r, i) => i + 1 - blockedSeries[i]);
   const nearestSeries = rows.map((r) => r.nearest_m).filter((v) => v != null);
   const alertRow = rows.find((r) => r.status === "BLOCKED");
-  const liveLink = current.name ? `#/efir/${encodeURIComponent(current.name)}` : "#/efir";
+  const liveLink = current.bag_id ? `#/efir/${encodeURIComponent(current.bag_id)}` : "#/efir";
+  const detectedObstacles = (alertRow && alertRow.obstacles) || [];
+  const obstacleText = detectedObstacles.length
+    ? detectedObstacles.map((obstacle) => `${obstacle.track_id}: ${obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ")} м`).join(" · ")
+    : "Размеры объекта не переданы детектором для этого отчёта";
   view.innerHTML = `
     <div class="report-top">
       <div class="title"><span>ОТЧЁТ</span>${current.name}</div>
@@ -1319,6 +1336,12 @@ async function pageReports(reportId) {
         <div class="chart">${histogramSvg(latSeries, (current.latency_ms || {}).median, (current.latency_ms || {}).p95)}</div>
       </section>
     </div>
+    <section class="card">
+      <h2>Кадр тревоги</h2>
+      <p class="muted">${alertRow ? `Кадр ${fmtInt((alertRow.index || 0) + 1)} · ${fmtMeters(alertRow.nearest_m)}` : "В отчёте нет кадра с препятствием"}</p>
+      <p>${obstacleText}</p>
+      ${alertRow && current.bag_id ? `<a href="#/efir/${encodeURIComponent(current.bag_id)}?stamp=${encodeURIComponent(alertRow.stamp_ns || "")}"><button class="btn accent" type="button">Открыть кадр с облаком</button></a><img class="report-frame" src="/api/reports/${encodeURIComponent(current.id)}/frame.png?frame=${encodeURIComponent(alertRow.index || 0)}&stamp=${encodeURIComponent(alertRow.stamp_ns || "")}" alt="Облако точек в кадре тревоги">` : ""}
+    </section>
     <section class="card">
       <h2>Таблица кадров</h2>
       <div style="overflow-x:auto">

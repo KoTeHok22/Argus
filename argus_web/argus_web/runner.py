@@ -82,6 +82,7 @@ def _detect_cmd(bag: dict, rate: float, csv_path: Path) -> list[str]:
 
 
 def start_run(bag_id: str, rate: float = 1.0) -> dict:
+    global _RUN
     bag = get_bag(bag_id)
     if bag is None:
         raise ValueError("Запись не найдена")
@@ -89,24 +90,30 @@ def start_run(bag_id: str, rate: float = 1.0) -> dict:
         raise ValueError("Отложенная запись закрыта до фазы проверки")
     if bag["status"] != "ready":
         raise ValueError("Запись ещё не собрана полностью")
-    existing = current_run()
-    if existing and existing.get("status") in ("starting", "running"):
-        raise ValueError("Уже идёт другой прогон")
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    csv_path = runs_root() / f"{bag_id}_{stamp}.csv"
-    _update(
-        id=csv_path.stem,
-        bag_id=bag_id,
-        status="starting",
-        csv=str(csv_path),
-        started=time.time(),
-        error=None,
-        log="",
-    )
+    with _LOCK:
+        if _RUN and _RUN.get("status") in ("starting", "running"):
+            raise ValueError("Уже идёт другой прогон")
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        csv_path = runs_root() / f"{bag_id}_{stamp}.csv"
+        while csv_path.exists():
+            stamp = f"{stamp}_{time.time_ns() % 1000000000:09d}"
+            csv_path = runs_root() / f"{bag_id}_{stamp}.csv"
+        _RUN = {
+            "id": csv_path.stem,
+            "bag_id": bag_id,
+            "status": "starting",
+            "csv": str(csv_path),
+            "started": time.time(),
+            "error": None,
+            "log": "",
+        }
     thread = threading.Thread(
         target=_execute, args=(bag, rate, csv_path), daemon=True
     )
-    thread.start()
+    try:
+        thread.start()
+    except Exception as exc:
+        _update(status="error", error=str(exc))
     return current_run() or {}
 
 
@@ -132,11 +139,16 @@ def _execute(bag: dict, rate: float, csv_path: Path) -> None:
         )
         log = (proc.stdout or "") + (proc.stderr or "")
         status = "ready" if proc.returncode == 0 else "error"
-        _update(status=status, log=log[-8000:], returncode=proc.returncode)
         if csv_path.is_file():
+            from argus_web.reports import load_report
+
+            report = load_report(csv_path)
+            _update(status=status, log=log[-8000:], returncode=proc.returncode, report_id=report["id"], report=report)
             try:
                 shutil.copy2(csv_path, results_root() / csv_path.name)
             except OSError:
                 pass
+        else:
+            _update(status=status, log=log[-8000:], returncode=proc.returncode)
     except Exception as exc:
         _update(status="error", error=str(exc))

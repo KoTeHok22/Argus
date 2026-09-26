@@ -55,6 +55,21 @@ def test_summarize_latency_includes_unprofiled_blocked_rows():
     assert out["clear"] == 1
 
 
+def test_summarize_latency_reads_obstacle_geometry():
+    rows = [
+        {
+            "stamp_ns": "123",
+            "status": "BLOCKED",
+            "nearest_m": "16.9",
+            "objects": "1",
+            "obstacles_json": '[{"track_id":7,"position":[1,-16,0.5],"extent":[0.3,0.4,0.8],"point_count":12,"reason":"geometry"}]',
+        }
+    ]
+    row = summarize_latency(rows)["rows"][0]
+    assert row["obstacles"][0]["track_id"] == 7
+    assert row["obstacles"][0]["extent"] == [0.3, 0.4, 0.8]
+
+
 def test_load_report_fusion(tmp_path: Path):
     path = tmp_path / "fusion_obstacle.csv"
     path.write_text(
