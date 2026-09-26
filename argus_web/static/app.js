@@ -97,8 +97,11 @@ function verdictOf(report, row, view) {
   if (view && view.geom === false && view.noReturn === false && view.freeSpace === false) {
     return { code: "unsure", chip: "ВЫКЛ", cls: "warn-text", phrase: "Признаки обнаружения выключены", meters: null };
   }
-  if (!row || row.status === "DEGRADED") {
-    return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен", meters: null };
+  if (!row) {
+    return { code: "not_covered", chip: "НЕТ РЕЗУЛЬТАТА", cls: "warn-text", phrase: "Для этого кадра нет результата детектора", meters: null };
+  }
+  if (row.status === "DEGRADED") {
+    return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен: кадр обработан не полностью", meters: null };
   }
   if (row.status === "BLOCKED" && row.nearest_m != null) {
     return {
@@ -1120,7 +1123,7 @@ async function pageLive(bagId) {
         pair("Вперёд", row && row.forward_m != null ? fmtMeters(row.forward_m) : "—"),
         pair("Объектов", row ? fmtInt(row.objects) : "—"),
         ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(`Габариты трека ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
-        pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
+        pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_covered" ? '<span class="warn-text">НЕТ РЕЗУЛЬТАТА</span>' : v.code === "unsure" ? '<span class="warn-text">НЕ УВЕРЕН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
       ].join("");
       document.getElementById("frame-kv").innerHTML = [
         pair("Частота", (row && row.fps != null ? fmtNum(row.fps, 1) : fmtNum(hz, 1))),
@@ -1307,9 +1310,12 @@ async function pageReports(reportId) {
   const alertRow = rows.find((r) => r.status === "BLOCKED");
   const liveLink = current.bag_id ? `#/efir/${encodeURIComponent(current.bag_id)}` : "#/efir";
   const detectedObstacles = (alertRow && alertRow.obstacles) || [];
+  const degradedRows = rows.filter((row) => row.status === "DEGRADED");
   const obstacleText = detectedObstacles.length
     ? detectedObstacles.map((obstacle) => `${obstacle.track_id}: ${obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ")} м`).join(" · ")
-    : "Размеры объекта не переданы детектором для этого отчёта";
+    : alertRow
+      ? "Для кадра детектор не передал геометрию препятствия"
+      : "В отчёте нет подтверждённого препятствия";
   view.innerHTML = `
     <div class="report-top">
       <div class="title"><span>ОТЧЁТ</span>${current.name}</div>
@@ -1337,9 +1343,10 @@ async function pageReports(reportId) {
       </section>
     </div>
     <section class="card">
-      <h2>Кадр тревоги</h2>
+      <h2>${alertRow ? "Кадр тревоги" : "Кадр без подтверждённой тревоги"}</h2>
       <p class="muted">${alertRow ? `Кадр ${fmtInt((alertRow.index || 0) + 1)} · ${fmtMeters(alertRow.nearest_m)}` : "В отчёте нет кадра с препятствием"}</p>
       <p>${obstacleText}</p>
+      ${degradedRows.length ? `<p class="warn-text">Не полностью обработано кадров: ${fmtInt(degradedRows.length)}. По ним детектор не подтвердил отсутствие препятствия.</p>` : ""}
       ${alertRow && current.bag_id ? `<a href="#/efir/${encodeURIComponent(current.bag_id)}?stamp=${encodeURIComponent(alertRow.stamp_ns || "")}"><button class="btn accent" type="button">Открыть кадр с облаком</button></a><img class="report-frame" src="/api/reports/${encodeURIComponent(current.id)}/frame.png?frame=${encodeURIComponent(alertRow.index || 0)}&stamp=${encodeURIComponent(alertRow.stamp_ns || "")}" alt="Облако точек в кадре тревоги">` : ""}
     </section>
     <section class="card">

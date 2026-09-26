@@ -35,13 +35,33 @@ def test_summarize_latency_blocked():
         {"status": "DEGRADED", "nearest_m": "-1", "objects": "0", "fps": "0", "t_alert_path_ms": "0"},
     ]
     out = summarize_latency(rows)
-    assert out["frames"] == 3
+    assert out["frames"] == 4
     assert out["blocked"] == 2
     assert out["clear"] == 1
     assert out["degraded"] == 1
     assert abs(out["nearest_m"] - 16.9) < 1e-6
     assert out["first_blocked_frame"] == 1
     assert out["rows"][1]["status_label"] == "препятствие"
+    assert out["rows"][3]["status"] == "DEGRADED"
+
+
+def test_summarize_latency_preserves_source_frame_numbers():
+    out = summarize_latency([
+        {"source_frame": "370", "frame": "370", "status": "DEGRADED", "nearest_m": "-1"},
+    ])
+    assert out["rows"][0]["source_index"] == 370
+
+
+def test_summarize_latency_keeps_every_degraded_frame():
+    out = summarize_latency([
+        {"source_frame": "368", "status": "CLEAR", "nearest_m": "-1"},
+        {"source_frame": "369", "status": "DEGRADED", "nearest_m": "-1"},
+        {"source_frame": "370", "status": "DEGRADED", "nearest_m": "-1"},
+        {"source_frame": "371", "status": "CLEAR", "nearest_m": "-1"},
+    ])
+    assert out["frames"] == 4
+    assert [row["source_index"] for row in out["rows"]] == [368, 369, 370, 371]
+    assert [row["status"] for row in out["rows"]] == ["CLEAR", "DEGRADED", "DEGRADED", "CLEAR"]
 
 
 def test_summarize_latency_includes_unprofiled_blocked_rows():

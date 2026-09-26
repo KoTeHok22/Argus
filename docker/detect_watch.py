@@ -19,6 +19,7 @@ STATUS = {
 }
 
 CSV_FIELDS = (
+    "source_frame",
     "stamp_ns",
     "status",
     "nearest_m",
@@ -92,6 +93,7 @@ class Watch(Node):
         self.frames += 1
         name = STATUS.get(msg.status, str(msg.status))
         row = self.rows[key]
+        row["source_frame"] = self.frames - 1
         row["stamp_ns"] = key
         row["status"] = name
         row["nearest_m"] = msg.nearest_range_m

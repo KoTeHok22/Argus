@@ -109,7 +109,7 @@ def summarize_latency(rows: list[dict]) -> dict:
     for row in rows:
         name = row.get("status") or "UNKNOWN"
         statuses[name] = statuses.get(name, 0) + 1
-    usable = [row for row in rows if (row.get("status") or "") not in ("", "DEGRADED")]
+    usable = [row for row in rows if (row.get("status") or "") != ""]
     if not usable:
         usable = rows
     blocked = [r for r in usable if r.get("status") == "BLOCKED"]
@@ -131,6 +131,7 @@ def summarize_latency(rows: list[dict]) -> dict:
         frames_out.append(
             {
                 "index": i,
+                "source_index": _num(row.get("source_frame")) if _num(row.get("source_frame")) is not None else _num(row.get("frame")),
                 "stamp_ns": (str(stamp) if (stamp := _stamp_of(row)) is not None else None),
                 "status": row.get("status"),
                 "status_label": STATUS_LABEL.get(row.get("status") or "", row.get("status")),
@@ -264,6 +265,7 @@ def load_report(path: Path) -> dict:
             "mtime": path.stat().st_mtime if path.is_file() else 0,
             "bag_id": _report_bag_id(path.stem, path),
             "screenshots": [f"/api/reports/{path.stem}/frame.png?frame={row['index']}" for row in summary.get("rows", []) if row.get("status") == "BLOCKED"],
+            "source_frames": [row.get("source_index") for row in summary.get("rows", [])],
         }
     )
     return summary

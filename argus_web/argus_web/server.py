@@ -107,8 +107,18 @@ def _report_frame(handler: BaseHTTPRequestHandler, route: str, query: dict) -> N
     stamp = query.get("stamp")
     stamps = frame_stamps(bag_path) if stamp else []
     resolved_stamp = stamp if stamp in stamps else None
+    report_stamp = None
     if resolved_stamp:
         frame = stamps.index(resolved_stamp)
+        report_stamp = resolved_stamp
+    if frame < len(report.get("source_frames", [])):
+        source_frame = report["source_frames"][frame]
+        if source_frame is not None:
+            matching_row = next(
+                (item for item in report.get("rows", []) if item.get("source_index") == source_frame),
+                None,
+            )
+            report_stamp = matching_row.get("stamp_ns") if matching_row else report_stamp
     cloud = load_frame(bag_path, frame)
     frame = cloud["frame"]
     from io import BytesIO
@@ -129,8 +139,11 @@ def _report_frame(handler: BaseHTTPRequestHandler, route: str, query: dict) -> N
         if 0 <= distance <= 110:
             draw.point((center_x + float(side) * scale, base_y - float(distance) * scale), fill=(94, 174, 203))
     row = next(
-        (item for item in report.get("rows", []) if resolved_stamp and str(item.get("stamp_ns")) == resolved_stamp),
-        report.get("rows", [])[frame] if frame < len(report.get("rows", [])) else None,
+        (item for item in report.get("rows", []) if report_stamp and str(item.get("stamp_ns")) == report_stamp),
+        next(
+            (item for item in report.get("rows", []) if item.get("source_index") == frame),
+            report.get("rows", [])[frame] if frame < len(report.get("rows", [])) else None,
+        ),
     )
     for obstacle in (row or {}).get("obstacles", []):
         position = obstacle.get("position") or []
