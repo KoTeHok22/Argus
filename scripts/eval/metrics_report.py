@@ -76,13 +76,29 @@ class RunMetrics:
         }
 
 
+def normalize_rows(rows: list[dict]) -> list[dict]:
+    if not rows:
+        return rows
+    keys = set(rows[0].keys())
+    if "status" in keys:
+        return rows
+    if "alert" not in keys:
+        raise ValueError("CSV без колонок status или alert")
+    out: list[dict] = []
+    for row in rows:
+        alert = str(row.get("alert", "")).strip() in {"1", "true", "True"}
+        nearest = row.get("range_m") or row.get("forward_m") or ""
+        out.append({"status": "BLOCKED" if alert else "CLEAR", "nearest_m": nearest})
+    return out
+
+
 def read_detect_csv(path: Path) -> list[dict]:
     rows: list[dict] = []
     with path.open(encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             rows.append(row)
-    return rows
+    return normalize_rows(rows)
 
 
 def events_from_rows(rows: list[dict], hz: float) -> tuple[list[Event], int, Counter]:
@@ -120,30 +136,34 @@ def parse_float(value) -> float:
         return -1.0
 
 
-def distance_from_odom(path: Path) -> tuple[float, float]:
+def distance_from_odom(path: Path, hz: float) -> tuple[float, float]:
     total_m = 0.0
     duration_s = 0.0
     last_stamp = None
     with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or not line[0].isdigit():
+        reader = csv.DictReader(fh)
+        if reader.fieldnames is None or "speed" not in reader.fieldnames:
+            return 0.0, 0.0
+        has_valid = "valid" in reader.fieldnames
+        has_stamp = "stamp" in reader.fieldnames or "stamp_ns" in reader.fieldnames
+        for row in reader:
+            if has_valid and str(row.get("valid", "1")).strip() not in {"1", "true", "True"}:
+                last_stamp = None
                 continue
-            parts = line.split(",")
-            if len(parts) < 6:
-                continue
-            try:
-                frame = int(parts[0])
-                stamp = parse_float(parts[1])
-                speed = parse_float(parts[5])
-            except ValueError:
-                continue
-            if last_stamp is not None and stamp > 0:
-                dt = stamp - last_stamp
-                if 0 < dt < 1.0:
-                    total_m += max(0.0, speed) * dt
-                    duration_s += dt
-            last_stamp = stamp
+            speed = parse_float(row.get("speed"))
+            dt = 1.0 / hz
+            if has_stamp:
+                key = "stamp_ns" if "stamp_ns" in row else "stamp"
+                raw = row.get(key) or ""
+                stamp = parse_float(raw) if raw else -1.0
+                if "stamp_ns" in row and stamp > 0:
+                    stamp *= 1e-9
+                if last_stamp is not None and stamp > 0 and 0 < stamp - last_stamp < 1.0:
+                    dt = stamp - last_stamp
+                last_stamp = stamp if stamp > 0 else None
+            if speed >= 0:
+                total_m += speed * dt
+                duration_s += dt
     return total_m, duration_s
 
 
@@ -157,7 +177,7 @@ def analyze(detect_csv: Path, odom_csv: Path | None, avg_speed_mps: float | None
     events, alert_frames, counts = events_from_rows(rows, hz)
     duration_s = len(rows) / hz
     if odom_csv is not None:
-        distance_m, odom_duration_s = distance_from_odom(odom_csv)
+        distance_m, odom_duration_s = distance_from_odom(odom_csv, hz)
         if odom_duration_s > 0:
             duration_s = odom_duration_s
     elif avg_speed_mps is not None:
