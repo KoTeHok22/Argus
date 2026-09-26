@@ -20,6 +20,7 @@
 
 #include "argus_core/anomaly.hpp"
 #include "argus_core/gauge.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/tunnel_model.hpp"
 #include "argus_core/tunnel_profile.hpp"
@@ -81,35 +82,38 @@ public:
         }
 
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
+        auto control_qos_ = control_qos();
         sub_clean_ = create_subscription<CleanCloudMsg>(
-            "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
+            "/argus/clean", stream_qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
                 slots_[stamp_ns(msg->header.stamp)].cloud = msg;
             });
         sub_geometry_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_g", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_g", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 slots_[stamp_ns(msg->header.stamp)].geometry = msg;
             });
         sub_no_return_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_nr", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_nr", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 slots_[stamp_ns(msg->header.stamp)].no_return = msg;
             });
         sub_pose_ = create_subscription<PoseStamped>(
-            "/argus/pose", qos, [this](PoseStamped::ConstSharedPtr msg) {
+            "/argus/pose", stream_qos, [this](PoseStamped::ConstSharedPtr msg) {
                 PoseSlot& slot = poses_[stamp_ns(msg->header.stamp)];
                 slot.pose = to_pose(*msg);
                 slot.valid = true;
             });
 
-        pub_free_space_ = create_publisher<AnomalySetMsg>("/argus/anom_fs", qos);
-        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_model", qos);
-        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        pub_free_space_ = create_publisher<AnomalySetMsg>("/argus/anom_fs", stream_qos);
+        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_model", control_qos_);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", control_qos_);
         heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
             std_msgs::msg::String beat;
             beat.data = get_name();
             pub_heartbeat_->publish(beat);
         });
         if (publish_model_points_) {
-            pub_model_ = create_publisher<sensor_msgs::msg::PointCloud2>("/argus/model", qos);
+            pub_model_ =
+                create_publisher<sensor_msgs::msg::PointCloud2>("/argus/model", stream_qos);
         }
 
         const auto period = std::chrono::duration_cast<std::chrono::milliseconds>(

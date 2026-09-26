@@ -55,10 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     topic = args.topic or cloud_topics[0]
 
     qos = QoSProfile(
-        reliability=ReliabilityPolicy.RELIABLE,
+        reliability=ReliabilityPolicy.BEST_EFFORT,
         durability=DurabilityPolicy.VOLATILE,
         history=HistoryPolicy.KEEP_LAST,
-        depth=10,
+        depth=5,
     )
     publisher = node.create_publisher(PointCloud2, topic, qos)
 

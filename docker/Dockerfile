@@ -66,9 +66,7 @@ ENV WS=/ws \
     ARGUS_ROOT=/ws \
     PYTHONPATH=/ws/argus_web \
     PYTHONUNBUFFERED=1 \
-    ROS_LOCALHOST_ONLY=1 \
-    RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-    FASTRTPS_DEFAULT_PROFILES_FILE=/opt/argus/fastdds.xml
+    RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 EXPOSE 8080
 VOLUME ["/data"]
 

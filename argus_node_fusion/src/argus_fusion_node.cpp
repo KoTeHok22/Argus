@@ -30,6 +30,7 @@
 #include "argus_core/frame_sync.hpp"
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/supervision.hpp"
 #include "fusion_markers.hpp"
@@ -179,21 +180,22 @@ public:
         sync_ = std::make_unique<FrameSynchronizer>(sync_params);
 
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
         sub_clean_ = create_subscription<CleanCloudMsg>(
-            "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
+            "/argus/clean", stream_qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
                 const uint64_t key = sync_->add(FrameChannel::cloud, stamp_ns(msg->header.stamp));
                 slots_[key].cloud = msg;
                 try_process(key);
             });
         sub_geometry_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_g", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_g", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key =
                     sync_->add(FrameChannel::geometry, stamp_ns(msg->header.stamp));
                 slots_[key].geometry = msg;
                 try_process(key);
             });
         sub_no_return_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_nr", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_nr", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key =
                     sync_->add(FrameChannel::no_return, stamp_ns(msg->header.stamp));
                 slots_[key].no_return = msg;
@@ -201,7 +203,7 @@ public:
             });
         if (params_.use_temporal_candidates) {
             sub_temporal_ = create_subscription<AnomalySetMsg>(
-                "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+                "/argus/anom_temporal", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                     const uint64_t key =
                         sync_->add(FrameChannel::temporal, stamp_ns(msg->header.stamp));
                     slots_[key].temporal = msg;
@@ -209,12 +211,12 @@ public:
                 });
         }
         sub_free_space_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_fs", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_fs", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key = stamp_ns(msg->header.stamp);
                 slots_[key].free_space = msg;
             });
         sub_pose_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/argus/pose", qos, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
+            "/argus/pose", stream_qos, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
                 poses_[stamp_ns(msg->header.stamp)] = to_pose(*msg);
             });
         pub_obstacles_ = create_publisher<ObstacleArray>("/argus/obstacles", qos);
@@ -783,6 +785,16 @@ private:
 
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
                              "полные кадры не поступают, STATUS_DEGRADED (лимит скорости 0)");
+        const FrameSyncStats& ss = sync_->stats();
+        RCLCPP_DEBUG_THROTTLE(get_logger(), *get_clock(), 5000,
+                              "sync: arrivals=%llu snapped=%llu expired=%llu pending=%zu "
+                              "no_cloud=%llu no_geom=%llu no_nr=%llu",
+                              static_cast<unsigned long long>(ss.arrivals),
+                              static_cast<unsigned long long>(ss.snapped),
+                              static_cast<unsigned long long>(ss.expired), sync_->pending(),
+                              static_cast<unsigned long long>(ss.expired_missing_cloud),
+                              static_cast<unsigned long long>(ss.expired_missing_geometry),
+                              static_cast<unsigned long long>(ss.expired_missing_no_return));
     }
 
     struct FrameSlot {
