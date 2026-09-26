@@ -29,11 +29,14 @@ FROM osrf/ros@sha256:592f97da6b871a438fdb97f86b422ab9f80657e80efa7b98d258894738c
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
+    python3-pip \
     python3-numpy \
     tar \
     zstd \
     ros-humble-rosbag2-storage-default-plugins \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir zstandard
 
 COPY --from=builder /ws/install /ws/install
 COPY argus_web /ws/argus_web

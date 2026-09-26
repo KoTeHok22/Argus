@@ -270,14 +270,14 @@ def load_report(path: Path) -> dict:
 
 
 def _report_bag_id(stem: str, path: Path) -> str | None:
-    for index in range(len(stem)):
-        if stem.startswith(("_202", "_203"), index) and stem[index + 4:index + 5].isdigit():
-            return stem[:index]
     from argus_web.bags import list_bags
 
     matches = [bag["id"] for bag in list_bags() if stem.startswith(f"{bag['id']}_")]
     if matches:
         return max(matches, key=len)
+    for index in range(len(stem)):
+        if stem.startswith(("_202", "_203"), index) and stem[index + 4:index + 5].isdigit():
+            return stem[:index]
     if path.parent.name == "runs":
         return stem.rsplit("_", 1)[0] if "_" in stem else None
     return _guess_bag(stem)

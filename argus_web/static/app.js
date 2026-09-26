@@ -1569,7 +1569,8 @@ async function pageParams() {
 async function route() {
   clearTimers();
   const hash = (location.hash || "#/").replace(/^#/, "") || "/";
-  const parts = hash.split("/").filter(Boolean);
+  const [path] = hash.split("?");
+  const parts = path.split("/").filter(Boolean);
   const head = `/${parts[0] || ""}`;
   setNav(head === "/" ? "/" : head);
   try {
