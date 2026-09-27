@@ -163,6 +163,7 @@
       temporal_min_cluster_size: 10
       temporal_min_extent_m: 0.15
       temporal_max_extent_m: 2.5
+      temporal_merge_distance_m: 0.75
       min_votes_for_alert: 1
       max_confirmed_track_misses: 4
       strict_track_freshness_range_m: 90.0

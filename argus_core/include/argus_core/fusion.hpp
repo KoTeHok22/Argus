@@ -36,6 +36,7 @@ struct FusionParams {
     uint32_t temporal_min_cluster_size = 10;
     float temporal_min_extent_m = 0.15f;
     float temporal_max_extent_m = 2.5f;
+    float temporal_merge_distance_m = 0.75f;
     uint32_t max_confirmed_track_misses = 4;
     float strict_track_freshness_range_m = 90.0f;
     bool update_model_with_clean_frames = true;

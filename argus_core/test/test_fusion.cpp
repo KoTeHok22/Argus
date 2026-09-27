@@ -91,6 +91,36 @@ TEST(Fusion, ObstacleAheadTriggersConfirmedAlert) {
     EXPECT_EQ(f2.n_filtered_out, 0u);
 }
 
+TEST(Fusion, TemporalFragmentsMergeIntoOneCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    argus::AnomalySet temporal;
+    temporal.source = "temporal";
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        const uint32_t az = static_cast<uint32_t>(i / kH);
+        const uint32_t ring = static_cast<uint32_t>(i % kH);
+        if (ring >= 3 && ring <= 5 && (az >= 200 && az <= 209 || az >= 245 && az <= 249)) {
+            temporal.indices.push_back(static_cast<uint32_t>(i));
+            temporal.score.push_back(0.7f);
+        }
+    }
+
+    argus::FusionParams p = fusion_params();
+    p.use_temporal_candidates = true;
+    p.temporal_min_cluster_size = 5;
+    p.temporal_merge_distance_m = 0.5f;
+    p.temporal_max_extent_m = 2.5f;
+    p.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+
+    const argus::FusionResult result = pipe.update(cloud, ri, {}, {}, temporal, {}, 0.1f, 0.0f,
+                                                   Eigen::Isometry3d::Identity(), false, false);
+
+    ASSERT_EQ(result.candidates.size(), 1u);
+    EXPECT_GT(result.candidates.front().point_count, 40u);
+    EXPECT_EQ(result.candidates.front().votes_temporal, 1u);
+}
+
 TEST(Fusion, UnconfirmedClusterIsPublishedAsCandidate) {
     const auto cloud = make_scene(0.0f);
     const auto ri = ri_of(cloud);

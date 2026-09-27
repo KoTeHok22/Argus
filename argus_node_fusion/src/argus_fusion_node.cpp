@@ -77,13 +77,16 @@ public:
             "fusion.temporal_min_extent_m", params_.temporal_min_extent_m));
         params_.temporal_max_extent_m = static_cast<float>(declare_parameter<double>(
             "fusion.temporal_max_extent_m", params_.temporal_max_extent_m));
+        params_.temporal_merge_distance_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_merge_distance_m", params_.temporal_merge_distance_m));
         params_.use_temporal_candidates = declare_parameter<bool>("fusion.use_temporal_candidates",
                                                                   params_.use_temporal_candidates);
         params_.temporal_min_cluster_size = static_cast<uint32_t>(
             declare_parameter<int>("fusion.temporal_min_cluster_size",
                                    static_cast<int>(params_.temporal_min_cluster_size)));
         if (params_.temporal_min_cluster_size == 0 || params_.temporal_min_extent_m <= 0.0f ||
-            params_.temporal_max_extent_m < params_.temporal_min_extent_m) {
+            params_.temporal_max_extent_m < params_.temporal_min_extent_m ||
+            params_.temporal_merge_distance_m < 0.0f) {
             throw std::invalid_argument("invalid temporal candidate cluster limits");
         }
 

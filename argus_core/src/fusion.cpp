@@ -8,6 +8,71 @@
 
 namespace argus {
 
+namespace {
+
+float cluster_box_gap(const Cluster& a, const Cluster& b) {
+    const Eigen::Vector3f gap = (a.min_corner - b.max_corner)
+                                    .cwiseMax(b.min_corner - a.max_corner)
+                                    .cwiseMax(Eigen::Vector3f::Zero());
+    return gap.norm();
+}
+
+void merge_cluster_into(Cluster& target, Cluster source) {
+    target.indices.insert(target.indices.end(), source.indices.begin(), source.indices.end());
+    const float target_weight = static_cast<float>(target.point_count);
+    const float source_weight = static_cast<float>(source.point_count);
+    const float total_weight = target_weight + source_weight;
+    target.centroid =
+        (target.centroid * target_weight + source.centroid * source_weight) / total_weight;
+    target.min_corner = target.min_corner.cwiseMin(source.min_corner);
+    target.max_corner = target.max_corner.cwiseMax(source.max_corner);
+    target.nearest_range = std::min(target.nearest_range, source.nearest_range);
+    target.point_count += source.point_count;
+    target.volume = (target.max_corner - target.min_corner).prod();
+    target.score = std::max(target.score, source.score);
+}
+
+std::vector<Cluster> merge_temporal_clusters(std::vector<Cluster> clusters,
+                                             const std::unordered_set<uint32_t>& temporal_indices,
+                                             const std::unordered_set<uint32_t>& geometry_indices,
+                                             float merge_distance, float max_extent) {
+    std::vector<Cluster> merged;
+    for (Cluster cluster : clusters) {
+        const bool temporal_only =
+            std::all_of(cluster.indices.begin(), cluster.indices.end(), [&](uint32_t idx) {
+                return temporal_indices.count(idx) != 0 && geometry_indices.count(idx) == 0;
+            });
+        if (!temporal_only) {
+            merged.push_back(std::move(cluster));
+            continue;
+        }
+        bool joined = false;
+        for (Cluster& existing : merged) {
+            const bool existing_temporal_only =
+                std::all_of(existing.indices.begin(), existing.indices.end(), [&](uint32_t idx) {
+                    return temporal_indices.count(idx) != 0 && geometry_indices.count(idx) == 0;
+                });
+            if (!existing_temporal_only || cluster_box_gap(existing, cluster) > merge_distance) {
+                continue;
+            }
+            const Eigen::Vector3f min_corner = existing.min_corner.cwiseMin(cluster.min_corner);
+            const Eigen::Vector3f max_corner = existing.max_corner.cwiseMax(cluster.max_corner);
+            if ((max_corner - min_corner).maxCoeff() > max_extent) {
+                continue;
+            }
+            merge_cluster_into(existing, std::move(cluster));
+            joined = true;
+            break;
+        }
+        if (!joined) {
+            merged.push_back(std::move(cluster));
+        }
+    }
+    return merged;
+}
+
+}
+
 FusionParams default_fusion_params() {
     return FusionParams{};
 }
@@ -106,12 +171,20 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         }
     }
 
-    const std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
+    std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
     std::unordered_set<uint32_t> temporal_indices;
+    std::unordered_set<uint32_t> geometry_indices;
     if (p_.use_temporal_candidates) {
         for (uint32_t idx : temporal.indices) {
             temporal_indices.insert(idx);
         }
+    }
+    for (uint32_t idx : geometry.indices) {
+        geometry_indices.insert(idx);
+    }
+    if (p_.use_temporal_candidates && all.size() > 1) {
+        all = merge_temporal_clusters(std::move(all), temporal_indices, geometry_indices,
+                                      p_.temporal_merge_distance_m, p_.temporal_max_extent_m);
     }
 
     std::vector<float> cloud_score(cloud.size(), 0.0f);
