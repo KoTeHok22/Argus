@@ -1660,21 +1660,41 @@ async function pageTunnelLab() {
     ctx.strokeStyle = "#334752";
     ctx.strokeRect(24, 24, rect.width - 48, rect.height - 48);
     const row = rows && rows[frame];
+    const cloud = [];
+    for (let i = 0; i < points.length; i += 3) cloud.push([Number(points[i]), -Number(points[i + 1])]);
+    const bounds = cloud.length ? {
+      minX: Math.min(...cloud.map((point) => point[0])),
+      maxX: Math.max(...cloud.map((point) => point[0])),
+      minF: Math.min(...cloud.map((point) => point[1])),
+      maxF: Math.max(...cloud.map((point) => point[1])),
+    } : { minX: -3, maxX: 3, minF: 0, maxF: 60 };
+    const margin = 34;
+    const spanX = Math.max(1, bounds.maxX - bounds.minX);
+    const spanF = Math.max(1, bounds.maxF - bounds.minF);
+    const project = (side, forward) => [
+      margin + ((side - bounds.minX) / spanX) * (rect.width - margin * 2),
+      rect.height - margin - ((forward - bounds.minF) / spanF) * (rect.height - margin * 2),
+    ];
     ctx.fillStyle = "#a9c3cf";
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    let plotted = 0;
     for (let i = 0; i < points.length; i += 3) {
-      const x = rect.width / 2 + points[i] * 8;
-      const y = rect.height - 32 - points[i + 1] * 8;
-      if (x > 24 && x < rect.width - 24 && y > 24 && y < rect.height - 24) ctx.fillRect(x, y, 1, 1);
+      const [x, y] = project(Number(points[i]), -Number(points[i + 1]));
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        ctx.fillRect(x - 1, y - 1, 2, 2);
+        plotted += 1;
+      }
     }
+    canvas.dataset.plotted = String(plotted);
     if (points.length && frameDataEvents.length) {
       frameDataEvents.forEach((event) => {
         const position = event.position || [];
         const extent = event.extent || [];
         if (position.length !== 3 || extent.length !== 3) return;
-        const x = rect.width / 2 + Number(position[0]) * 8;
-        const y = rect.height - 32 - (-Number(position[1])) * 8;
-        const boxWidth = Math.max(6, Number(extent[0]) * 8);
-        const boxHeight = Math.max(6, Number(extent[1]) * 8);
+        const [x, y] = project(Number(position[0]), -Number(position[1]));
+        const boxWidth = Math.max(6, (Number(extent[0]) / spanX) * (rect.width - margin * 2));
+        const boxHeight = Math.max(6, (Number(extent[1]) / spanF) * (rect.height - margin * 2));
         ctx.strokeStyle = event.kind === "confirmed" ? "#d05f50" : "#d5a84f";
         ctx.setLineDash(event.kind === "confirmed" ? [] : [6, 4]);
         ctx.strokeRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
@@ -1707,12 +1727,20 @@ async function pageTunnelLab() {
       return;
     }
     if (next.status === "error") {
+      document.getElementById("lab-play").disabled = false;
       document.getElementById("lab-help").textContent = next.error || "Прогон завершился с ошибкой";
       return;
     }
     addTimer(setTimeout(poll, 1000));
   }
   document.getElementById("lab-play").addEventListener("click", async () => {
+    if (job && ["queued", "generating", "detecting"].includes(job.status)) return;
+    clearTimers();
+    frame = 0;
+    frameDataEvents = [];
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById("lab-overlay").textContent = "Подготовка кадра…";
+    document.getElementById("lab-play").disabled = true;
     const [lateral, vertical] = document.getElementById("lab-position").value.split(",");
     job = await api("/api/lab/jobs", {
       method: "POST",
@@ -1727,6 +1755,7 @@ async function pageTunnelLab() {
         vertical,
       }),
     });
+    document.getElementById("lab-play").disabled = false;
     poll();
   });
 }
