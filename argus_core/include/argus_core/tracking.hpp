@@ -39,6 +39,7 @@ struct Track {
     uint8_t votes_free_space = 0;
     uint8_t votes_no_return = 0;
     uint8_t votes_geometry = 0;
+    uint8_t votes_temporal = 0;
 };
 
 class ObstacleTracker {

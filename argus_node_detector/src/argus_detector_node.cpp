@@ -87,6 +87,16 @@ public:
         geom.range_tolerance_m = static_cast<float>(
             declare_parameter<double>("detector_geometry.range_tolerance_m", 3.0));
 
+        TemporalResidualParams temporal_params;
+        temporal_params.window_frames = static_cast<uint32_t>(declare_parameter<int>(
+            "detector_temporal.window_frames", static_cast<int>(temporal_params.window_frames)));
+        temporal_params.residual_threshold_m = static_cast<float>(declare_parameter<double>(
+            "detector_temporal.residual_threshold_m", temporal_params.residual_threshold_m));
+        temporal_params.min_range_m = static_cast<float>(declare_parameter<double>(
+            "detector_temporal.min_range_m", temporal_params.min_range_m));
+        temporal_params.max_range_m = static_cast<float>(declare_parameter<double>(
+            "detector_temporal.max_range_m", temporal_params.max_range_m));
+
         free_space_enabled_ = declare_parameter<bool>("detector_free_space.enabled", false);
         geom_enabled_ = declare_parameter<bool>("detector_geometry.enabled", true);
         nr_enabled_ = declare_parameter<bool>("detector_no_return.enabled", true);
@@ -94,13 +104,15 @@ public:
         sub_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
         pub_geometry_ = create_publisher<AnomalySetMsg>("/argus/anom_g", qos);
+        pub_temporal_ = create_publisher<AnomalySetMsg>("/argus/anom_temporal", qos);
         pub_no_return_ = create_publisher<AnomalySetMsg>("/argus/anom_nr", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_detector", qos);
 
         no_return_ = std::make_unique<NoReturnDetector>(nr);
         geometry_ = std::make_unique<GeometryResidualDetector>(geom);
+        temporal_ = std::make_unique<TemporalResidualDetector>(temporal_params);
 
-        RCLCPP_INFO(get_logger(), "argus_detector: geometry=%s no_return=%s",
+        RCLCPP_INFO(get_logger(), "argus_detector: geometry=%s no_return=%s temporal=on",
                     geom_enabled_ ? "on" : "off", nr_enabled_ ? "on" : "off");
         if (free_space_enabled_) {
             RCLCPP_WARN(get_logger(),
@@ -147,10 +159,14 @@ private:
         const AnomalySet geometry = geom_enabled_ ? geometry_->detect(cloud, ri) : AnomalySet{};
         t_detect_ms += ms_since(t0);
         t0 = std::chrono::steady_clock::now();
+        const AnomalySet temporal = temporal_->detect(cloud, ri);
+        t_detect_ms += ms_since(t0);
+        t0 = std::chrono::steady_clock::now();
         const AnomalySet no_return = nr_enabled_ ? no_return_->detect(cloud, ri) : AnomalySet{};
         t_detect_ms += ms_since(t0);
 
         pub_geometry_->publish(to_msg(geometry, stamp, cloud.frame_id));
+        pub_temporal_->publish(to_msg(temporal, stamp, cloud.frame_id));
         pub_no_return_->publish(to_msg(no_return, stamp, cloud.frame_id));
 
         Diagnostics d;
@@ -177,9 +193,11 @@ private:
     uint64_t frames_processed_ = 0;
     float t_frame_ms_prev_ = 0.0f;
     std::unique_ptr<GeometryResidualDetector> geometry_;
+    std::unique_ptr<TemporalResidualDetector> temporal_;
     std::unique_ptr<NoReturnDetector> no_return_;
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_;
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_geometry_;
+    rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_temporal_;
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_no_return_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
 };

@@ -77,6 +77,7 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
             tr.votes_free_space = c.votes_free_space;
             tr.votes_no_return = c.votes_no_return;
             tr.votes_geometry = c.votes_geometry;
+            tr.votes_temporal = c.votes_temporal;
             tr.ttc = compute_ttc(tr, train_speed_mps);
         } else {
             tr.misses++;
@@ -108,6 +109,7 @@ std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters,
         t.votes_free_space = clusters[j].votes_free_space;
         t.votes_no_return = clusters[j].votes_no_return;
         t.votes_geometry = clusters[j].votes_geometry;
+        t.votes_temporal = clusters[j].votes_temporal;
         tracks_.push_back(t);
     }
 

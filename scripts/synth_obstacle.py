@@ -122,6 +122,7 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
     out["z"][replace] = entry[:, 2]
     nr_left = no_return
     added = 0
+    deltas = ranges[replace] - tmin[replace]
     if pod > 0.0 and n_raw and no_return is not None and len(no_return):
         raw = pts["raw"].astype(np.int64)
         occupied = np.zeros(n_raw, dtype=bool)
@@ -181,6 +182,8 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
         "box_max": box_max.tolist(),
         "rays_replaced": int(replace.sum()),
         "rays_added": added,
+        "range_delta_mean_m": float(deltas.mean()) if len(deltas) else 0.0,
+        "range_delta_max_m": float(deltas.max()) if len(deltas) else 0.0,
     }
 
 
@@ -241,6 +244,8 @@ def main():
                 "box_max": [],
                 "rays_replaced": 0,
                 "rays_added": 0,
+                "range_delta_mean_m": 0.0,
+                "range_delta_max_m": 0.0,
             }
         else:
             pts2, nr2, info = insert_box(
@@ -275,6 +280,8 @@ def main():
             info["heading_deg"] = float(np.rad2deg(np.arctan2(rotation[1, 0], rotation[0, 0])))
         if poses:
             info["frame"] = k
+        else:
+            info["frame"] = k
         changed.append((stamp, n_raw, pts2, nr2))
         replaced += info["rays_replaced"]
         added += info["rays_added"]
@@ -282,11 +289,10 @@ def main():
     truth = dict(truth_frames[-1])
     truth["rays_replaced"] = replaced
     truth["rays_added"] = added
-    if poses:
-        truth["mode"] = "world_fixed"
-        truth["poses"] = args.poses
-        truth["anchor_frame"] = args.start_frame
-        truth["frames"] = truth_frames
+    truth["mode"] = "world_fixed" if poses else "sensor_fixed"
+    truth["poses"] = args.poses
+    truth["anchor_frame"] = args.start_frame
+    truth["frames"] = truth_frames
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     write_frames(args.out, changed)
     with open(args.truth, "w", encoding="utf-8") as fh:

@@ -73,6 +73,19 @@ public:
     FusionNode() : Node("argus_fusion") {
         gauge_params_ = read_gauge_params();
         params_ = read_fusion_params();
+        params_.temporal_min_extent_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_min_extent_m", params_.temporal_min_extent_m));
+        params_.temporal_max_extent_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_max_extent_m", params_.temporal_max_extent_m));
+        params_.use_temporal_candidates = declare_parameter<bool>("fusion.use_temporal_candidates",
+                                                                  params_.use_temporal_candidates);
+        params_.temporal_min_cluster_size = static_cast<uint32_t>(
+            declare_parameter<int>("fusion.temporal_min_cluster_size",
+                                   static_cast<int>(params_.temporal_min_cluster_size)));
+        if (params_.temporal_min_cluster_size == 0 || params_.temporal_min_extent_m <= 0.0f ||
+            params_.temporal_max_extent_m < params_.temporal_min_extent_m) {
+            throw std::invalid_argument("invalid temporal candidate cluster limits");
+        }
 
         default_dt_ = declare_parameter<double>("fusion.default_dt_s", 0.1);
         stale_timeout_ = declare_parameter<double>("fusion.stale_timeout_s", 1.0);
@@ -118,6 +131,14 @@ public:
                 slots_[key].no_return = msg;
                 try_process(key);
             });
+        if (params_.use_temporal_candidates) {
+            sub_temporal_ = create_subscription<AnomalySetMsg>(
+                "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+                    const uint64_t key = stamp_ns(msg->header.stamp);
+                    slots_[key].temporal = msg;
+                    try_process(key);
+                });
+        }
         sub_free_space_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_fs", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key = stamp_ns(msg->header.stamp);
@@ -254,7 +275,8 @@ private:
             return;
         }
         const FrameSlot& slot = it->second;
-        if (!slot.cloud || !slot.geometry || !slot.no_return) {
+        if (!slot.cloud || !slot.geometry || !slot.no_return ||
+            (params_.use_temporal_candidates && !slot.temporal)) {
             return;
         }
 
@@ -291,9 +313,10 @@ private:
         if (pose_valid && slot.free_space) {
             free_space = msg_to_set(*slot.free_space);
         }
-        const FusionResult result = pipeline_->update(
-            cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return), free_space, dt,
-            static_cast<float>(train_speed_), pose, true, pose_valid);
+        const FusionResult result =
+            pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
+                              slot.temporal ? msg_to_set(*slot.temporal) : AnomalySet{}, free_space,
+                              dt, static_cast<float>(train_speed_), pose, true, pose_valid);
         const float processing_ms = ms_since(t0);
         ++frames_processed_;
 
@@ -329,9 +352,9 @@ private:
             Candidate candidate;
             candidate.header = out.header;
             candidate.candidate_id = static_cast<uint32_t>(i);
-            candidate.position.x = c.centroid.x();
-            candidate.position.y = c.centroid.y();
-            candidate.position.z = c.centroid.z();
+            candidate.position.x = (c.min_corner.x() + c.max_corner.x()) * 0.5f;
+            candidate.position.y = (c.min_corner.y() + c.max_corner.y()) * 0.5f;
+            candidate.position.z = (c.min_corner.z() + c.max_corner.z()) * 0.5f;
             candidate.extent.x = (c.max_corner - c.min_corner).x();
             candidate.extent.y = (c.max_corner - c.min_corner).y();
             candidate.extent.z = (c.max_corner - c.min_corner).z();
@@ -340,6 +363,8 @@ private:
             candidate.votes_free_space = c.votes_free_space;
             candidate.votes_no_return = c.votes_no_return;
             candidate.votes_geometry = c.votes_geometry;
+            candidate.votes_temporal = c.votes_temporal;
+            candidate.votes_temporal = c.votes_temporal;
             candidate.point_count = c.point_count;
             candidate.reason = reason_of(c);
             out.candidates.push_back(candidate);
@@ -645,6 +670,9 @@ private:
 
     static std::string reason_of(const Cluster& c) {
         std::string reason;
+        if (c.votes_temporal != 0) {
+            reason += "temporal+";
+        }
         if (c.votes_free_space != 0) {
             reason += "free_space+";
         }
@@ -685,6 +713,7 @@ private:
         CleanCloudMsg::ConstSharedPtr cloud;
         AnomalySetMsg::ConstSharedPtr geometry;
         AnomalySetMsg::ConstSharedPtr no_return;
+        AnomalySetMsg::ConstSharedPtr temporal;
         AnomalySetMsg::ConstSharedPtr free_space;
     };
 
@@ -721,6 +750,7 @@ private:
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_clean_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_geometry_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_no_return_;
+    rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_temporal_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_free_space_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Publisher<ObstacleArray>::SharedPtr pub_obstacles_;

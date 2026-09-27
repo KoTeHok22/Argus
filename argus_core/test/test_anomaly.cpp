@@ -328,3 +328,29 @@ TEST(GeometryResidualDetector, NearRangeMedianOverrideIsScoped) {
     argus::GeometryResidualDetector detector(params);
     EXPECT_FALSE(detector.detect(cloud, ri).indices.empty());
 }
+
+TEST(TemporalResidualDetector, AppearingBoxProducesIndicesAfterHistoryWarmup) {
+    argus::TemporalResidualParams params;
+    params.window_frames = 5;
+    params.residual_threshold_m = 0.5f;
+    params.min_range_m = 4.0f;
+    params.max_range_m = 45.0f;
+    argus::TemporalResidualDetector detector(params);
+    const auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto wall_range = ri_of(wall);
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    const auto box = make_wall_cloud(10.0f, 230, 250, 2, 5, 25.5f);
+    const auto result = detector.detect(box, ri_of(box));
+    EXPECT_FALSE(result.indices.empty());
+}
+
+TEST(TemporalResidualDetector, StableSceneProducesNoCandidates) {
+    argus::TemporalResidualParams params;
+    argus::TemporalResidualDetector detector(params);
+    const auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto range = ri_of(wall);
+    for (int frame = 0; frame < 8; ++frame) {
+        EXPECT_TRUE(detector.detect(wall, range).indices.empty());
+    }
+}

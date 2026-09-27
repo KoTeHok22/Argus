@@ -328,6 +328,7 @@ int main(int argc, char** argv) {
     bool temporal_residual = false;
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
+    bool temporal_vote = false;
     bool world_residual = false;
     bool world_component_mode = false;
     bool world_component_detail = false;
@@ -429,6 +430,8 @@ int main(int argc, char** argv) {
             frozen_min_confidence = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--temporal-residual") {
             temporal_residual = true;
+        } else if (a == "--temporal-vote") {
+            temporal_vote = true;
         } else if (a == "--temporal-window" && i + 1 < argc) {
             temporal_window = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--temporal-threshold" && i + 1 < argc) {
@@ -608,6 +611,7 @@ int main(int argc, char** argv) {
     fusion_params.clustering.size_long_range_m = size_long_range;
     fusion_params.clustering.min_extent_m = 0.20f;
     fusion_params.tracking.min_hits_to_confirm = min_hits;
+    fusion_params.use_temporal_candidates = temporal_vote;
     fusion_params.tracking.min_hits_to_confirm_far = min_hits_far;
     fusion_params.ground_filter = ground_filter;
     fusion_params.use_free_space = free_space_vote;
@@ -820,11 +824,11 @@ int main(int argc, char** argv) {
             if (world_residual) {
                 world_odom = odom.update(cloud, f.stamp_s);
             }
-            argus::AnomalySet geom = (temporal_residual || world_residual)
-                                         ? argus::AnomalySet{}
-                                         : geometry.detect(cloud, ri);
+            argus::AnomalySet geom =
+                world_residual ? argus::AnomalySet{} : geometry.detect(cloud, ri);
+            argus::AnomalySet temporal;
             if (temporal_residual && !temporal_history.empty()) {
-                geom.source = "temporal";
+                temporal.source = "temporal";
                 std::vector<uint32_t> cell_to_cloud(ri.range.size(),
                                                     std::numeric_limits<uint32_t>::max());
                 for (size_t i = 0; i < cloud.raw_idx.size(); ++i) {
@@ -853,8 +857,8 @@ int main(int argc, char** argv) {
                         current > geom_max_target_range) {
                         continue;
                     }
-                    geom.indices.push_back(cell_to_cloud[cell]);
-                    geom.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
+                    temporal.indices.push_back(cell_to_cloud[cell]);
+                    temporal.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
                 }
             }
             if (world_residual && world_odom.valid && world_odom.fitness <= world_fitness &&
@@ -1040,11 +1044,33 @@ int main(int argc, char** argv) {
                               << c.centroid.transpose() << ")\n";
                 }
             }
-            const argus::FusionResult r = fusion.update(cloud, ri, geom, nr, 0.1f, 0.0f);
+            const argus::FusionResult r =
+                fusion.update(cloud, ri, geom, nr, temporal, {}, 0.1f, 0.0f,
+                              Eigen::Isometry3d::Identity(), false, false);
             std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << r.clusters.size() << ','
                       << r.n_clusters_raw << ',' << r.n_filtered_out << ',' << r.tracks.size()
                       << ',' << r.nearest_forward_m << ',' << r.nearest_range_m << ','
                       << r.n_anom_points << ',' << r.n_anom_cells << '\n';
+            for (const argus::Cluster& candidate : r.candidates) {
+                const Eigen::Vector3f extent = candidate.max_corner - candidate.min_corner;
+                std::cerr << "CANDIDATE," << k << ','
+                          << (candidate.min_corner.x() + candidate.max_corner.x()) * 0.5f << ','
+                          << (candidate.min_corner.y() + candidate.max_corner.y()) * 0.5f << ','
+                          << (candidate.min_corner.z() + candidate.max_corner.z()) * 0.5f << ','
+                          << extent.x() << ',' << extent.y() << ',' << extent.z() << ','
+                          << candidate.nearest_range << ',' << candidate.point_count << ','
+                          << candidate.score << ',' << static_cast<int>(candidate.votes_geometry)
+                          << ',' << static_cast<int>(candidate.votes_no_return) << ','
+                          << static_cast<int>(candidate.votes_free_space) << '\n';
+            }
+            for (const argus::Track& track : r.tracks) {
+                if (!track.confirmed) continue;
+                std::cerr << "CONFIRMED," << k << ',' << track.state.x() << ',' << track.state.y()
+                          << ',' << track.state.z() << ',' << track.extent.x() << ','
+                          << track.extent.y() << ',' << track.extent.z() << ','
+                          << track.nearest_range << ',' << track.point_count << ',' << track.score
+                          << '\n';
+            }
             if (temporal_residual) {
                 temporal_history.push_back(ri.range);
                 if (temporal_history.size() > temporal_window) {

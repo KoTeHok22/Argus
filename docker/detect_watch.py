@@ -124,6 +124,7 @@ class Watch(Node):
                     "votes_free_space": candidate.votes_free_space,
                     "votes_no_return": candidate.votes_no_return,
                     "votes_geometry": candidate.votes_geometry,
+                    "votes_temporal": candidate.votes_temporal,
                     "point_count": candidate.point_count,
                     "reason": candidate.reason,
                 }

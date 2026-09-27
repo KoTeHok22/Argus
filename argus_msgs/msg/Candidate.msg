@@ -8,5 +8,6 @@ float32 confidence
 uint8 votes_free_space
 uint8 votes_no_return
 uint8 votes_geometry
+uint8 votes_temporal
 uint32 point_count
 string reason

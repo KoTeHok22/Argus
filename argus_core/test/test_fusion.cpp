@@ -91,6 +91,49 @@ TEST(Fusion, ObstacleAheadTriggersConfirmedAlert) {
     EXPECT_EQ(f2.n_filtered_out, 0u);
 }
 
+TEST(Fusion, UnconfirmedClusterIsPublishedAsCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    auto params = fusion_params();
+    params.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    const auto result = pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    ASSERT_FALSE(result.alert);
+    ASSERT_EQ(result.tracks.size(), 0u);
+    ASSERT_EQ(result.candidates.size(), 1u);
+    EXPECT_EQ(result.candidates.front().point_count, result.clusters.front().point_count);
+    EXPECT_GT(result.candidates.front().nearest_range, 0.0f);
+}
+
+TEST(Fusion, ConfirmedTrackIsNotDuplicatedAsCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    auto params = fusion_params();
+    params.tracking.min_hits_to_confirm = 2;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    const auto result = pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    ASSERT_TRUE(result.alert);
+    EXPECT_FALSE(result.candidates.size());
+}
+
+TEST(Fusion, TemporalOnlyClusterIsCandidateButNotConfirmedAlert) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    argus::AnomalySet temporal = geometry_of_box(cloud);
+    temporal.source = "temporal";
+    auto params = fusion_params();
+    params.use_temporal_candidates = true;
+    params.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    const auto result = pipeline.update(cloud, ri, {}, {}, temporal, {}, 0.1f, 0.0f,
+                                        Eigen::Isometry3d::Identity(), false, false);
+    EXPECT_FALSE(result.alert);
+    ASSERT_FALSE(result.candidates.empty());
+    EXPECT_EQ(result.candidates.front().votes_geometry, 0);
+    EXPECT_EQ(result.candidates.front().votes_temporal, 1);
+}
+
 TEST(Fusion, ConfirmedFarTrackStopsAlertingAfterStaleGeometry) {
     argus::CleanCloud cloud;
     cloud.rings = 8;

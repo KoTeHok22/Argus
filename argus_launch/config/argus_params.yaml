@@ -106,6 +106,12 @@
       az_tolerance: 20
       range_tolerance_m: 3.0
 
+    detector_temporal:
+      window_frames: 5
+      residual_threshold_m: 0.5
+      min_range_m: 4.0
+      max_range_m: 45.0
+
     detector_free_space:
       enabled: true
       min_confidence: 0.85
@@ -153,6 +159,10 @@
       measurement_noise: 0.3
 
     fusion:
+      use_temporal_candidates: false
+      temporal_min_cluster_size: 10
+      temporal_min_extent_m: 0.15
+      temporal_max_extent_m: 2.5
       min_votes_for_alert: 1
       max_confirmed_track_misses: 4
       strict_track_freshness_range_m: 90.0

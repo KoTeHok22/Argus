@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <Eigen/Geometry>
 
@@ -77,6 +78,27 @@ private:
 
     GeometryResidualParams p_;
     std::vector<Track> tracks_;
+};
+
+struct TemporalResidualParams {
+    uint32_t window_frames = 5;
+    float residual_threshold_m = 0.5f;
+    float min_range_m = 4.0f;
+    float max_range_m = 45.0f;
+};
+
+class TemporalResidualDetector : public IAnomalyDetector {
+public:
+    explicit TemporalResidualDetector(const TemporalResidualParams& params);
+    AnomalySet detect(const CleanCloud& cloud, const RangeImage& ri) override;
+    std::string name() const override { return "temporal"; }
+    void reset();
+
+private:
+    TemporalResidualParams params_;
+    std::vector<std::vector<float>> history_;
+    uint32_t width_ = 0;
+    uint32_t height_ = 0;
 };
 
 struct FreeSpaceParams {
