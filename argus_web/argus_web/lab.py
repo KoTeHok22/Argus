@@ -51,7 +51,7 @@ def _worker(job_id: str, source: str, values: dict) -> None:
     root = repo_root()
     work = root / "data" / "ui" / "lab" / job_id
     work.mkdir(parents=True, exist_ok=True)
-    frames = work / "scene.frames"
+    frames = work / "cloud.argfrm"
     truth = work / "truth.json"
     csv_path = work / "detector.csv"
     generator = root / "scripts" / "synth_obstacle.py"
@@ -136,7 +136,8 @@ def frame(job_id: str, index: int) -> dict:
     job = status(job_id)
     if not job or job.get("status") != "ready":
         raise ValueError("Лабораторный прогон ещё не готов")
-    data = load_frame(Path(job["frames_path"]), index)
+    frames_path = Path(job["frames_path"])
+    data = load_frame(frames_path.parent, index)
     row = next((item for item in job.get("rows", []) if int(item["frame"]) == data["frame"]), None)
     events = [item for item in job.get("events", []) if item["frame"] == data["frame"]]
     return {"frame": data["frame"], "total": data["total"], "points": data["xyz"].tolist(), "row": row, "events": events}

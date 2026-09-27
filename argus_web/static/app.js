@@ -1648,6 +1648,7 @@ async function pageTunnelLab() {
   let job = null;
   let timer = null;
   let frame = 0;
+  let frameDataEvents = [];
   function draw(points, rows) {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -1662,16 +1663,25 @@ async function pageTunnelLab() {
     ctx.fillStyle = "#a9c3cf";
     for (let i = 0; i < points.length; i += 3) {
       const x = rect.width / 2 + points[i] * 8;
-      const y = rect.height - 32 + points[i + 1] * 8;
+      const y = rect.height - 32 - points[i + 1] * 8;
       if (x > 24 && x < rect.width - 24 && y > 24 && y < rect.height - 24) ctx.fillRect(x, y, 1, 1);
     }
-    if (row && (Number(row.clusters) > 0 || row.alert === "1")) {
-      ctx.strokeStyle = row.alert === "1" ? "#d05f50" : "#d5a84f";
-      ctx.setLineDash(row.alert === "1" ? [] : [6, 4]);
-      ctx.strokeRect(rect.width / 2 - 35, rect.height / 2 - 35, 70, 70);
-      ctx.setLineDash([]);
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.fillText(row.alert === "1" ? "ПОДТВЕРЖДЕНО" : "КАНДИДАТ", rect.width / 2 - 45, rect.height / 2 - 45);
+    if (points.length && frameDataEvents.length) {
+      frameDataEvents.forEach((event) => {
+        const position = event.position || [];
+        const extent = event.extent || [];
+        if (position.length !== 3 || extent.length !== 3) return;
+        const x = rect.width / 2 + Number(position[0]) * 8;
+        const y = rect.height - 32 - (-Number(position[1])) * 8;
+        const boxWidth = Math.max(6, Number(extent[0]) * 8);
+        const boxHeight = Math.max(6, Number(extent[1]) * 8);
+        ctx.strokeStyle = event.kind === "confirmed" ? "#d05f50" : "#d5a84f";
+        ctx.setLineDash(event.kind === "confirmed" ? [] : [6, 4]);
+        ctx.strokeRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
+        ctx.setLineDash([]);
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.fillText(event.kind === "confirmed" ? "ПОДТВЕРЖДЕНО" : "КАНДИДАТ", x - 45, Math.max(16, y - boxHeight / 2 - 6));
+      });
     }
   }
   async function poll() {
@@ -1686,6 +1696,7 @@ async function pageTunnelLab() {
       const result = document.getElementById("lab-result");
       result.innerHTML = [pair("Кандидатных кадров", fmtInt(next.candidate_rows.length)), pair("Подтверждений", fmtInt(next.confirmed)), pair("Источник", next.source)].join("");
       if (frameData) {
+        frameDataEvents = frameData.events;
         draw(frameData.points.flat(), rows);
         document.getElementById("lab-overlay").textContent = frameData.points.length ? `${frameData.points.length.toLocaleString("ru-RU")} точек · ${frameData.events.length ? `${frameData.events.length} detector events` : "событий нет"}` : "В этом кадре нет валидных точек";
       }

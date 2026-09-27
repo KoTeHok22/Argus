@@ -121,6 +121,25 @@ def test_lab_rejects_unknown_frame_source():
         create("not-a-real-source", {"length": 1, "width": 1, "height": 1, "distance": 20, "lateral": 0, "vertical": 0})
 
 
+def test_lab_frame_reads_generated_argfrm(tmp_path):
+    import struct
+    import numpy as np
+    from argus_web.cloud import load_frame
+
+    points = np.array([(1.0, -10.0, 0.5, 1.0, 0)], dtype=[
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+    ])
+    with (tmp_path / "cloud.argfrm").open("wb") as stream:
+        stream.write(b"ARGFRM1\0")
+        stream.write(struct.pack("<I", 1))
+        stream.write(struct.pack("<dIII", 1.0, 1, 1, 0))
+        stream.write(points.tobytes())
+    frame = load_frame(tmp_path, 0)
+    assert frame["total"] == 1
+    assert frame["points"] == 1
+    assert frame["xyz"].tolist() == [[1.0, -10.0, 0.5]]
+
+
 def test_load_report_fusion(tmp_path: Path):
     path = tmp_path / "fusion_obstacle.csv"
     path.write_text(
