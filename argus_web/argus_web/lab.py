@@ -140,4 +140,5 @@ def frame(job_id: str, index: int) -> dict:
     data = load_frame(frames_path.parent, index)
     row = next((item for item in job.get("rows", []) if int(item["frame"]) == data["frame"]), None)
     events = [item for item in job.get("events", []) if item["frame"] == data["frame"]]
-    return {"frame": data["frame"], "total": data["total"], "points": data["xyz"].tolist(), "row": row, "events": events}
+    visible_events = sorted(events, key=lambda item: (item["kind"] != "confirmed", -item["confidence"]))[:8]
+    return {"frame": data["frame"], "total": data["total"], "points": data["xyz"].tolist(), "row": row, "events": visible_events, "event_count": len(events)}

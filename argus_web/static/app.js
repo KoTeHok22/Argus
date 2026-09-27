@@ -1621,6 +1621,8 @@ async function pageParams() {
 async function pageTunnelLab() {
   const data = await api("/api/lab/sources");
   const sources = data.items || [];
+  let labGauge = null;
+  try { labGauge = await api("/api/gauge"); } catch (err) { void err; }
   view.innerHTML = `
     <div class="lab-grid">
       <section class="card lab-main">
@@ -1660,31 +1662,45 @@ async function pageTunnelLab() {
     ctx.strokeStyle = "#334752";
     ctx.strokeRect(24, 24, rect.width - 48, rect.height - 48);
     const row = rows && rows[frame];
-    const cloud = [];
-    for (let i = 0; i < points.length; i += 3) cloud.push([Number(points[i]), -Number(points[i + 1])]);
-    const bounds = cloud.length ? {
-      minX: Math.min(...cloud.map((point) => point[0])),
-      maxX: Math.max(...cloud.map((point) => point[0])),
-      minF: Math.min(...cloud.map((point) => point[1])),
-      maxF: Math.max(...cloud.map((point) => point[1])),
-    } : { minX: -3, maxX: 3, minF: 0, maxF: 60 };
-    const margin = 34;
-    const spanX = Math.max(1, bounds.maxX - bounds.minX);
-    const spanF = Math.max(1, bounds.maxF - bounds.minF);
-    const project = (side, forward) => [
-      margin + ((side - bounds.minX) / spanX) * (rect.width - margin * 2),
-      rect.height - margin - ((forward - bounds.minF) / spanF) * (rect.height - margin * 2),
-    ];
+    const hw = labGauge?.half_width ?? 1.5;
+    const floor = groundFloor(labGauge);
+    const cx = rect.width / 2;
+    const cy = rect.height * 0.48;
+    const F = Math.min(rect.width * 0.85, rect.height * 1.5);
+    const d0 = 2.2;
+    const project = (forward, side, z) => {
+      const depth = forward + d0;
+      return [cx + side * (F / depth), cy - (z * F) / depth];
+    };
     ctx.fillStyle = "#a9c3cf";
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
     let plotted = 0;
     for (let i = 0; i < points.length; i += 3) {
-      const [x, y] = project(Number(points[i]), -Number(points[i + 1]));
-      if (Number.isFinite(x) && Number.isFinite(y)) {
+      const [forward, side] = planOf(Number(points[i]), Number(points[i + 1]), labGauge);
+      const z = Number(points[i + 2]);
+      if (forward < 0.3 || forward > 90 || z < floor || Math.abs(side) > hw * 2.4) continue;
+      const [x, y] = project(forward, side, z);
+      if (Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x < rect.width && y >= 0 && y < rect.height) {
         ctx.fillRect(x - 1, y - 1, 2, 2);
         plotted += 1;
       }
+    }
+    if (labGauge?.near && labGauge?.far) {
+      ctx.strokeStyle = "rgba(91,122,140,0.9)";
+      ctx.lineWidth = 1;
+      const loop = (poly) => {
+        ctx.beginPath();
+        poly.forEach((point, index) => {
+          const [forward, side] = planOf(point[0], point[1], labGauge);
+          const [x, y] = project(Math.max(0.6, forward), side, point[2]);
+          if (!index) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      };
+      loop(labGauge.near);
+      loop(labGauge.far);
     }
     canvas.dataset.plotted = String(plotted);
     if (points.length && frameDataEvents.length) {
@@ -1692,15 +1708,14 @@ async function pageTunnelLab() {
         const position = event.position || [];
         const extent = event.extent || [];
         if (position.length !== 3 || extent.length !== 3) return;
-        const [x, y] = project(Number(position[0]), -Number(position[1]));
-        const boxWidth = Math.max(6, (Number(extent[0]) / spanX) * (rect.width - margin * 2));
-        const boxHeight = Math.max(6, (Number(extent[1]) / spanF) * (rect.height - margin * 2));
+        const [forward, side] = planOf(Number(position[0]), Number(position[1]), labGauge);
+        const [x, y] = project(forward, side, Number(position[2]));
+        const boxWidth = Math.max(6, Number(extent[0]) * (F / (forward + d0)));
+        const boxHeight = Math.max(6, Number(extent[2]) * (F / (forward + d0)));
         ctx.strokeStyle = event.kind === "confirmed" ? "#d05f50" : "#d5a84f";
         ctx.setLineDash(event.kind === "confirmed" ? [] : [6, 4]);
         ctx.strokeRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
         ctx.setLineDash([]);
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.fillText(event.kind === "confirmed" ? "ПОДТВЕРЖДЕНО" : "КАНДИДАТ", x - 45, Math.max(16, y - boxHeight / 2 - 6));
       });
     }
   }
@@ -1714,11 +1729,11 @@ async function pageTunnelLab() {
       const frameData = await api(`/api/lab/jobs/${encodeURIComponent(next.id)}/frame?frame=${frame}`).catch(() => null);
       const rows = next.rows || [];
       const result = document.getElementById("lab-result");
-      result.innerHTML = [pair("Кандидатных кадров", fmtInt(next.candidate_rows.length)), pair("Подтверждений", fmtInt(next.confirmed)), pair("Источник", next.source)].join("");
+      result.innerHTML = [pair("Кандидатных кадров", fmtInt(next.candidates)), pair("Подтверждённых кадров", fmtInt(next.confirmed)), pair("Источник", next.source)].join("");
       if (frameData) {
         frameDataEvents = frameData.events;
         draw(frameData.points.flat(), rows);
-        document.getElementById("lab-overlay").textContent = frameData.points.length ? `${frameData.points.length.toLocaleString("ru-RU")} точек · ${frameData.events.length ? `${frameData.events.length} detector events` : "событий нет"}` : "В этом кадре нет валидных точек";
+        document.getElementById("lab-overlay").textContent = frameData.points.length ? `${frameData.points.length.toLocaleString("ru-RU")} точек · ${frameData.event_count || 0} detector events` : "В этом кадре нет валидных точек";
       }
       if (frame + 1 < next.frames) {
         frame += 1;
