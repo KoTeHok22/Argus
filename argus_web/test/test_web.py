@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pytest
 import struct
 import sys
 from pathlib import Path
@@ -103,6 +104,21 @@ def test_summarize_latency_exposes_candidates_without_confirming_them():
     assert row["status"] == "DEGRADED"
     assert row["candidates"][0]["candidate_id"] == 9
     assert row["candidates"][0]["extent"] == [0.3, 0.4, 0.8]
+
+
+def test_lab_source_list_contains_real_frame_sources():
+    from argus_web.lab import sources
+
+    items = sources()
+    assert items
+    assert all(item["id"] and item["name"] for item in items)
+
+
+def test_lab_rejects_unknown_frame_source():
+    from argus_web.lab import create
+
+    with pytest.raises(ValueError, match="Источник кадров не найден"):
+        create("not-a-real-source", {"length": 1, "width": 1, "height": 1, "distance": 20, "lateral": 0, "vertical": 0})
 
 
 def test_load_report_fusion(tmp_path: Path):

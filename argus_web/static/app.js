@@ -1618,6 +1618,108 @@ async function pageParams() {
   });
 }
 
+async function pageTunnelLab() {
+  const data = await api("/api/lab/sources");
+  const sources = data.items || [];
+  view.innerHTML = `
+    <div class="lab-grid">
+      <section class="card lab-main">
+        <div class="card-head"><h2>Туннельная лаборатория</h2><span id="lab-state" class="muted">Источник не запущен</span></div>
+        <div class="lab-viewport"><canvas id="lab-canvas"></canvas><div id="lab-overlay" class="lab-overlay">Выберите сцену и задайте объект</div></div>
+        <div class="player"><button id="lab-play" class="btn accent" type="button">Запустить прогон</button><span id="lab-progress" class="muted">Кадр —</span></div>
+      </section>
+      <section class="card lab-controls">
+        <h2>Сцена</h2>
+        <label>Источник кадров<select id="lab-source">${sources.map((source) => `<option value="${source.id}">${source.name}</option>`).join("")}</select></label>
+        <div class="lab-form-grid">
+          <label>Длина, м<input id="lab-length" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Ширина, м<input id="lab-width" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Высота, м<input id="lab-height" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Дальность, м<input id="lab-distance" type="number" min="1" step="1" value="20"></label>
+        </div>
+        <label>Положение<select id="lab-position"><option value="0,0.8">Сверху</option><option value="0,0">По центру</option><option value="0,-0.4">Снизу</option><option value="-1.2,0.8">Слева сверху</option><option value="1.2,0.8">Справа сверху</option></select></label>
+        <p id="lab-help" class="muted">Прогон будет создан сервером из выбранной сцены. UI не рисует синтетическую цель сам.</p>
+      </section>
+      <section class="card lab-results"><h2>Результат detector</h2><div id="lab-result" class="kv2"><div class="muted">Результатов нет</div></div></section>
+    </div>
+  `;
+  const canvas = document.getElementById("lab-canvas");
+  const ctx = canvas.getContext("2d");
+  let job = null;
+  let timer = null;
+  let frame = 0;
+  function draw(points, rows) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#0d1013";
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.strokeStyle = "#334752";
+    ctx.strokeRect(24, 24, rect.width - 48, rect.height - 48);
+    const row = rows && rows[frame];
+    ctx.fillStyle = "#a9c3cf";
+    for (let i = 0; i < points.length; i += 3) {
+      const x = rect.width / 2 + points[i] * 8;
+      const y = rect.height - 32 + points[i + 1] * 8;
+      if (x > 24 && x < rect.width - 24 && y > 24 && y < rect.height - 24) ctx.fillRect(x, y, 1, 1);
+    }
+    if (row && (Number(row.clusters) > 0 || row.alert === "1")) {
+      ctx.strokeStyle = row.alert === "1" ? "#d05f50" : "#d5a84f";
+      ctx.setLineDash(row.alert === "1" ? [] : [6, 4]);
+      ctx.strokeRect(rect.width / 2 - 35, rect.height / 2 - 35, 70, 70);
+      ctx.setLineDash([]);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(row.alert === "1" ? "ПОДТВЕРЖДЕНО" : "КАНДИДАТ", rect.width / 2 - 45, rect.height / 2 - 45);
+    }
+  }
+  async function poll() {
+    if (!job) return;
+    const next = await api(`/api/lab/jobs/${encodeURIComponent(job.id)}`);
+    job = next;
+    document.getElementById("lab-state").textContent = next.status;
+    document.getElementById("lab-progress").textContent = `Кадр ${next.status === "ready" ? `${frame + 1} / ${next.frames}` : "подготовка"}`;
+    if (next.status === "ready") {
+      const frameData = await api(`/api/lab/jobs/${encodeURIComponent(next.id)}/frame?frame=${frame}`).catch(() => null);
+      const rows = next.rows || [];
+      const result = document.getElementById("lab-result");
+      result.innerHTML = [pair("Кандидатных кадров", fmtInt(next.candidate_rows.length)), pair("Подтверждений", fmtInt(next.confirmed)), pair("Источник", next.source)].join("");
+      if (frameData) {
+        draw(frameData.points.flat(), rows);
+        document.getElementById("lab-overlay").textContent = frameData.points.length ? `${frameData.points.length.toLocaleString("ru-RU")} точек · ${frameData.events.length ? `${frameData.events.length} detector events` : "событий нет"}` : "В этом кадре нет валидных точек";
+      }
+      if (frame + 1 < next.frames) {
+        frame += 1;
+        addTimer(setTimeout(poll, 500));
+      }
+      return;
+    }
+    if (next.status === "error") {
+      document.getElementById("lab-help").textContent = next.error || "Прогон завершился с ошибкой";
+      return;
+    }
+    addTimer(setTimeout(poll, 1000));
+  }
+  document.getElementById("lab-play").addEventListener("click", async () => {
+    const [lateral, vertical] = document.getElementById("lab-position").value.split(",");
+    job = await api("/api/lab/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: document.getElementById("lab-source").value,
+        length: document.getElementById("lab-length").value,
+        width: document.getElementById("lab-width").value,
+        height: document.getElementById("lab-height").value,
+        distance: document.getElementById("lab-distance").value,
+        lateral,
+        vertical,
+      }),
+    });
+    poll();
+  });
+}
+
 async function route() {
   clearTimers();
   const hash = (location.hash || "#/").replace(/^#/, "") || "/";
@@ -1630,6 +1732,7 @@ async function route() {
     else if (head === "/zapis") await pageBags();
     else if (head === "/efir") await pageLive(decodeURIComponent(parts[1] || ""));
     else if (head === "/otchet") await pageReports(decodeURIComponent(parts[1] || ""));
+    else if (head === "/tunnel-lab") await pageTunnelLab();
     else if (head === "/parametry") await pageParams();
     else view.innerHTML = empty("Нет такой страницы.");
   } catch (err) {

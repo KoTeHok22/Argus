@@ -17,6 +17,7 @@ from argus_web.align import gauge_profile, load_gauge, reset_gauge, save_gauge
 from argus_web.bags import get_bag, list_bags
 from argus_web.cloud import frame_stamps, load_frame, pack_xyz
 from argus_web.ingest import ingest_archive, job_status, list_jobs, save_upload
+from argus_web.lab import create as create_lab, frame as lab_frame, result as lab_result, sources as lab_sources, status as lab_status
 from argus_web.paths import static_root, ui_params_yaml
 from argus_web.reports import csv_to_text, get_report, list_reports
 from argus_web.runner import active_params_file, current_run, start_run
@@ -180,6 +181,10 @@ class Handler(BaseHTTPRequestHandler):
         if route in ("/", "/index.html"):
             _file(self, static_root() / "index.html")
             return
+        if route == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+            return
         if route.startswith("/static/"):
             rel = unquote(route[len("/static/"):])
             if rel not in {"app.css", "app.js", "index.html"}:
@@ -189,6 +194,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/overview":
             _json(self, overview())
+            return
+        if route == "/api/lab/sources":
+            _json(self, {"items": lab_sources()})
+            return
+        if route.startswith("/api/lab/jobs/"):
+            parts = route.split("/")
+            job_id = unquote(parts[4])
+            job = lab_status(job_id)
+            if job is None:
+                _json(self, {"error": "Лабораторный прогон не найден"}, 404)
+                return
+            if len(parts) > 5 and parts[5] == "frame":
+                try:
+                    _json(self, lab_frame(job_id, int(query.get("frame") or 0)))
+                except ValueError as exc:
+                    _json(self, {"error": str(exc)}, 409)
+                return
+            _json(self, lab_result(job_id) if job.get("status") == "ready" else job)
             return
         if route == "/api/bags":
             _json(self, {"items": list_bags(), "jobs": list_jobs()})
@@ -303,6 +326,13 @@ class Handler(BaseHTTPRequestHandler):
                 _json(self, {"error": str(exc)}, 400)
                 return
             _json(self, run, 202)
+            return
+        if route == "/api/lab/jobs":
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+                _json(self, create_lab(body.get("source") or "", body), 202)
+            except (TypeError, ValueError) as exc:
+                _json(self, {"error": str(exc)}, 400)
             return
         if route == "/api/gauge":
             try:
