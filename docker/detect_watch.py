@@ -25,6 +25,7 @@ CSV_FIELDS = (
     "nearest_m",
     "objects",
     "obstacles_json",
+    "candidates_json",
     "fps",
     "t_filter_ms",
     "t_range_image_ms",
@@ -109,6 +110,24 @@ class Watch(Node):
                     "reason": obstacle.reason,
                 }
                 for obstacle in msg.obstacles
+            ],
+            separators=(",", ":"),
+        )
+        row["candidates_json"] = json.dumps(
+            [
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "position": [candidate.position.x, candidate.position.y, candidate.position.z],
+                    "extent": [candidate.extent.x, candidate.extent.y, candidate.extent.z],
+                    "range_m": candidate.range_m,
+                    "confidence": candidate.confidence,
+                    "votes_free_space": candidate.votes_free_space,
+                    "votes_no_return": candidate.votes_no_return,
+                    "votes_geometry": candidate.votes_geometry,
+                    "point_count": candidate.point_count,
+                    "reason": candidate.reason,
+                }
+                for candidate in msg.candidates
             ],
             separators=(",", ":"),
         )

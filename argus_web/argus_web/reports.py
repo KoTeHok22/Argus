@@ -86,6 +86,17 @@ def _obstacles(row: dict) -> list[dict]:
     return value if isinstance(value, list) else []
 
 
+def _candidates(row: dict) -> list[dict]:
+    raw = row.get("candidates_json") or ""
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
 def _timed_row(row: dict) -> bool:
     for key in ("t_alert_path_ms", "t_detect_ms", "t_filter_ms"):
         value = _num(row.get(key))
@@ -139,6 +150,7 @@ def summarize_latency(rows: list[dict]) -> dict:
                 "forward_m": _num(row.get("forward_m")),
                 "objects": int(_num(row.get("objects")) or 0),
                 "obstacles": _obstacles(row),
+                "candidates": _candidates(row),
                 "point_count": int(_num(row.get("points")) or 0),
                 "fps": _num(row.get("fps")),
                 "latency_ms": _num(row.get("t_alert_path_ms")),

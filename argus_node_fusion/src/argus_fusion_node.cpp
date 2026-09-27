@@ -15,6 +15,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
+#include <argus_msgs/msg/candidate.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
@@ -30,6 +31,7 @@ using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using AnomalySetMsg = argus_msgs::msg::AnomalySet;
 using Obstacle = argus_msgs::msg::Obstacle;
 using ObstacleArray = argus_msgs::msg::ObstacleArray;
+using Candidate = argus_msgs::msg::Candidate;
 using Marker = visualization_msgs::msg::Marker;
 using MarkerArray = visualization_msgs::msg::MarkerArray;
 
@@ -322,6 +324,26 @@ private:
             }
             out.obstacles.push_back(o);
         }
+        for (size_t i = 0; i < result.candidates.size(); ++i) {
+            const Cluster& c = result.candidates[i];
+            Candidate candidate;
+            candidate.header = out.header;
+            candidate.candidate_id = static_cast<uint32_t>(i);
+            candidate.position.x = c.centroid.x();
+            candidate.position.y = c.centroid.y();
+            candidate.position.z = c.centroid.z();
+            candidate.extent.x = (c.max_corner - c.min_corner).x();
+            candidate.extent.y = (c.max_corner - c.min_corner).y();
+            candidate.extent.z = (c.max_corner - c.min_corner).z();
+            candidate.range_m = c.nearest_range;
+            candidate.confidence = c.score;
+            candidate.votes_free_space = c.votes_free_space;
+            candidate.votes_no_return = c.votes_no_return;
+            candidate.votes_geometry = c.votes_geometry;
+            candidate.point_count = c.point_count;
+            candidate.reason = reason_of(c);
+            out.candidates.push_back(candidate);
+        }
         if (!result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
@@ -613,6 +635,23 @@ private:
             reason += "no_return+";
         }
         if (t.votes_geometry != 0) {
+            reason += "geometry+";
+        }
+        if (!reason.empty()) {
+            reason.pop_back();
+        }
+        return reason;
+    }
+
+    static std::string reason_of(const Cluster& c) {
+        std::string reason;
+        if (c.votes_free_space != 0) {
+            reason += "free_space+";
+        }
+        if (c.votes_no_return != 0) {
+            reason += "no_return+";
+        }
+        if (c.votes_geometry != 0) {
             reason += "geometry+";
         }
         if (!reason.empty()) {

@@ -145,7 +145,7 @@ def _report_frame(handler: BaseHTTPRequestHandler, route: str, query: dict) -> N
             report.get("rows", [])[frame] if frame < len(report.get("rows", [])) else None,
         ),
     )
-    for obstacle in (row or {}).get("obstacles", []):
+    for obstacle in (row or {}).get("obstacles", []) + (row or {}).get("candidates", []):
         position = obstacle.get("position") or []
         extent = obstacle.get("extent") or []
         if len(position) != 3 or len(extent) != 3:
@@ -158,8 +158,10 @@ def _report_frame(handler: BaseHTTPRequestHandler, route: str, query: dict) -> N
         right = center_x + (object_side + half_side) * scale
         top = base_y - (object_forward + half_forward) * scale
         bottom = base_y - (object_forward - half_forward) * scale
-        draw.rectangle((left, top, right, bottom), outline=(255, 95, 82), width=3)
-        draw.text((left, max(8, top - 18)), f"{obstacle.get('track_id', '')} {extent[0]:.2f} x {extent[1]:.2f} x {extent[2]:.2f} m", fill=(255, 220, 210))
+        candidate = "candidate_id" in obstacle
+        color = (213, 168, 79) if candidate else (255, 95, 82)
+        draw.rectangle((left, top, right, bottom), outline=color, width=3)
+        draw.text((left, max(8, top - 18)), f"{'CANDIDATE' if candidate else obstacle.get('track_id', '')} {extent[0]:.2f} x {extent[1]:.2f} x {extent[2]:.2f} m", fill=color)
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     _bytes(handler, buffer.getvalue(), "image/png")

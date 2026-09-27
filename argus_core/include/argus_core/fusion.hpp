@@ -45,6 +45,7 @@ FusionParams default_fusion_params();
 
 struct FusionResult {
     std::vector<Cluster> clusters;
+    std::vector<Cluster> candidates;
     std::vector<Track> tracks;
     uint32_t n_anom_points = 0;
     uint32_t n_anom_cells = 0;

@@ -382,7 +382,7 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
-  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.obstacles || []) : [];
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.candidates || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const image = ctx.createImageData(w, h);
@@ -507,7 +507,7 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
-  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.obstacles || []) : [];
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.candidates || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const yOf = (side) => Math.round(h / 2 - ((side - focusSide) / lateral) * (h * 0.42));
@@ -1166,7 +1166,8 @@ async function pageLive(bagId) {
         pair("Дальность", v.meters != null ? fmtMeters(v.meters) : "—"),
         pair("Вперёд", row && row.forward_m != null ? fmtMeters(row.forward_m) : "—"),
         pair("Объектов", row ? fmtInt(row.objects) : "—"),
-        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(row.status === "BLOCKED" ? `Габариты трека ${obstacle.track_id}` : `Кандидат ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
+        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(`Габариты трека ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
+        ...(row && row.candidates ? row.candidates.map((candidate) => pair(`Кандидат ${candidate.candidate_id}`, candidate.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
         pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_covered" ? '<span class="warn-text">НЕТ РЕЗУЛЬТАТА</span>' : v.code === "unsure" ? '<span class="warn-text">НЕ УВЕРЕН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
       ].join("");
       document.getElementById("frame-kv").innerHTML = [

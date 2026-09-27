@@ -155,6 +155,16 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     }
 
     out.tracks = tracker_.update(out.clusters, dt, train_speed_mps);
+    for (const Cluster& cluster : out.clusters) {
+        const auto matched =
+            std::any_of(out.tracks.begin(), out.tracks.end(), [&](const Track& track) {
+                return (track.state.head<3>() - cluster.centroid).norm() <
+                       p_.tracking.max_association_distance;
+            });
+        if (!matched) {
+            out.candidates.push_back(cluster);
+        }
+    }
 
     for (const Track& t : out.tracks) {
         out.nearest_range_m = out.nearest_range_m < 0.0f
