@@ -16,7 +16,7 @@ ROS 2 bag (sqlite3)          ┌────────────────
               └──────────────┬───────────────┴───────────────────────────────┘
                              ▼
                     argus_node_fusion
-        clustering → obstacle tracker → FusionPipeline → supervision/gauge_state
+        clustering → scn-1 tracker → FusionPipeline → supervision/gauge_state
                              │
         ┌────────────────────┼───────────────────────┬────────────────────┐
         ▼                    ▼                       ▼                    ▼
@@ -31,12 +31,12 @@ ROS 2 bag (sqlite3)          ┌────────────────
 
 | Пакет | Роль |
 |---|---|
-| `argus_core` | Вся алгоритмика на C++: фильтр, ground, range image, детекторы, кластеризация, трекинг, fusion, одометрия, модель тоннеля, надзор, классификация. CLI `offline_detector`, тесты GoogleTest |
+| `argus_core` | Вся алгоритмика на C++: фильтр, ground, range image, детекторы, кластеризация, трекинг, fusion, одометрия, модель окружения, надзор, классификация. CLI `offline_detector`, тесты GoogleTest |
 | `argus_msgs` | Сообщения ROS 2: `Obstacle`, `ObstacleArray`, `Diagnostics`, `GaugeState` |
-| `argus_node_preprocess` | Очистка облака, вычитание пола/рельсов, построение range image, маска «нет возврата», здоровье сенсора |
+| `argus_node_preprocess` | Очистка облака, вычитание пола/направляющих, построение range image, маска «нет возврата», здоровье сенсора |
 | `argus_node_detector` | Геометрический residual, no-return, временной residual |
 | `argus_node_odometry` | Одометрия 4DoF ICP с гейтом качества |
-| `argus_node_tunnel_model` | Воксельная карта нормального тоннеля и детектор free-space |
+| `argus_node_tunnel_model` | Воксельная карта нормального окружения и детектор free-space |
 | `argus_node_fusion` | Кластеризация, трекинг, fusion, маркеры, gauge state, надзор скорости |
 | `argus_node_watchdog` | Heartbeat всех нод и публикация `/argus/system_health` |
 | `argus_node_recorder` | JSONL-журнал решений с ротацией |
@@ -49,7 +49,7 @@ ROS 2 bag (sqlite3)          ┌────────────────
 
 | Топик | Тип | Кто публикует |
 |---|---|---|
-| `/lidar_points` (или из `metadata.yaml`) | `PointCloud2` | bag |
+| `топик сенсора` (или из `metadata.yaml`) | `PointCloud2` | bag |
 | `/argus/cloud` | `PointCloud2` | preprocess (для RViz) |
 | `/argus/obstacles` | `ObstacleArray` | fusion |
 | `/argus/gauge_state` | `GaugeState` | fusion |
@@ -72,19 +72,19 @@ ROS 2 bag (sqlite3)          ┌────────────────
 При плохой позе world-space признаки отключаются, система не строит тревогу на
 недостоверной геометрии.
 
-## Модель нормального тоннеля
+## Модель нормального окружения
 
 `TunnelModel` — воксельная карта занятости со счётчиком наблюдений. Воксель считается
 свободным, если луч прошёл через него `free_hits_to_clear` раз, и занятым при
 `min_observations` попаданиях. `FreeSpaceDetector` ищет точки, противоречащие
 подтверждённому свободному пространству. В production этот голос выключен
-(`fusion.use_free_space: false`), потому что на платформе давал ложные тревоги.
+(`fusion.use_free_space: false`), потому что на `scn-2` давал ложные тревоги.
 
 ## Принятие решения
 
 `FusionPipeline::update` собирает кандидатов из геометрического, no-return и (опц.)
 временного и free-space каналов, группирует их кластеризацией, подтверждает трекингом
-и проверяет принадлежность габариту поезда. Тревога требует подтверждённого трека
+и проверяет принадлежность контролируемой зоне объект-носительа. Тревога требует подтверждённого трека
 (`require_confirmed_track`) и свежести дальнего трека (после 4 пропусков на 90 м+
 трек перестаёт тревожить).
 
@@ -93,7 +93,7 @@ ROS 2 bag (sqlite3)          ┌────────────────
 - `argus_node_watchdog` публикует `DEAD:<узлы>`, если heartbeat узла пропал;
   fusion понижает `CLEAR` до `DEGRADED` и называет молчащий узел.
 - `SensorHealthMonitor` следит за долей «нет возврата» и валидных точек; загрязнение
-  лидара не даёт молчаливой слепоты.
+  сенсора не даёт молчаливой слепоты.
 - При отсутствии кадров публикуется `clear_range=0`, `speed_limit=0`.
 - `scripts/fault_injection_test.sh` — живой E2E: kill детектора → `DEAD:argus_detector`
   → `STATUS_DEGRADED` (PASS).

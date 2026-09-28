@@ -30,7 +30,7 @@ docker run --rm argus shell
 | `shell` | Оболочка внутри образа |
 | `help` | Справка (по умолчанию) |
 
-`--shm-size=256m` обязателен: один кадр занимает ~24 МБ. Топик лидара читается из
+`--shm-size=256m` обязателен: один кадр занимает ~24 МБ. Топик сенсора читается из
 `metadata.yaml`.
 
 ## Панель без Docker
@@ -55,7 +55,7 @@ scripts/ci/all.sh      # lint + build + test
 ### `cloud`
 | Параметр | Значение | Смысл |
 |---|---|---|
-| `input_topic` | `/lidar_points` | входной топик (переопределяется из bag) |
+| `input_topic` | `топик сенсора` | входной топик (переопределяется из bag) |
 | `qos_depth` | 10 | глубина очереди подписки |
 | `min_range` / `max_range` | 0.5 / 400.0 | диапазон валидной дальности |
 | `max_abs_coord` | 1.0e4 | порог мусорных координат |
@@ -73,11 +73,11 @@ scripts/ci/all.sh      # lint + build + test
 ### `ground_segmentation`
 | Параметр | Значение | Смысл |
 |---|---|---|
-| `enabled` | true | вычитать пол/рельсы |
+| `enabled` | true | вычитать пол/направляющие |
 | `method` | `z_threshold` | метод (`patchworkpp` — опция) |
-| `sensor_height` | −1.075 | высота лидара над рельсом (подтверждена организаторами) |
-| `rail_zone_m` | 2.0 | ширина зоны рельсов |
-| `rail_max_height` | 0.55 | порог рельса над полом |
+| `sensor_height` | −1.075 | высота сенсора над направляющей (подтверждена задача) |
+| `rail_zone_m` | 2.0 | ширина зоны направляющих |
+| `rail_max_height` | 0.55 | порог направляюща над полом |
 | `max_ground_z_rel` | 0.60 | порог пола относительно сенсора |
 | `min_range` / `max_range` | 1.0 / 80.0 | зона вычитания земли |
 | `forward_axis` | `-y` | направление движения |
@@ -159,13 +159,13 @@ scripts/ci/all.sh      # lint + build + test
 | Параметр | Значение | Смысл |
 |---|---|---|
 | `forward_axis` | `-y` | направление движения |
-| `half_width` | 1.50 | полуширина габарита |
-| `height` | 2.10 | высота над головкой рельса |
+| `half_width` | 1.50 | полуширина контролируемой зоны |
+| `height` | 2.10 | высота над головкой направляюща |
 | `base_offset` | 0.20 | нижняя граница |
 | `chamfer` | 0.20 | фаска |
-| `sensor_height` | 1.075 | высота лидара |
+| `sensor_height` | 1.075 | высота сенсора |
 | `safety_margin` | 0.10 | запас (по высоте и носу, не по ширине) |
-| `max_range` | 300.0 | максимальная дальность габарита |
+| `max_range` | 300.0 | максимальная дальность контролируемой зоны |
 
 ### `clustering`
 | Параметр | Значение | Смысл |
@@ -220,7 +220,7 @@ scripts/ci/all.sh      # lint + build + test
 git clone <repo> && cd Argus
 ./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
-docker run --rm --shm-size=256m -v "$PWD/Datas/dataset/for_hackathon":/data \
+docker run --rm --shm-size=256m -v "$PWD/Datas/dataset/<recordings>":/data \
     argus detect /data/<recording> 0
 ```
 
