@@ -18,12 +18,12 @@ docker build -f docker/Dockerfile -t argus .
 ```bash
 docker run --rm --shm-size=256m \
     -v "$PWD/data/recordings":/data argus \
-    detect /data/doubleT_obstacle 0
+    detect /data/scn-1 0
 ```
 
-`--shm-size=256m` обязателен: кадр лидара ~24 МБ, стандартных 64 МБ `/dev/shm` в Docker не хватает. Без флага облако не доходит, fusion пишет `STATUS_DEGRADED`.
+`--shm-size=256m` обязателен: кадр сенсора ~24 МБ, стандартных 64 МБ `/dev/shm` в Docker не хватает. Без флага облако не доходит, fusion пишет `STATUS_DEGRADED`.
 
-Второй аргумент — скорость bag (`1` — реальное время). Топик лидара берётся из `metadata.yaml`. На `doubleT_obstacle` это `/sensing/lidar/hesai128/pointcloud`.
+Второй аргумент — скорость bag (`1` — реальное время). Топик сенсора берётся из `metadata.yaml`. На `scn-1` это `/sensing/sensor/сенсор/pointcloud`.
 
 Выход: строки `ALERT BLOCKED` с дистанции и в конце `frames=… blocked_alerts=…`.
 
@@ -47,7 +47,7 @@ docker run --rm --shm-size=256m -p 8080:8080 \
 ```bash
 docker run --rm --shm-size=256m -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v "$PWD/data/recordings":/data argus \
-    demo /data/doubleT_obstacle
+    demo /data/scn-1
 ```
 
 ## Без Docker
@@ -58,11 +58,11 @@ source /opt/ros/humble/setup.bash
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ros2 launch argus_launch argus.launch.py \
-    bag:=data/recordings/doubleT_obstacle \
-    lidar_topic:=/sensing/lidar/hesai128/pointcloud
+    bag:=data/recordings/scn-1 \
+    sensor_topic:=/sensing/sensor/сенсор/pointcloud
 ```
 
-Для остальных бэгов `recordings` топик по умолчанию `/lidar_points`.
+Для остальных бэгов `recordings` топик по умолчанию `топик сенсора`.
 
 ## Параметры
 
