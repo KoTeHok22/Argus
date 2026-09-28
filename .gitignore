@@ -78,3 +78,7 @@ secrets.yaml
 .repowise/
 .tmp_comment_cleanup/
 AGENTS.md
+
+*.md
+!/README.md
+!docs/EXPERIMENTS.md
