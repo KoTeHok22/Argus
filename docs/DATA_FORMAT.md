@@ -7,13 +7,9 @@
 
 | Тип записи | Топик | `frame_id` | Точек/кадр | `point_step` |
 |---|---|---|---|---|
-| плотная (сенсор A) | `/sensing/lidar/hesai128/pointcloud` | `lidar_livox` | 921 600 | 26 |
-| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| обычная (сенсор B) | `/lidar_points` | `hesai_lidar` | 307 200 | 26 |
-| разрежённая (сенсор B) | `/lidar_points` | `hesai_lidar` | ~170 000 | 26 |
+| плотная (сенсор A) | `<topic A>` | `sensor_a` | 921 600 | 26 |
+| обычная (сенсор B) | `<topic B>` | `sensor_b` | 307 200 | 26 |
+| разрежённая (сенсор B) | `<topic B>` | `sensor_b` | ~170 000 | 26 |
 
 Тип сообщения — `sensor_msgs/msg/PointCloud2`, `serialization_format: cdr`, частота 10 Гц.
 Имя топика читается из `metadata.yaml` автоматически (`docker/bag_topic.py`), поэтому
@@ -40,7 +36,7 @@
 разные записи делались разными пайплайнами: одна отличается топиком, `frame_id` и
 тройной плотностью (921 600 = 3 × 307 200 точек).
 
-Внимание: поле `intensity` в ROS-сообщении — `FLOAT32`, хотя в SDK Hesai оно `uint8_t`.
+Внимание: поле `intensity` в ROS-сообщении — `FLOAT32`, хотя в SDK сенсора оно `uint8_t`.
 Парсить bag «по структуре SDK» (23 байта) нельзя — раскладка берётся только из `fields[]`.
 
 ## Облако хранится как развёртка [кольцо][азимут]
