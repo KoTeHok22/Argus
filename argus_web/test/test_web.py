@@ -149,7 +149,7 @@ def test_load_report_fusion(tmp_path: Path):
         encoding="utf-8",
     )
     report = load_report(path)
-    assert report["name"] == "doubleT_obstacle"
+    assert report["name"] == "fusion_obstacle"
     assert report["blocked"] == 1
     assert report["clear"] == 1
     assert abs(report["nearest_m"] - 16.9) < 1e-6
@@ -159,7 +159,7 @@ def test_load_report_fusion(tmp_path: Path):
 
 
 def test_parse_metadata(tmp_path: Path):
-    bag = tmp_path / "doubleT_obstacle"
+    bag = tmp_path / "scene-obstacle"
     bag.mkdir()
     (bag / "metadata.yaml").write_text(
         "rosbag2_bagfile_information:\n"
@@ -170,14 +170,14 @@ def test_parse_metadata(tmp_path: Path):
         "    - topic_metadata:\n"
         "        name: /sensing/lidar/hesai128/pointcloud\n"
         "  relative_file_paths:\n"
-        "    - doubleT_obstacle_0.db3\n",
+        "    - scene-obstacle_0.db3\n",
         encoding="utf-8",
     )
     meta = parse_metadata(bag)
     assert meta["topic"] == "/sensing/lidar/hesai128/pointcloud"
     assert meta["frames"] == 201
     assert abs(meta["duration_ns"] / 1e9 - 20.0) < 1e-9
-    assert meta["files"] == ["doubleT_obstacle_0.db3"]
+    assert meta["files"] == ["scene-obstacle_0.db3"]
 
 
 def test_header_stamp_matches_report_clock():
@@ -299,13 +299,13 @@ def test_docker_runner_preserves_workspace_absolute_paths(monkeypatch):
 
     monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
     cmd = runner._detect_cmd(
-        {"id": "cloud_with_fake_obj", "path": "/data/cloud_with_fake_obj"},
+        {"id": "scene-obj", "path": "/data/scene-obj"},
         0.0,
-        Path("/ws/data/ui/runs/cloud_with_fake_obj_run.csv"),
+        Path("/ws/data/ui/runs/scene-obj_run.csv"),
     )
     assert "/ws:/ws" in cmd
-    assert "ARGUS_LATENCY_CSV=/ws/data/ui/runs/cloud_with_fake_obj_run.csv" in cmd
-    assert "/ws/data/ui/runs/cloud_with_fake_obj_run_params.yaml" in cmd
+    assert "ARGUS_LATENCY_CSV=/ws/data/ui/runs/scene-obj_run.csv" in cmd
+    assert "/ws/data/ui/runs/scene-obj_run_params.yaml" in cmd
 
 
 def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):

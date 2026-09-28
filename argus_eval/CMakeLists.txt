@@ -31,6 +31,9 @@ install(DIRECTORY argus_eval
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(argus_eval_pytest test)
 endif()
 
 ament_package()

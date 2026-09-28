@@ -58,16 +58,15 @@ COPY argus_launch/config /ws/argus_launch/config
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY docker/detect_watch.py /opt/argus/detect_watch.py
 COPY docker/bag_topic.py /opt/argus/bag_topic.py
+COPY docker/bag_play.py /opt/argus/bag_play.py
 COPY docker/fastdds.xml /opt/argus/fastdds.xml
-RUN chmod +x /entrypoint.sh /opt/argus/detect_watch.py /opt/argus/bag_topic.py
+RUN chmod +x /entrypoint.sh /opt/argus/detect_watch.py /opt/argus/bag_topic.py /opt/argus/bag_play.py
 
 ENV WS=/ws \
     ARGUS_ROOT=/ws \
     PYTHONPATH=/ws/argus_web \
     PYTHONUNBUFFERED=1 \
-    ROS_LOCALHOST_ONLY=1 \
-    RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-    FASTRTPS_DEFAULT_PROFILES_FILE=/opt/argus/fastdds.xml
+    RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 EXPOSE 8080
 VOLUME ["/data"]
 

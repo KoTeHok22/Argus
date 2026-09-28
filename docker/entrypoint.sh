@@ -23,7 +23,8 @@ case "$MODE" in
       RATE="1"
     fi
     export ARGUS_LATENCY_CSV="${ARGUS_LATENCY_CSV:-/tmp/argus_latency.csv}"
-    echo "bag=$BAG topic=$TOPIC rate=$RATE csv=$ARGUS_LATENCY_CSV"
+    PLAYER="${ARGUS_PLAYER:-py}"
+    echo "bag=$BAG topic=$TOPIC rate=$RATE player=$PLAYER csv=$ARGUS_LATENCY_CSV"
     python3 /opt/argus/detect_watch.py &
     WATCH_PID=$!
     if [ -n "$PARAMS_FILE" ]; then
@@ -33,13 +34,17 @@ case "$MODE" in
     fi
     LAUNCH_PID=$!
     sleep 5
-    ros2 bag play "$BAG" \
-        --storage sqlite3 \
-        --rate "$RATE" \
-        --disable-keyboard-controls \
-        --disable-loan-message \
-        --read-ahead-queue-size 8
-    sleep 2
+    if [ "$PLAYER" = "cli" ]; then
+      ros2 bag play "$BAG" \
+          --storage sqlite3 \
+          --rate "$RATE" \
+          --disable-keyboard-controls \
+          --disable-loan-message \
+          --read-ahead-queue-size 8
+    else
+      python3 /opt/argus/bag_play.py "$BAG" --topic "$TOPIC" --rate "$RATE"
+    fi
+    sleep 5
     kill -INT -"$LAUNCH_PID" 2>/dev/null || true
     kill -INT "$WATCH_PID" 2>/dev/null || true
     sleep 1
@@ -95,7 +100,7 @@ rate по умолчанию 1 (реальное время). --shm-size=256m о
 Пример:
   docker run --rm --shm-size=256m \
       -v "$PWD/data/recordings":/data argus \
-      detect /data/doubleT_obstacle 0
+      detect /data/<recording> 0
 
   docker run --rm --shm-size=256m -p 8080:8080 \
       -v "$PWD/data/recordings":/data argus ui

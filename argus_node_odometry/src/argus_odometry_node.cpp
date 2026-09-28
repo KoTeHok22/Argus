@@ -10,6 +10,7 @@
 #include <argus_msgs/msg/diagnostics.hpp>
 
 #include "argus_core/odometry.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/types.hpp"
 
 namespace argus {
@@ -68,11 +69,14 @@ public:
         odom_ = std::make_unique<TunnelOdometry>(p);
 
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
+        auto control_qos_ = control_qos();
         sub_ = create_subscription<CleanCloudMsg>(
-            "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
-        pub_pose_ = create_publisher<geometry_msgs::msg::PoseStamped>("/argus/pose", qos);
-        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_odometry", qos);
-        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+            "/argus/clean", stream_qos,
+            [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
+        pub_pose_ = create_publisher<geometry_msgs::msg::PoseStamped>("/argus/pose", stream_qos);
+        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_odometry", control_qos_);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", control_qos_);
         heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
             std_msgs::msg::String beat;
             beat.data = get_name();

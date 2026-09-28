@@ -78,7 +78,11 @@ FusionParams default_fusion_params() {
 }
 
 FusionPipeline::FusionPipeline(ClearanceGauge gauge, const FusionParams& params)
-    : gauge_(std::move(gauge)), p_(params), tracker_(params.tracking), model_(params.model) {}
+    : gauge_(std::move(gauge)),
+      p_(params),
+      tracker_(params.tracking),
+      model_(params.model),
+      verifier_(params.verifier) {}
 
 FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
                                     const AnomalySet& geometry, const AnomalySet& no_return,
@@ -267,6 +271,14 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         if (!in_gauge) {
             ++out.n_filtered_out;
             continue;
+        }
+        if (p_.verifier.enabled) {
+            const VerifierVerdict verdict = verifier_.verify(c);
+            if (!verdict.accepted) {
+                ++out.n_verified_out;
+                continue;
+            }
+            c.verify_score = verdict.score;
         }
         c.forward_distance = fwd_min;
         out.clusters.push_back(std::move(c));

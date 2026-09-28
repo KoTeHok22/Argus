@@ -92,15 +92,16 @@ def generate_launch_description():
         ["'", bag, "' != '' and '", loop, "'.lower() == 'true'"])
     bag_no_loop = PythonExpression(
         ["'", bag, "' != '' and '", loop, "'.lower() == 'false'"])
+    player = os.path.join(pkg_share, 'scripts', 'bag_play.py')
     processes = [
         ExecuteProcess(
             condition=IfCondition(bag_no_loop),
-            cmd=['ros2', 'bag', 'play', bag, '--rate', rate],
+            cmd=['python3', player, bag, '--topic', lidar_topic, '--rate', rate],
             output='screen',
         ),
         ExecuteProcess(
             condition=IfCondition(bag_with_loop),
-            cmd=['ros2', 'bag', 'play', bag, '--rate', rate, '--loop'],
+            cmd=['python3', player, bag, '--topic', lidar_topic, '--rate', rate, '--loop'],
             output='screen',
         ),
     ]

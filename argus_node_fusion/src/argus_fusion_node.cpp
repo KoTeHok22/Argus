@@ -30,6 +30,7 @@
 #include "argus_core/frame_sync.hpp"
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/supervision.hpp"
 #include "fusion_markers.hpp"
@@ -139,6 +140,8 @@ public:
             declare_parameter<double>("vehicle.visibility_max_range_m", visibility_.max_range_m));
         visibility_margin_m_ =
             static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
+        unknown_visibility_m_ =
+            static_cast<float>(declare_parameter<double>("vehicle.unknown_visibility_m", 30.0));
         classification_.person_min_height_m = static_cast<float>(declare_parameter<double>(
             "classification.person_min_height_m", classification_.person_min_height_m));
         classification_.person_max_height_m = static_cast<float>(declare_parameter<double>(
@@ -177,21 +180,22 @@ public:
         sync_ = std::make_unique<FrameSynchronizer>(sync_params);
 
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
         sub_clean_ = create_subscription<CleanCloudMsg>(
-            "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
+            "/argus/clean", stream_qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
                 const uint64_t key = sync_->add(FrameChannel::cloud, stamp_ns(msg->header.stamp));
                 slots_[key].cloud = msg;
                 try_process(key);
             });
         sub_geometry_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_g", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_g", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key =
                     sync_->add(FrameChannel::geometry, stamp_ns(msg->header.stamp));
                 slots_[key].geometry = msg;
                 try_process(key);
             });
         sub_no_return_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_nr", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_nr", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key =
                     sync_->add(FrameChannel::no_return, stamp_ns(msg->header.stamp));
                 slots_[key].no_return = msg;
@@ -199,7 +203,7 @@ public:
             });
         if (params_.use_temporal_candidates) {
             sub_temporal_ = create_subscription<AnomalySetMsg>(
-                "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+                "/argus/anom_temporal", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                     const uint64_t key =
                         sync_->add(FrameChannel::temporal, stamp_ns(msg->header.stamp));
                     slots_[key].temporal = msg;
@@ -207,12 +211,12 @@ public:
                 });
         }
         sub_free_space_ = create_subscription<AnomalySetMsg>(
-            "/argus/anom_fs", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+            "/argus/anom_fs", stream_qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key = stamp_ns(msg->header.stamp);
                 slots_[key].free_space = msg;
             });
         sub_pose_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/argus/pose", qos, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
+            "/argus/pose", stream_qos, [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr msg) {
                 poses_[stamp_ns(msg->header.stamp)] = to_pose(*msg);
             });
         pub_obstacles_ = create_publisher<ObstacleArray>("/argus/obstacles", qos);
@@ -508,6 +512,18 @@ private:
         if (!sensor_ok_ && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
+        unknown_reason_.clear();
+        if (status == ObstacleArray::STATUS_CLEAR) {
+            const float verified = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
+            if (verified < unknown_visibility_m_) {
+                status = ObstacleArray::STATUS_UNKNOWN;
+                char why[96];
+                std::snprintf(
+                    why, sizeof(why), "недостаточно улик: проверенная дальность %.1f м < %.1f м",
+                    static_cast<double>(verified), static_cast<double>(unknown_visibility_m_));
+                unknown_reason_ = why;
+            }
+        }
         out.status = status;
         out.nearest_range_m = result.alert ? result.nearest_range_m : -1.0f;
         out.obstacles_detected = static_cast<uint32_t>(out.obstacles.size());
@@ -571,6 +587,10 @@ private:
             } else {
                 text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
             }
+        } else if (out.status == ObstacleArray::STATUS_UNKNOWN) {
+            text += "UNKNOWN: ";
+            text += unknown_reason_.empty() ? "недостаточно улик для достоверного CLEAR\n"
+                                            : unknown_reason_ + "\n";
         } else {
             text += format_clear(frames_processed_, fps_);
             text += "\n";
@@ -609,6 +629,8 @@ private:
                 return "WARNING";
             case ObstacleArray::STATUS_DEGRADED:
                 return "DEGRADED";
+            case ObstacleArray::STATUS_UNKNOWN:
+                return "UNKNOWN";
             default:
                 return "CLEAR";
         }
@@ -763,6 +785,16 @@ private:
 
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
                              "полные кадры не поступают, STATUS_DEGRADED (лимит скорости 0)");
+        const FrameSyncStats& ss = sync_->stats();
+        RCLCPP_DEBUG_THROTTLE(get_logger(), *get_clock(), 5000,
+                              "sync: arrivals=%llu snapped=%llu expired=%llu pending=%zu "
+                              "no_cloud=%llu no_geom=%llu no_nr=%llu",
+                              static_cast<unsigned long long>(ss.arrivals),
+                              static_cast<unsigned long long>(ss.snapped),
+                              static_cast<unsigned long long>(ss.expired), sync_->pending(),
+                              static_cast<unsigned long long>(ss.expired_missing_cloud),
+                              static_cast<unsigned long long>(ss.expired_missing_geometry),
+                              static_cast<unsigned long long>(ss.expired_missing_no_return));
     }
 
     struct FrameSlot {
@@ -797,6 +829,8 @@ private:
     BrakingParams braking_;
     VisibilityParams visibility_;
     float visibility_margin_m_ = 10.0f;
+    float unknown_visibility_m_ = 30.0f;
+    std::string unknown_reason_;
     ClassificationParams classification_;
     std::chrono::steady_clock::time_point last_speed_at_{};
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;

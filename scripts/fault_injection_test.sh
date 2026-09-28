@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-BAG="${1:-Datas/dataset/for_hackathon/doubleT_obstacle_smoke}"
+BAG="${1:-${ARGUS_TEST_BAG:-data/recordings/smoke}}"
 
 cleanup() {
     [ -n "${LAUNCH_PID:-}" ] && kill "$LAUNCH_PID" 2>/dev/null || true

@@ -14,6 +14,7 @@
 
 #include "argus_core/cloud_filter.hpp"
 #include "argus_core/ground.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/sensor_health.hpp"
 
@@ -87,12 +88,14 @@ public:
         sensor_health_ = std::make_unique<SensorHealthMonitor>(shp);
 
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
+        auto control_qos_ = control_qos();
         sub_ = create_subscription<PointCloud2>(
-            input_topic_, qos, [this](PointCloud2::ConstSharedPtr msg) { on_cloud(msg); });
-        pub_clean_ = create_publisher<CleanCloudMsg>("/argus/clean", qos);
-        pub_cloud_ = create_publisher<PointCloud2>("/argus/cloud", qos);
-        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics", qos);
-        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+            input_topic_, stream_qos, [this](PointCloud2::ConstSharedPtr msg) { on_cloud(msg); });
+        pub_clean_ = create_publisher<CleanCloudMsg>("/argus/clean", stream_qos);
+        pub_cloud_ = create_publisher<PointCloud2>("/argus/cloud", stream_qos);
+        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics", control_qos_);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", control_qos_);
         heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
             std_msgs::msg::String beat;
             beat.data = get_name();

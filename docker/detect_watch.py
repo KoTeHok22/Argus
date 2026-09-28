@@ -16,6 +16,7 @@ STATUS = {
     ObstacleArray.STATUS_WARNING: "WARNING",
     ObstacleArray.STATUS_BLOCKED: "BLOCKED",
     ObstacleArray.STATUS_DEGRADED: "DEGRADED",
+    ObstacleArray.STATUS_UNKNOWN: "UNKNOWN",
 }
 
 CSV_FIELDS = (

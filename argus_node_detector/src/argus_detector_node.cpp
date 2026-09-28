@@ -11,6 +11,7 @@
 #include <argus_msgs/msg/diagnostics.hpp>
 
 #include "argus_core/anomaly.hpp"
+#include "argus_core/qos.hpp"
 #include "argus_core/range_image.hpp"
 #include "argus_core/types.hpp"
 
@@ -104,13 +105,16 @@ public:
         geom_enabled_ = declare_parameter<bool>("detector_geometry.enabled", true);
         nr_enabled_ = declare_parameter<bool>("detector_no_return.enabled", true);
         auto qos = rclcpp::QoS(10);
+        auto stream_qos = sensor_qos();
+        auto control_qos_ = control_qos();
         sub_ = create_subscription<CleanCloudMsg>(
-            "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
-        pub_geometry_ = create_publisher<AnomalySetMsg>("/argus/anom_g", qos);
-        pub_temporal_ = create_publisher<AnomalySetMsg>("/argus/anom_temporal", qos);
-        pub_no_return_ = create_publisher<AnomalySetMsg>("/argus/anom_nr", qos);
-        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_detector", qos);
-        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+            "/argus/clean", stream_qos,
+            [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
+        pub_geometry_ = create_publisher<AnomalySetMsg>("/argus/anom_g", stream_qos);
+        pub_temporal_ = create_publisher<AnomalySetMsg>("/argus/anom_temporal", stream_qos);
+        pub_no_return_ = create_publisher<AnomalySetMsg>("/argus/anom_nr", stream_qos);
+        pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_detector", control_qos_);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", control_qos_);
         heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
             std_msgs::msg::String beat;
             beat.data = get_name();

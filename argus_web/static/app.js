@@ -21,6 +21,7 @@ const STATUS = {
   WARNING: "ВНИМАНИЕ",
   BLOCKED: "ПРЕПЯТСТВИЕ",
   DEGRADED: "НЕТ ДАННЫХ",
+  UNKNOWN: "МАЛО УЛИК",
   ready: "ГОТОВО",
   incomplete: "НЕ СОБРАНА",
   holdout: "ОТЛОЖЕНА",
@@ -102,6 +103,9 @@ function verdictOf(report, row, view) {
   }
   if (row.status === "DEGRADED") {
     return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен: кадр обработан не полностью", meters: null };
+  }
+  if (row.status === "UNKNOWN") {
+    return { code: "unsure", chip: "МАЛО УЛИК", cls: "warn-text", phrase: "Мало проверенной дальности: путь не подтверждён свободным", meters: null };
   }
   if (row.status === "BLOCKED" && row.nearest_m != null) {
     return {
@@ -700,7 +704,7 @@ async function pageOverview() {
   const job = (bagData.jobs || []).find((j) => j.status === "parsing");
   const bags = bagData.items || [];
   const ready = bags.filter((b) => b.status === "ready" && !b.holdout);
-  const demo = ready.find((b) => b.id === "doubleT_obstacle") || ready[0];
+  const demo = ready[0];
   const allReports = repData.items || [];
   const demoReport = reportForBag(allReports, demo && demo.id);
   const alertFrame = demoReport && demoReport.first_blocked_frame != null ? demoReport.first_blocked_frame : 0;
@@ -866,10 +870,10 @@ async function pageBags() {
         </div>
         <div class="stack" style="gap:14px">
           <label class="field">Имя источника
-            <input id="dz-name" value="new_data" autocomplete="off" spellcheck="false">
+            <input id="dz-name" value="scene" autocomplete="off" spellcheck="false">
           </label>
           <label class="field">Примечание
-            <input id="dz-notes" value="" autocomplete="off" spellcheck="false" placeholder="например: LCT-2026 основной набор">
+            <input id="dz-notes" value="" autocomplete="off" spellcheck="false" placeholder="например: основной набор">
           </label>
           <div class="actions">
             <button id="dz-browse" class="btn accent" type="button">Начать загрузку</button>
@@ -931,7 +935,7 @@ async function pageLive(bagId) {
   const [bagData, repData] = await Promise.all([api("/api/bags"), api("/api/reports")]);
   const bags = bagData.items || [];
   const ready = bags.filter((b) => b.status === "ready" && !b.holdout);
-  const preferred = ready.find((b) => b.id === "doubleT_obstacle") || ready[0];
+  const preferred = ready[0];
   const selected = ready.find((b) => b.id === bagId) || preferred;
   const reports = repData.items || [];
   const report = selected && selected.synthetic ? null : reportForBag(reports, selected && selected.id);

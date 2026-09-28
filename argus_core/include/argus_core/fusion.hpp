@@ -12,6 +12,7 @@
 #include "argus_core/tracking.hpp"
 #include "argus_core/tunnel_model.hpp"
 #include "argus_core/types.hpp"
+#include "argus_core/verifier.hpp"
 
 namespace argus {
 
@@ -44,6 +45,7 @@ struct FusionParams {
     TunnelModelParams model;
     ClusteringParams clustering;
     TrackingParams tracking;
+    VerifierParams verifier;
 };
 
 FusionParams default_fusion_params();
@@ -56,6 +58,7 @@ struct FusionResult {
     uint32_t n_anom_cells = 0;
     uint32_t n_clusters_raw = 0;
     uint32_t n_filtered_out = 0;
+    uint32_t n_verified_out = 0;
     uint32_t n_free_space_points = 0;
     float free_space_violation_rate = 0.0f;
     bool model_ready = false;
@@ -104,6 +107,7 @@ private:
     FusionParams p_;
     ObstacleTracker tracker_;
     TunnelModel model_;
+    ClusterVerifier verifier_;
 };
 
 } // namespace argus

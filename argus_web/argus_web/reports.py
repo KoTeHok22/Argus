@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 from pathlib import Path
 
 from argus_web.paths import results_root, runs_root
@@ -12,6 +13,7 @@ STATUS_LABEL = {
     "WARNING": "внимание",
     "BLOCKED": "препятствие",
     "DEGRADED": "нет данных",
+    "UNKNOWN": "недостаточно улик",
 }
 
 
@@ -163,6 +165,7 @@ def summarize_latency(rows: list[dict]) -> dict:
         "blocked": len(blocked),
         "clear": len(clear),
         "degraded": statuses.get("DEGRADED", 0),
+        "unknown": statuses.get("UNKNOWN", 0),
         "statuses": statuses,
         "nearest_m": min(nearest) if nearest else None,
         "first_blocked_frame": first_blocked,
@@ -225,18 +228,11 @@ def summarize_fusion(rows: list[dict]) -> dict:
 
 
 def _guess_bag(stem: str) -> str | None:
-    mapping = (
-        ("obstacle", "doubleT_obstacle"),
-        ("platform", "doubleT_platform"),
-        ("new_data", "new_data"),
-        ("head", "new_data"),
-        ("t28", "doubleT_obstacle"),
-    )
-    low = stem.lower()
-    for key, name in mapping:
-        if key in low:
-            return name
-    return None
+    match = re.match(r"^(.+?)(?:_\d{8}_\d{6}|_run|_params)?$", stem.lower())
+    if not match:
+        return None
+    candidate = match.group(1)
+    return candidate or None
 
 
 def _title(path: Path) -> str:
