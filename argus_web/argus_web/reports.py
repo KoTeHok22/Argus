@@ -44,7 +44,7 @@ def _read_rows(path: Path) -> tuple[list[str], list[dict]]:
         (
             i
             for i, line in enumerate(text)
-            if line.startswith("stamp_ns,") or line.startswith("frame,")
+            if line.startswith(("stamp_ns,", "frame,", "source_frame,"))
         ),
         None,
     )
