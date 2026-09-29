@@ -3,9 +3,75 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 
 namespace argus {
+
+namespace {
+
+float cluster_box_gap(const Cluster& a, const Cluster& b) {
+    const Eigen::Vector3f gap = (a.min_corner - b.max_corner)
+                                    .cwiseMax(b.min_corner - a.max_corner)
+                                    .cwiseMax(Eigen::Vector3f::Zero());
+    return gap.norm();
+}
+
+void merge_cluster_into(Cluster& target, Cluster source) {
+    target.indices.insert(target.indices.end(), source.indices.begin(), source.indices.end());
+    const float target_weight = static_cast<float>(target.point_count);
+    const float source_weight = static_cast<float>(source.point_count);
+    const float total_weight = target_weight + source_weight;
+    target.centroid =
+        (target.centroid * target_weight + source.centroid * source_weight) / total_weight;
+    target.min_corner = target.min_corner.cwiseMin(source.min_corner);
+    target.max_corner = target.max_corner.cwiseMax(source.max_corner);
+    target.nearest_range = std::min(target.nearest_range, source.nearest_range);
+    target.point_count += source.point_count;
+    target.volume = (target.max_corner - target.min_corner).prod();
+    target.score = std::max(target.score, source.score);
+}
+
+std::vector<Cluster> merge_temporal_clusters(std::vector<Cluster> clusters,
+                                             const std::unordered_set<uint32_t>& temporal_indices,
+                                             const std::unordered_set<uint32_t>& geometry_indices,
+                                             float merge_distance, float max_extent) {
+    std::vector<Cluster> merged;
+    for (Cluster cluster : clusters) {
+        const bool temporal_only =
+            std::all_of(cluster.indices.begin(), cluster.indices.end(), [&](uint32_t idx) {
+                return temporal_indices.count(idx) != 0 && geometry_indices.count(idx) == 0;
+            });
+        if (!temporal_only) {
+            merged.push_back(std::move(cluster));
+            continue;
+        }
+        bool joined = false;
+        for (Cluster& existing : merged) {
+            const bool existing_temporal_only =
+                std::all_of(existing.indices.begin(), existing.indices.end(), [&](uint32_t idx) {
+                    return temporal_indices.count(idx) != 0 && geometry_indices.count(idx) == 0;
+                });
+            if (!existing_temporal_only || cluster_box_gap(existing, cluster) > merge_distance) {
+                continue;
+            }
+            const Eigen::Vector3f min_corner = existing.min_corner.cwiseMin(cluster.min_corner);
+            const Eigen::Vector3f max_corner = existing.max_corner.cwiseMax(cluster.max_corner);
+            if ((max_corner - min_corner).maxCoeff() > max_extent) {
+                continue;
+            }
+            merge_cluster_into(existing, std::move(cluster));
+            joined = true;
+            break;
+        }
+        if (!joined) {
+            merged.push_back(std::move(cluster));
+        }
+    }
+    return merged;
+}
+
+}
 
 FusionParams default_fusion_params() {
     return FusionParams{};
@@ -49,30 +115,45 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
                                     const AnomalySet& free_space, float dt, float train_speed_mps,
                                     const Eigen::Isometry3d& pose, bool caller_drives_model,
                                     bool pose_valid) {
+    return update(cloud, ri, geometry, no_return, AnomalySet{}, free_space, dt, train_speed_mps,
+                  pose, caller_drives_model, pose_valid);
+}
+
+FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& ri,
+                                    const AnomalySet& geometry, const AnomalySet& no_return,
+                                    const AnomalySet& temporal, const AnomalySet& free_space,
+                                    float dt, float train_speed_mps, const Eigen::Isometry3d& pose,
+                                    bool caller_drives_model, bool pose_valid) {
     FusionResult out;
     out.n_anom_points = static_cast<uint32_t>(geometry.indices.size());
     out.n_anom_cells = static_cast<uint32_t>(no_return.cells.size());
     out.pose_used = pose_valid;
 
     AnomalySet merged;
-    merged.indices.reserve(geometry.indices.size());
-    for (uint32_t idx : geometry.indices) {
-        if (idx >= cloud.size()) {
-            continue;
-        }
-        if (!cloud.ground_mask.empty() && idx < cloud.ground_mask.size() &&
-            cloud.ground_mask[idx] != 0) {
-            continue;
-        }
-        if (p_.ground_filter) {
-            const float z_rel = cloud.z[idx] + gauge_.params().sensor_height;
-            const float lat =
-                std::fabs(cloud.x[idx] * gauge_.left_x() + cloud.y[idx] * gauge_.left_y());
-            if (z_rel < p_.ground_clearance_m && lat < p_.rail_zone_m) {
+    merged.indices.reserve(geometry.indices.size() + temporal.indices.size());
+    const auto append_source = [&](const AnomalySet& source) {
+        for (uint32_t idx : source.indices) {
+            if (idx >= cloud.size()) {
                 continue;
             }
+            if (!cloud.ground_mask.empty() && idx < cloud.ground_mask.size() &&
+                cloud.ground_mask[idx] != 0) {
+                continue;
+            }
+            if (p_.ground_filter) {
+                const float z_rel = cloud.z[idx] + gauge_.params().sensor_height;
+                const float lat =
+                    std::fabs(cloud.x[idx] * gauge_.left_x() + cloud.y[idx] * gauge_.left_y());
+                if (z_rel < p_.ground_clearance_m && lat < p_.rail_zone_m) {
+                    continue;
+                }
+            }
+            merged.indices.push_back(idx);
         }
-        merged.indices.push_back(idx);
+    };
+    append_source(geometry);
+    if (p_.use_temporal_candidates) {
+        append_source(temporal);
     }
 
     const bool prior_ready =
@@ -90,12 +171,32 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         }
     }
 
-    const std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
+    std::vector<Cluster> all = cluster_anomalies(cloud, ri, merged, p_.clustering);
+    std::unordered_set<uint32_t> temporal_indices;
+    std::unordered_set<uint32_t> geometry_indices;
+    if (p_.use_temporal_candidates) {
+        for (uint32_t idx : temporal.indices) {
+            temporal_indices.insert(idx);
+        }
+    }
+    for (uint32_t idx : geometry.indices) {
+        geometry_indices.insert(idx);
+    }
+    if (p_.use_temporal_candidates && all.size() > 1) {
+        all = merge_temporal_clusters(std::move(all), temporal_indices, geometry_indices,
+                                      p_.temporal_merge_distance_m, p_.temporal_max_extent_m);
+    }
 
     std::vector<float> cloud_score(cloud.size(), 0.0f);
     for (size_t i = 0; i < geometry.indices.size() && i < geometry.score.size(); ++i) {
         if (geometry.indices[i] < cloud.size()) {
             cloud_score[geometry.indices[i]] = geometry.score[i];
+        }
+    }
+    for (size_t i = 0; i < temporal.indices.size() && i < temporal.score.size(); ++i) {
+        if (temporal.indices[i] < cloud.size()) {
+            cloud_score[temporal.indices[i]] =
+                std::max(cloud_score[temporal.indices[i]], temporal.score[i]);
         }
     }
 
@@ -113,7 +214,24 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
 
     out.n_clusters_raw = static_cast<uint32_t>(all.size());
     for (Cluster c : all) {
-        c.votes_geometry = 1;
+        const bool has_geometry =
+            std::any_of(c.indices.begin(), c.indices.end(), [&](uint32_t idx) {
+                return idx < cloud.size() &&
+                       std::find(geometry.indices.begin(), geometry.indices.end(), idx) !=
+                           geometry.indices.end();
+            });
+        const bool has_temporal =
+            std::any_of(c.indices.begin(), c.indices.end(),
+                        [&](uint32_t idx) { return temporal_indices.count(idx) != 0; });
+        c.votes_geometry = has_geometry ? 1 : 0;
+        c.votes_temporal = has_temporal ? 1 : 0;
+        const float max_extent = (c.max_corner - c.min_corner).maxCoeff();
+        if (has_temporal && !has_geometry &&
+            (c.point_count < p_.temporal_min_cluster_size ||
+             max_extent < p_.temporal_min_extent_m || max_extent > p_.temporal_max_extent_m)) {
+            ++out.n_filtered_out;
+            continue;
+        }
         uint32_t free_space_points = 0;
         float fwd_min = -1.0f;
         bool in_gauge = false;
@@ -155,6 +273,21 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
     }
 
     out.tracks = tracker_.update(out.clusters, dt, train_speed_mps);
+    for (const Cluster& cluster : out.clusters) {
+        const uint32_t votes = static_cast<uint32_t>(cluster.votes_free_space) +
+                               static_cast<uint32_t>(cluster.votes_no_return) +
+                               static_cast<uint32_t>(cluster.votes_geometry) +
+                               static_cast<uint32_t>(cluster.votes_temporal);
+        if (votes < p_.min_votes_for_alert) {
+            continue;
+        }
+        const auto confirmed =
+            std::any_of(out.tracks.begin(), out.tracks.end(), [&](const Track& track) {
+                return track.confirmed && (track.state.head<3>() - cluster.centroid).norm() <
+                                              p_.tracking.max_association_distance;
+            });
+        if (!confirmed) out.candidates.push_back(cluster);
+    }
 
     for (const Track& t : out.tracks) {
         out.nearest_range_m = out.nearest_range_m < 0.0f
@@ -177,8 +310,11 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         for (const Track& t : out.tracks) {
             const uint32_t votes = static_cast<uint32_t>(t.votes_free_space) +
                                    static_cast<uint32_t>(t.votes_no_return) +
-                                   static_cast<uint32_t>(t.votes_geometry);
-            if (t.confirmed && votes >= p_.min_votes_for_alert) {
+                                   static_cast<uint32_t>(t.votes_geometry) +
+                                   static_cast<uint32_t>(t.votes_temporal);
+            const bool stale_far_track = t.nearest_range >= p_.strict_track_freshness_range_m &&
+                                         t.consecutive_misses > p_.max_confirmed_track_misses;
+            if (t.confirmed && !stale_far_track && votes >= p_.min_votes_for_alert) {
                 out.alert = true;
                 break;
             }
@@ -187,7 +323,8 @@ FusionResult FusionPipeline::update(const CleanCloud& cloud, const RangeImage& r
         for (const Cluster& c : out.clusters) {
             const uint32_t votes = static_cast<uint32_t>(c.votes_free_space) +
                                    static_cast<uint32_t>(c.votes_no_return) +
-                                   static_cast<uint32_t>(c.votes_geometry);
+                                   static_cast<uint32_t>(c.votes_geometry) +
+                                   static_cast<uint32_t>(c.votes_temporal);
             if (votes >= p_.min_votes_for_alert) {
                 out.alert = true;
                 break;

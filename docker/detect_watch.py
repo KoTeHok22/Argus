@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 from collections import defaultdict
 
@@ -18,10 +19,13 @@ STATUS = {
 }
 
 CSV_FIELDS = (
+    "source_frame",
     "stamp_ns",
     "status",
     "nearest_m",
     "objects",
+    "obstacles_json",
+    "candidates_json",
     "fps",
     "t_filter_ms",
     "t_range_image_ms",
@@ -90,10 +94,44 @@ class Watch(Node):
         self.frames += 1
         name = STATUS.get(msg.status, str(msg.status))
         row = self.rows[key]
+        row["source_frame"] = self.frames - 1
         row["stamp_ns"] = key
         row["status"] = name
         row["nearest_m"] = msg.nearest_range_m
         row["objects"] = msg.obstacles_detected
+        row["obstacles_json"] = json.dumps(
+            [
+                {
+                    "track_id": obstacle.track_id,
+                    "position": [obstacle.position.x, obstacle.position.y, obstacle.position.z],
+                    "extent": [obstacle.extent.x, obstacle.extent.y, obstacle.extent.z],
+                    "range_m": obstacle.range_m,
+                    "point_count": obstacle.point_count,
+                    "reason": obstacle.reason,
+                }
+                for obstacle in msg.obstacles
+            ],
+            separators=(",", ":"),
+        )
+        row["candidates_json"] = json.dumps(
+            [
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "position": [candidate.position.x, candidate.position.y, candidate.position.z],
+                    "extent": [candidate.extent.x, candidate.extent.y, candidate.extent.z],
+                    "range_m": candidate.range_m,
+                    "confidence": candidate.confidence,
+                    "votes_free_space": candidate.votes_free_space,
+                    "votes_no_return": candidate.votes_no_return,
+                    "votes_geometry": candidate.votes_geometry,
+                    "votes_temporal": candidate.votes_temporal,
+                    "point_count": candidate.point_count,
+                    "reason": candidate.reason,
+                }
+                for candidate in msg.candidates
+            ],
+            separators=(",", ":"),
+        )
         row["fps"] = msg.fps
         row["t_fusion_ms"] = msg.processing_ms
         pre = (

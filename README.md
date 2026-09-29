@@ -1,103 +1,79 @@
 # Argus
 
-Посторонний объект в габарите поезда по облаку 3D-лидара.
-
-Инструмент обработки пространственных данных.
-
-На каждом кадре система отвечает: есть ли препятствие в габарите 3×2.1 м и на каком расстоянии. Не нейросеть и не детектор «объектов вообще»: модель нормы тоннеля и отклонения от неё.
+Инструмент обработки пространственных данных и анализа последовательностей измерений.
 
 ## Быстрый старт
 
 ```bash
+docker compose -f docker/docker-compose.yml up --build ui
+```
+
+Панель открывается на `http://localhost:8080`.
+
+Прогон записи:
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm argus detect /data/<recording>
+```
+
+Без compose:
+
+```bash
 ./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
-docker run --rm --shm-size=256m \
-    -v "$PWD/data/recordings":/data argus \
-    detect /data/doubleT_obstacle
+docker run --rm --ipc=host --shm-size=256m \
+     -v "$PWD/data/recordings":/data \
+     argus detect /data/<recording>
 ```
 
-`--shm-size=256m` обязателен. Кадр Hesai ~24 МБ; без флага Fast-DDS не отдаёт `PointCloud2`, fusion уходит в `STATUS_DEGRADED` и тревоги нет.
+`--ipc=host` и `--shm-size=256m` нужны для крупных сообщений.
 
-Панель в браузере (загрузка `.zst`, эфир облака, отчёт):
+Панель без Docker: `./scripts/run_ui.sh`, в Windows — `$env:PYTHONPATH="argus_web"; python -m argus_web`.
 
-```bash
-docker run --rm --shm-size=256m -p 8080:8080 \
-    -v "$PWD/data":/data \
-    -v "$PWD/results":/ws/results \
-    argus ui
-```
+## Режимы контейнера
 
-Открыть `http://localhost:8080`. Без Docker:
+| Команда | Назначение |
+|---|---|
+| `detect <recording> [rate] [params]` | Прогон записи с выводом результата |
+| `demo <recording>` | Прогон с визуализацией RViz2 |
+| `eval <recording>` | Отчёт по прогону |
+| `ui` | Панель в браузере |
+| `shell` | Оболочка внутри образа |
+| `help` | Справка (по умолчанию) |
 
-```bash
-./scripts/run_ui.sh
-```
-
-Windows:
-
-```powershell
-$env:PYTHONPATH="argus_web"; python -m argus_web
-```
-
-Ожидаемый лог на `doubleT_obstacle`: `ALERT BLOCKED` около 16.9 м. Топик лидара читается из `metadata.yaml` (у этого бэга он не `/lidar_points`).
-
-```bash
-docker run --rm --shm-size=256m -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v "$PWD/data/recordings":/data argus demo /data/doubleT_obstacle
-```
-
-RViz показывает `/argus/cloud`, габарит и бокс 16.9 м. Запись экрана: `docs/video/argus_demo.mp4`.
-
-Без Docker (ROS 2 Humble):
-
-```bash
-./scripts/fetch_third_party.sh
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
-ros2 launch argus_launch argus.launch.py \
-    bag:=data/recordings/doubleT_obstacle \
-    lidar_topic:=/sensing/lidar/hesai128/pointcloud
-```
-
-## Что система делает
+## Что делает система
 
 1. Читает `PointCloud2` по фактической раскладке `fields[]`.
 2. Отбрасывает мусор и помечает лучи без возврата.
-3. Режет пол и рельсы порогом по Z в колее (Patchwork++ остаётся опцией).
-4. Ищет геометрический остаток относительно профиля стен и серии дыр в возвратах.
-5. Оставляет только то, что попало в габарит поезда, и подтверждает треком.
+3. Вычитает пол и рельсы порогом по Z. Метод по умолчанию — `z_threshold`; Patchwork++ доступен как опция.
+4. Ищет геометрические отклонения и подтверждает их во времени.
+5. Формирует результат и диагностические события.
 
-Карта свободного пространства и 4DoF-одометрия есть, но голос карты по умолчанию выключен: на платформе он даёт ложные тревоги, а детекция F-D от него не зависит.
+## Проверки
 
-## Что проверено
+```bash
+scripts/ci/all.sh      # lint + build + test
+```
 
-| Данные | Результат |
+## Структура
+
+| Путь | Назначение |
 |---|---|
-| `doubleT_obstacle`, 200 кадров | 197 тревог с кадра 3, 16.8 м впереди |
-| `doubleT_platform`, 200 кадров | 0 тревог |
-| `new_data` голова `_0`/`_1` | узкий тоннель, трогание, 0 тревог |
-| `new_data` `_29`…`_31` | стоянка у широкого сечения, 0 тревог |
-| `new_data` `_110`/`_111` | 5 тревог на 5 м — плоский край, не вклейка |
-
-Конфиг: `argus_launch/config/argus_params.yaml`, SHA-256 `9352a301b50514745a43b531debde2f6e27e21176c84554a3c1024f55906a344`.
-
-Живой `detect` на полном `doubleT_obstacle` (201 кадр): **198 BLOCKED** на 16.9 м, путь тревоги **28.5 мс / p95 32 мс**. Офлайн-одометрия на platform: 87 мс/кадр.
-
-## Предел дальности
-
-Подтверждённая тревога — **16.9 м** на реальном препятствии. Конфиг режет цель дальше **45 м** (`detector_geometry.max_target_range_m`). Поднимать этот порог нечего: на прямом участке объект в проёме оказывается дальше боковых стен, и признак «ближе локальной стены» даёт отрицательный остаток. Синтетическая тележка на 60 м это показала: стена за ней есть, остаток отрицательный, тревоги нет. Генератор вклейки не создаёт точки в пустых лучах, поэтому 150–200 м им не измеряются. Это предел метода, не недокрученный порог. Подробности: `docs/EXPERIMENTS.md`.
+| `argus_core` | Алгоритмы, C++ тесты, CLI `offline_detector` |
+| `argus_msgs` | Сообщения ROS 2 |
+| `argus_node_*` | Ноды обработки |
+| `argus_launch` | Launch-файлы и конфиги |
+| `argus_eval` | Метрики и оценка |
+| `argus_web` | Панель в браузере |
+| `docker` | Образы и точка входа |
+| `scripts` | Сборка, CI, синтетика |
+| `third_party` | `argus.repos` |
 
 ## Документы
 
 | Документ | О чём |
 |---|---|
-| [`docs/ALGORITHM.md`](docs/ALGORITHM.md) | Как устроен конвейер |
-| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали и что отвергли |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Пакеты и граф нод |
-| [`docs/DATA_FORMAT.md`](docs/DATA_FORMAT.md) | Раскладка PointCloud2 |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Сборка и запуск |
-| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Частые отказы |
+| [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) | Что пробовали, что отвергли и почему |
 
 ## Требования
 

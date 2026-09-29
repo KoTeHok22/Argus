@@ -43,7 +43,10 @@ void ClearanceGauge::from_gauge(float gx, float gy, float& x, float& y) const {
 bool ClearanceGauge::contains(float x, float y, float z) const {
     float gx = 0.0f, gy = 0.0f;
     to_gauge(x, y, gx, gy);
+    return contains_at_path(gx, gy, z);
+}
 
+bool ClearanceGauge::contains_at_path(float gx, float gy, float z) const {
     const float x_min = p_.nose_offset - p_.safety_margin;
     const float x_max = p_.max_range;
     if (gx < x_min || gx > x_max) {

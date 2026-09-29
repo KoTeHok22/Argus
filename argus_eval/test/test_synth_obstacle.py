@@ -19,6 +19,21 @@ def test_ray_hits_box_in_front():
     assert abs(tmin[0] - 10.0) < 1e-6
 
 
+def test_custom_dimensions_override_preset_and_are_recorded():
+    points = np.zeros(1, dtype=np.dtype([
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4"),
+    ]))
+    points["y"] = -150.0
+    points["raw"] = 0
+    output, _, truth = insert_box(
+        points, 60.0, "person", dimensions=(1.0, 3.0, 2.1),
+    )
+    assert truth["dimensions_m"] == [1.0, 3.0, 2.1]
+    assert truth["rays_replaced"] == 1
+    assert abs(float(output["y"][0]) + 60.0) < 1e-6
+    assert truth["range_delta_max_m"] > 0.0
+
+
 def test_ray_misses_beside_box():
     origin = np.zeros(3)
     directions = np.array([[0.0, -1.0, 0.2]])
@@ -132,7 +147,50 @@ def test_world_fixed_cli_preserves_scene_and_records_per_frame_truth(tmp_path, m
     assert generated[2][2]["y"][0] == pytest.approx(-15.0, abs=0.1)
     report = json.loads(truth.read_text(encoding="utf-8"))
     assert report["mode"] == "world_fixed"
+    assert len(report["frames"]) == 3
     assert report["frames"][0]["distance_m"] is None
     assert [frame["distance_m"] for frame in report["frames"][1:]] == pytest.approx([20, 15])
     assert [frame["rays_replaced"] for frame in report["frames"]] == [0, 1, 1]
     assert len(report["frames"][2]["box_corners_sensor"]) == 8
+
+
+def test_sensor_fixed_cli_records_truth_for_every_frame(tmp_path, monkeypatch):
+    source = tmp_path / "source.frames"
+    output = tmp_path / "output.frames"
+    truth = tmp_path / "truth.json"
+    points = np.array([(0.0, -40.0, -0.5, 1.0, 0)], dtype=[
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+    ])
+    frames = [(float(index), 1, points, np.empty(0, dtype="<u4")) for index in range(4)]
+    write_frames(source, frames)
+    monkeypatch.setattr(sys, "argv", [
+        "synth_obstacle.py", str(source), "--out", str(output), "--truth", str(truth),
+        "--distance", "20", "--length", "1", "--width", "0.5", "--height", "1",
+        "--frames", "4", "--start-frame", "2",
+    ])
+    main()
+    generated = read_frames(output)
+    report = json.loads(truth.read_text(encoding="utf-8"))
+    assert len(generated) == 4
+    assert report["mode"] == "sensor_fixed"
+    assert len(report["frames"]) == 4
+    assert [frame["rays_replaced"] for frame in report["frames"]] == [0, 0, 1, 1]
+
+
+def test_sensor_fixed_truth_records_range_separability(tmp_path, monkeypatch):
+    source = tmp_path / "source.frames"
+    output = tmp_path / "output.frames"
+    truth = tmp_path / "truth.json"
+    points = np.array([(0.0, -40.0, 0.0, 1.0, 0)], dtype=[
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+    ])
+    write_frames(source, [(0.0, 1, points, np.empty(0, dtype="<u4"))])
+    monkeypatch.setattr(sys, "argv", [
+        "synth_obstacle.py", str(source), "--out", str(output), "--truth", str(truth),
+        "--distance", "20", "--length", "1", "--width", "1", "--height", "1",
+        "--frames", "1", "--pod", "1", "--vertical", "1.2",
+    ])
+    main()
+    report = json.loads(truth.read_text(encoding="utf-8"))
+    assert report["frames"][0]["rays_replaced"] == 1
+    assert report["frames"][0]["range_delta_max_m"] > 1.0

@@ -157,6 +157,26 @@ TEST(Ground, ZThresholdMasksRailKeepsObstacle) {
     EXPECT_EQ(st.n_rail_fallback, 40u);
 }
 
+TEST(Ground, CalibratedHeightChangesGroundClassification) {
+    argus::CleanCloud cloud;
+    cloud.x = {0.0f, 0.0f, 0.0f};
+    cloud.y = {-10.0f, -10.0f, -10.0f};
+    cloud.z = {-0.60f, -1.075f, 0.47f};
+    cloud.intensity = {1.0f, 1.0f, 1.0f};
+
+    argus::GroundParams params;
+    params.method = argus::GroundMethod::ZThreshold;
+    params.sensor_height = 1.075f;
+    argus::GroundSegmenter calibrated(params);
+    calibrated.apply(cloud);
+    EXPECT_EQ(cloud.ground_mask, (std::vector<uint8_t>{1, 1, 0}));
+
+    params.sensor_height = 1.20f;
+    argus::GroundSegmenter legacy(params);
+    legacy.apply(cloud);
+    EXPECT_EQ(cloud.ground_mask, (std::vector<uint8_t>{0, 1, 0}));
+}
+
 TEST(Fusion, GroundMaskDropsRailsWithoutFallbackFilter) {
     argus::CleanCloud cloud;
     std::vector<uint32_t> rail_idx, object_idx;

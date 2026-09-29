@@ -28,8 +28,12 @@ uint32_t min_cluster_size_at(const ClusteringParams& p, float nearest_range_m) {
     const float r_near = std::max(0.001f, p.size_near_range_m);
     const float r_mid = std::max(r_near + 0.001f, p.size_mid_range_m);
     const float r_far = std::max(r_mid + 0.001f, p.size_far_range_m);
+    const float r_long = std::max(r_mid + 0.001f, p.size_long_range_m);
     if (r <= r_near) {
         return std::max(1u, p.min_cluster_size_near);
+    }
+    if (p.size_long_range_m < r_far && r >= r_long) {
+        return std::max(1u, p.min_cluster_size_long);
     }
     if (r >= r_far) {
         return std::max(1u, p.min_cluster_size_far);

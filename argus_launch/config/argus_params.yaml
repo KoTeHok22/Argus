@@ -22,7 +22,7 @@
     ground_segmentation:
       enabled: true
       method: z_threshold
-      sensor_height: -1.20
+      sensor_height: -1.075
       num_zones: 4
       num_sectors: 0
       enable_RNR: true
@@ -90,14 +90,27 @@
     detector_geometry:
       enabled: true
       median_half_window: 100
+      median_window_override_min_range_m: 18.5
+      median_window_override_max_range_m: 40.0
+      median_half_window_override: 200
       residual_threshold_m: 1.0
+      residual_threshold_far_m: 1.0
       min_cells: 50
       min_fill: 0.3
       min_range: 4.0
-      max_target_range_m: 45.0
+      max_target_range_m: 150.0
+      far_range_m: 60.0
+      min_cells_far: 8
+      min_fill_far: 0.12
       min_stable_frames: 2
       az_tolerance: 20
       range_tolerance_m: 3.0
+
+    detector_temporal:
+      window_frames: 5
+      residual_threshold_m: 0.5
+      min_range_m: 4.0
+      max_range_m: 45.0
 
     detector_free_space:
       enabled: true
@@ -115,7 +128,7 @@
       base_offset: 0.20
       chamfer: 0.20
       nose_offset: 0.00
-      sensor_height: 1.20
+      sensor_height: 1.075
       max_range: 300.0
       safety_margin: 0.10
 
@@ -129,6 +142,8 @@
       size_near_range_m: 60.0
       size_mid_range_m: 120.0
       size_far_range_m: 200.0
+      min_cluster_size_long: 2
+      size_long_range_m: 300.0
       max_cluster_size: 20000
       min_extent_m: 0.20
       max_extent_m: 5.00
@@ -144,7 +159,14 @@
       measurement_noise: 0.3
 
     fusion:
+      use_temporal_candidates: false
+      temporal_min_cluster_size: 10
+      temporal_min_extent_m: 0.15
+      temporal_max_extent_m: 2.5
+      temporal_merge_distance_m: 0.75
       min_votes_for_alert: 1
+      max_confirmed_track_misses: 4
+      strict_track_freshness_range_m: 90.0
       require_confirmed_track: true
       critical_range_m: 50.0
       warning_range_m: 150.0

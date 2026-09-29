@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pytest
 import struct
 import sys
 from pathlib import Path
@@ -35,13 +36,108 @@ def test_summarize_latency_blocked():
         {"status": "DEGRADED", "nearest_m": "-1", "objects": "0", "fps": "0", "t_alert_path_ms": "0"},
     ]
     out = summarize_latency(rows)
-    assert out["frames"] == 3
+    assert out["frames"] == 4
     assert out["blocked"] == 2
     assert out["clear"] == 1
     assert out["degraded"] == 1
     assert abs(out["nearest_m"] - 16.9) < 1e-6
     assert out["first_blocked_frame"] == 1
     assert out["rows"][1]["status_label"] == "препятствие"
+    assert out["rows"][3]["status"] == "DEGRADED"
+
+
+def test_summarize_latency_preserves_source_frame_numbers():
+    out = summarize_latency([
+        {"source_frame": "370", "frame": "370", "status": "DEGRADED", "nearest_m": "-1"},
+    ])
+    assert out["rows"][0]["source_index"] == 370
+
+
+def test_summarize_latency_keeps_every_degraded_frame():
+    out = summarize_latency([
+        {"source_frame": "368", "status": "CLEAR", "nearest_m": "-1"},
+        {"source_frame": "369", "status": "DEGRADED", "nearest_m": "-1"},
+        {"source_frame": "370", "status": "DEGRADED", "nearest_m": "-1"},
+        {"source_frame": "371", "status": "CLEAR", "nearest_m": "-1"},
+    ])
+    assert out["frames"] == 4
+    assert [row["source_index"] for row in out["rows"]] == [368, 369, 370, 371]
+    assert [row["status"] for row in out["rows"]] == ["CLEAR", "DEGRADED", "DEGRADED", "CLEAR"]
+
+
+def test_summarize_latency_includes_unprofiled_blocked_rows():
+    rows = [
+        {"status": "BLOCKED", "nearest_m": "12.5", "objects": "1", "fps": "10", "t_alert_path_ms": ""},
+        {"status": "CLEAR", "nearest_m": "-1", "objects": "0", "fps": "10", "t_alert_path_ms": ""},
+    ]
+    out = summarize_latency(rows)
+    assert out["frames"] == 2
+    assert out["blocked"] == 1
+    assert out["clear"] == 1
+
+
+def test_summarize_latency_reads_obstacle_geometry():
+    rows = [
+        {
+            "stamp_ns": "123",
+            "status": "BLOCKED",
+            "nearest_m": "16.9",
+            "objects": "1",
+            "obstacles_json": '[{"track_id":7,"position":[1,-16,0.5],"extent":[0.3,0.4,0.8],"point_count":12,"reason":"geometry"}]',
+        }
+    ]
+    row = summarize_latency(rows)["rows"][0]
+    assert row["obstacles"][0]["track_id"] == 7
+    assert row["obstacles"][0]["extent"] == [0.3, 0.4, 0.8]
+
+
+def test_summarize_latency_exposes_candidates_without_confirming_them():
+    row = summarize_latency([
+        {
+            "stamp_ns": "123",
+            "status": "DEGRADED",
+            "nearest_m": "-1",
+            "objects": "1",
+            "candidates_json": '[{"candidate_id":9,"position":[0.4,-12,0.3],"extent":[0.3,0.4,0.8],"point_count":6,"reason":"geometry"}]',
+        }
+    ])["rows"][0]
+    assert row["status"] == "DEGRADED"
+    assert row["candidates"][0]["candidate_id"] == 9
+    assert row["candidates"][0]["extent"] == [0.3, 0.4, 0.8]
+
+
+def test_lab_source_list_contains_real_frame_sources():
+    from argus_web.lab import sources
+
+    items = sources()
+    assert items
+    assert all(item["id"] and item["name"] for item in items)
+
+
+def test_lab_rejects_unknown_frame_source():
+    from argus_web.lab import create
+
+    with pytest.raises(ValueError, match="Источник кадров не найден"):
+        create("not-a-real-source", {"length": 1, "width": 1, "height": 1, "distance": 20, "lateral": 0, "vertical": 0})
+
+
+def test_lab_frame_reads_generated_argfrm(tmp_path):
+    import struct
+    import numpy as np
+    from argus_web.cloud import load_frame
+
+    points = np.array([(1.0, -10.0, 0.5, 1.0, 0)], dtype=[
+        ("x", "<f4"), ("y", "<f4"), ("z", "<f4"), ("i", "<f4"), ("raw", "<u4")
+    ])
+    with (tmp_path / "cloud.argfrm").open("wb") as stream:
+        stream.write(b"ARGFRM1\0")
+        stream.write(struct.pack("<I", 1))
+        stream.write(struct.pack("<dIII", 1.0, 1, 1, 0))
+        stream.write(points.tobytes())
+    frame = load_frame(tmp_path, 0)
+    assert frame["total"] == 1
+    assert frame["points"] == 1
+    assert frame["xyz"].tolist() == [[1.0, -10.0, 0.5]]
 
 
 def test_load_report_fusion(tmp_path: Path):
@@ -146,6 +242,70 @@ def test_save_gauge_then_reset(tmp_path: Path, monkeypatch):
     restored = reset_gauge()
     assert restored["half_width"] == 1.5
     assert not (tmp_path / "ui" / "params.yaml").exists()
+
+
+def test_active_params_file_prefers_ui_override(tmp_path: Path, monkeypatch):
+    from argus_web import runner
+
+    base = tmp_path / "argus_params.yaml"
+    override = tmp_path / "params.yaml"
+    base.write_text("base", encoding="utf-8")
+    override.write_text("override", encoding="utf-8")
+    monkeypatch.setattr(runner, "params_yaml", lambda: base)
+    monkeypatch.setattr(runner, "ui_params_yaml", lambda: override)
+    assert runner.active_params_file() == override
+
+
+def test_saved_gauge_overrides_detector_configuration(tmp_path: Path, monkeypatch):
+    from argus_web import align, runner
+
+    base = tmp_path / "argus_params.yaml"
+    base.write_text(
+        "/**:\n  ros__parameters:\n    gauge:\n"
+        "      half_width: 1.50\n      safety_margin: 0.10\n"
+        "    fusion:\n      min_votes_for_alert: 1\n",
+        encoding="utf-8",
+    )
+    override = tmp_path / "params.yaml"
+    monkeypatch.setattr(align, "params_yaml", lambda: base)
+    monkeypatch.setattr(align, "ui_params_yaml", lambda: override)
+    monkeypatch.setattr(runner, "params_yaml", lambda: base)
+    monkeypatch.setattr(runner, "ui_params_yaml", lambda: override)
+    save_gauge({"half_width": 1.7, "safety_margin": 0.08})
+    assert runner.active_params_file() == override
+    text = override.read_text(encoding="utf-8")
+    assert text.startswith("/**:\n  ros__parameters:\n")
+    assert "half_width: 1.7000" in text
+    assert "safety_margin: 0.0800" in text
+    assert "min_votes_for_alert: 1" in text
+
+
+def test_docker_run_mounts_active_gauge(tmp_path: Path, monkeypatch):
+    from argus_web import runner
+
+    override = tmp_path / "params.yaml"
+    override.write_text("/**:\n", encoding="utf-8")
+    monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
+    cmd = runner._detect_cmd(
+        {"id": "sample", "path": str(tmp_path / "sample")},
+        1.0, tmp_path / "result.csv",
+    )
+    assert f"{tmp_path}:/tmp/argus_runs" in cmd
+    assert cmd[-1] == "/tmp/argus_runs/result_params.yaml"
+
+
+def test_docker_runner_preserves_workspace_absolute_paths(monkeypatch):
+    from argus_web import runner
+
+    monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
+    cmd = runner._detect_cmd(
+        {"id": "cloud_with_fake_obj", "path": "/data/cloud_with_fake_obj"},
+        0.0,
+        Path("/ws/data/ui/runs/cloud_with_fake_obj_run.csv"),
+    )
+    assert "/ws:/ws" in cmd
+    assert "ARGUS_LATENCY_CSV=/ws/data/ui/runs/cloud_with_fake_obj_run.csv" in cmd
+    assert "/ws/data/ui/runs/cloud_with_fake_obj_run_params.yaml" in cmd
 
 
 def test_argfrm_synthetic_preview_is_not_ros_bag(tmp_path: Path):

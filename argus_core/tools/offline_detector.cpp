@@ -6,6 +6,7 @@
 #include <argus_core/ground.hpp>
 #include <argus_core/odometry.hpp>
 #include <argus_core/range_image.hpp>
+#include <argus_core/track_corridor.hpp>
 #include <argus_core/tunnel_model.hpp>
 #include <argus_core/tunnel_profile.hpp>
 #include <argus_core/types.hpp>
@@ -19,6 +20,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -103,11 +105,15 @@ struct WorldComponentResult {
     Eigen::Vector3f extent = Eigen::Vector3f::Zero();
     uint32_t points = 0;
     uint32_t hits = 0;
+    uint32_t oversized = 0;
+    std::vector<WorldTrack> confirmed;
 };
 
 WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
                                          const std::vector<WorldComponent>& components,
-                                         uint32_t frame, float match_radius) {
+                                         uint32_t frame, float match_radius,
+                                         uint32_t max_component_points, float max_world_y_extent_m,
+                                         uint32_t max_track_age) {
     WorldComponentResult result;
     result.components = static_cast<uint32_t>(components.size());
     tracks.erase(
@@ -116,7 +122,11 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
         tracks.end());
     std::vector<uint8_t> matched(tracks.size(), 0);
     for (const auto& component : components) {
-        if (component.points < 2 || component.points > 120) {
+        if (component.points > max_component_points) {
+            ++result.oversized;
+            continue;
+        }
+        if (component.points < 2) {
             continue;
         }
         int best = -1;
@@ -155,8 +165,10 @@ WorldComponentResult update_world_tracks(std::vector<WorldTrack>& tracks,
     result.tracks = static_cast<uint32_t>(tracks.size());
     for (const auto& track : tracks) {
         const Eigen::Vector3f extent = track.high - track.low;
-        if (track.last_frame == frame && track.hits >= 3 && frame - track.first_frame <= 8 &&
-            track.points >= 15 && extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= 1.2f) {
+        if (track.last_frame == frame && track.hits >= 3 &&
+            frame - track.first_frame <= max_track_age && track.points >= 15 &&
+            extent.z() >= 0.20f && extent.x() <= 1.0f && extent.y() <= max_world_y_extent_m) {
+            result.confirmed.push_back(track);
             if (!result.alert || track.forward < result.forward) {
                 result.alert = true;
                 result.forward = track.forward;
@@ -287,15 +299,26 @@ int main(int argc, char** argv) {
     float carve_half_width = 3.0f;
     float gauge_height = 2.10f;
     float gauge_half_width = 1.50f;
-    float gauge_sensor_height = 1.20f;
+    float gauge_sensor_height = 1.075f;
+    float gauge_safety_margin = 0.10f;
+    float gauge_base_offset = 0.20f;
+    float gauge_chamfer = 0.20f;
+    float gauge_nose_offset = 0.00f;
+    float gauge_max_range = 300.0f;
     float odom_max_range = 120.0f;
     uint32_t odom_iterations = 4;
     uint32_t min_cluster_size_near = 15;
     uint32_t min_cluster_size_mid = 6;
     uint32_t min_cluster_size_far = 3;
+    uint32_t min_cluster_size_long = 2;
+    float size_long_range = 300.0f;
     uint32_t min_hits = 3;
     uint32_t min_hits_far = 5;
     float geom_max_target_range = 45.0f;
+    float geom_residual_threshold_far = 1.0f;
+    float diagnostic_near_baseline_min = 18.5f;
+    float diagnostic_near_baseline_max = 40.0f;
+    uint32_t diagnostic_near_baseline_window = 200;
     bool ground_filter = false;
     bool profile_gauge_mode = false;
     float profile_residual_threshold = 1.0f;
@@ -305,13 +328,21 @@ int main(int argc, char** argv) {
     bool temporal_residual = false;
     uint32_t temporal_window = 5;
     float temporal_threshold = 1.0f;
+    bool temporal_vote = false;
     bool world_residual = false;
     bool world_component_mode = false;
+    bool world_component_detail = false;
+    bool track_corridor_mode = false;
+    std::string track_centerline_path;
     bool odom_heading = false;
     float world_voxel = 0.30f;
     float world_fitness = 0.03f;
     uint32_t world_warmup = 10;
     uint32_t world_evidence = 3;
+    uint32_t world_max_component_points = 120;
+    float world_max_y_extent = 1.2f;
+    uint32_t world_max_track_age = 8;
+    float world_max_axis_offset = 0.0f;
     std::string ground_method = "z";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -323,6 +354,16 @@ int main(int argc, char** argv) {
             gauge_half_width = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--gauge-sensor-height" && i + 1 < argc) {
             gauge_sensor_height = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-safety-margin" && i + 1 < argc) {
+            gauge_safety_margin = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-base-offset" && i + 1 < argc) {
+            gauge_base_offset = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-chamfer" && i + 1 < argc) {
+            gauge_chamfer = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-nose-offset" && i + 1 < argc) {
+            gauge_nose_offset = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--gauge-max-range" && i + 1 < argc) {
+            gauge_max_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--odom-max-range" && i + 1 < argc) {
             odom_max_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--odom-iterations" && i + 1 < argc) {
@@ -343,6 +384,10 @@ int main(int argc, char** argv) {
             min_cluster_size_mid = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--min-cluster-size-far" && i + 1 < argc) {
             min_cluster_size_far = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--min-cluster-size-long" && i + 1 < argc) {
+            min_cluster_size_long = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--size-long-range" && i + 1 < argc) {
+            size_long_range = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--min-hits" && i + 1 < argc) {
             min_hits = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--min-hits-far" && i + 1 < argc) {
@@ -362,6 +407,15 @@ int main(int argc, char** argv) {
             debug_clusters = true;
         } else if (a == "--geom-max-range" && i + 1 < argc) {
             geom_max_target_range = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--geom-residual-far" && i + 1 < argc) {
+            geom_residual_threshold_far = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-min" && i + 1 < argc) {
+            diagnostic_near_baseline_min = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-max" && i + 1 < argc) {
+            diagnostic_near_baseline_max = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--diagnostic-near-baseline-window" && i + 1 < argc) {
+            diagnostic_near_baseline_window =
+                static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--ground-filter") {
             ground_filter = true;
         } else if (a == "--profile-gauge") {
@@ -376,6 +430,8 @@ int main(int argc, char** argv) {
             frozen_min_confidence = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--temporal-residual") {
             temporal_residual = true;
+        } else if (a == "--temporal-vote") {
+            temporal_vote = true;
         } else if (a == "--temporal-window" && i + 1 < argc) {
             temporal_window = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--temporal-threshold" && i + 1 < argc) {
@@ -385,6 +441,17 @@ int main(int argc, char** argv) {
         } else if (a == "--world-components") {
             world_residual = true;
             world_component_mode = true;
+        } else if (a == "--world-component-detail") {
+            world_component_detail = true;
+        } else if (a == "--track-corridor") {
+            world_residual = true;
+            world_component_mode = true;
+            track_corridor_mode = true;
+        } else if (a == "--track-centerline" && i + 1 < argc) {
+            track_centerline_path = argv[++i];
+        } else if (a == "--track-centerline") {
+            std::cerr << "--track-centerline requires a file path\n";
+            return 2;
         } else if (a == "--world-voxel" && i + 1 < argc) {
             world_voxel = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--world-fitness" && i + 1 < argc) {
@@ -393,9 +460,21 @@ int main(int argc, char** argv) {
             world_warmup = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
         } else if (a == "--world-evidence" && i + 1 < argc) {
             world_evidence = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--world-max-component-points" && i + 1 < argc) {
+            world_max_component_points = static_cast<uint32_t>(std::max(2, std::atoi(argv[++i])));
+        } else if (a == "--world-max-y-extent" && i + 1 < argc) {
+            world_max_y_extent = static_cast<float>(std::atof(argv[++i]));
+        } else if (a == "--world-max-track-age" && i + 1 < argc) {
+            world_max_track_age = static_cast<uint32_t>(std::max(1, std::atoi(argv[++i])));
+        } else if (a == "--world-max-axis-offset" && i + 1 < argc) {
+            world_max_axis_offset = static_cast<float>(std::atof(argv[++i]));
         } else if (a == "--forward-axis" && i + 1 < argc) {
             forward_axis = argv[++i];
         } else {
+            if (a.rfind("--", 0) == 0) {
+                std::cerr << "unknown or incomplete option: " << a << '\n';
+                return 2;
+            }
             path = a;
         }
     }
@@ -404,16 +483,76 @@ int main(int argc, char** argv) {
                      "[--tunnel] [--warmup N] [--free-space-vote] [--carve-stride N] "
                      "[--carve-max-range M] [--carve-half-width W] [--forward-axis x|-x|y|-y] "
                      "[--gauge-height M] [--gauge-half-width M] [--gauge-sensor-height M] "
+                     "[--gauge-safety-margin M] [--gauge-base-offset M] "
+                     "[--gauge-chamfer M] [--gauge-nose-offset M] [--gauge-max-range M] "
                      "[--odom-max-range M] [--odom-iterations N] [--ground-method patchworkpp|z] "
                      "[--min-cluster-size N] [--min-cluster-size-mid N] "
                      "[--min-cluster-size-far N] [--min-hits N] [--min-hits-far N] "
-                     "[--geom-max-range M] [--temporal-residual] [--temporal-window N] "
+                     "[--min-cluster-size-long N] [--size-long-range M] "
+                     "[--geom-max-range M] [--geom-residual-far M] "
+                     "[--diagnostic-near-baseline-min M] [--diagnostic-near-baseline-max M] "
+                     "[--diagnostic-near-baseline-window N] "
+                     "[--temporal-residual] [--temporal-window N] "
                      "[--temporal-threshold M] [--world-residual] [--world-voxel M] "
                      "[--world-fitness M] [--world-warmup N] [--world-evidence N] "
-                     "[--world-components] [--odom-heading] [--profile-gauge] "
+                     "[--world-components] [--world-component-detail] "
+                     "[--world-max-component-points N] "
+                     "[--world-max-y-extent M] "
+                     "[--world-max-track-age N] "
+                     "[--world-max-axis-offset M] "
+                     "[--track-corridor --track-centerline PATH] "
+                     "[--odom-heading] "
+                     "[--profile-gauge] "
                      "[--profile-residual M] [--free-space-freeze] "
                      "[--frozen-min-observations N] [--frozen-min-confidence C]\n";
         return 2;
+    }
+    argus::TrackCorridor track_corridor({gauge_half_width, 5.0f, 1.0f});
+    if (track_corridor_mode != !track_centerline_path.empty()) {
+        std::cerr << "--track-corridor requires --track-centerline and vice versa\n";
+        return 2;
+    }
+    if (world_max_component_points != 120 && !world_component_mode) {
+        std::cerr << "--world-max-component-points requires a world component mode\n";
+        return 2;
+    }
+    if (world_component_detail && !world_component_mode) {
+        std::cerr << "--world-component-detail requires a world component mode\n";
+        return 2;
+    }
+    if (world_max_track_age != 8 && !world_component_mode) {
+        std::cerr << "--world-max-track-age requires a world component mode\n";
+        return 2;
+    }
+    if (!std::isfinite(world_max_axis_offset) || world_max_axis_offset < 0.0f ||
+        (world_max_axis_offset > 0.0f && !track_corridor_mode)) {
+        std::cerr << "--world-max-axis-offset requires track corridor mode and nonnegative value\n";
+        return 2;
+    }
+    if (!std::isfinite(world_max_y_extent) || world_max_y_extent <= 0.0f ||
+        (world_max_y_extent != 1.2f && !world_component_mode)) {
+        std::cerr << "--world-max-y-extent requires a world component mode and positive value\n";
+        return 2;
+    }
+    if (track_corridor_mode) {
+        std::ifstream centerline_file(track_centerline_path);
+        std::vector<Eigen::Vector2f> centerline;
+        std::string line;
+        while (std::getline(centerline_file, line)) {
+            std::istringstream coordinates(line);
+            float x = 0.0f;
+            float y = 0.0f;
+            std::string extra;
+            if (!(coordinates >> x >> y) || (coordinates >> extra)) {
+                std::cerr << "invalid track centerline (expected two coordinates per line)\n";
+                return 2;
+            }
+            centerline.emplace_back(x, y);
+        }
+        if (!centerline_file.eof() || !track_corridor.set_centerline(centerline)) {
+            std::cerr << "invalid track centerline (expected world x y pairs, <=5 m apart)\n";
+            return 2;
+        }
     }
 
     std::ifstream in(path, std::ios::binary);
@@ -437,6 +576,10 @@ int main(int argc, char** argv) {
     argus::NoReturnParams nr_params;
     argus::GeometryResidualParams geom_params;
     geom_params.max_target_range_m = geom_max_target_range;
+    geom_params.residual_threshold_far_m = geom_residual_threshold_far;
+    geom_params.median_window_override_min_range_m = diagnostic_near_baseline_min;
+    geom_params.median_window_override_max_range_m = diagnostic_near_baseline_max;
+    geom_params.median_half_window_override = diagnostic_near_baseline_window;
     argus::NoReturnDetector no_return(nr_params);
     argus::GeometryResidualDetector geometry(geom_params);
     argus::RangeImageParams ri_params;
@@ -455,12 +598,20 @@ int main(int argc, char** argv) {
     gauge_params.height = gauge_height;
     gauge_params.half_width = gauge_half_width;
     gauge_params.sensor_height = gauge_sensor_height;
+    gauge_params.safety_margin = gauge_safety_margin;
+    gauge_params.base_offset = gauge_base_offset;
+    gauge_params.chamfer = gauge_chamfer;
+    gauge_params.nose_offset = gauge_nose_offset;
+    gauge_params.max_range = gauge_max_range;
     argus::FusionParams fusion_params;
     fusion_params.clustering.min_cluster_size_near = min_cluster_size_near;
     fusion_params.clustering.min_cluster_size_mid = min_cluster_size_mid;
     fusion_params.clustering.min_cluster_size_far = min_cluster_size_far;
+    fusion_params.clustering.min_cluster_size_long = min_cluster_size_long;
+    fusion_params.clustering.size_long_range_m = size_long_range;
     fusion_params.clustering.min_extent_m = 0.20f;
     fusion_params.tracking.min_hits_to_confirm = min_hits;
+    fusion_params.use_temporal_candidates = temporal_vote;
     fusion_params.tracking.min_hits_to_confirm_far = min_hits_far;
     fusion_params.ground_filter = ground_filter;
     fusion_params.use_free_space = free_space_vote;
@@ -473,7 +624,7 @@ int main(int argc, char** argv) {
     fusion_params.compute_free_space_violation_rate = true;
     argus::FusionPipeline fusion(argus::ClearanceGauge(gauge_params), fusion_params);
     argus::GroundParams ground_params;
-    ground_params.sensor_height = 1.2f;
+    ground_params.sensor_height = gauge_sensor_height;
     ground_params.forward_axis = axis;
     if (ground_method == "z" || ground_method == "z_threshold") {
         ground_params.method = argus::GroundMethod::ZThreshold;
@@ -526,7 +677,7 @@ int main(int argc, char** argv) {
         std::cout << '\n';
     } else if (world_component_mode) {
         std::cout << "frame,alert,components,tracks,forward_m,candidates,pose_valid,fitness,"
-                     "world_x,world_y,world_z,extent_x,extent_y,extent_z,points,hits\n";
+                     "world_x,world_y,world_z,extent_x,extent_y,extent_z,points,hits,oversized\n";
     } else if (fusion_mode) {
         std::cout << std::fixed << std::setprecision(2);
         std::cout << "frame,alert,clusters,raw,filtered,tracks,forward_m,range_m,"
@@ -673,11 +824,11 @@ int main(int argc, char** argv) {
             if (world_residual) {
                 world_odom = odom.update(cloud, f.stamp_s);
             }
-            argus::AnomalySet geom = (temporal_residual || world_residual)
-                                         ? argus::AnomalySet{}
-                                         : geometry.detect(cloud, ri);
+            argus::AnomalySet geom =
+                world_residual ? argus::AnomalySet{} : geometry.detect(cloud, ri);
+            argus::AnomalySet temporal;
             if (temporal_residual && !temporal_history.empty()) {
-                geom.source = "temporal";
+                temporal.source = "temporal";
                 std::vector<uint32_t> cell_to_cloud(ri.range.size(),
                                                     std::numeric_limits<uint32_t>::max());
                 for (size_t i = 0; i < cloud.raw_idx.size(); ++i) {
@@ -706,8 +857,8 @@ int main(int argc, char** argv) {
                         current > geom_max_target_range) {
                         continue;
                     }
-                    geom.indices.push_back(cell_to_cloud[cell]);
-                    geom.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
+                    temporal.indices.push_back(cell_to_cloud[cell]);
+                    temporal.score.push_back(std::min(1.0f, (baseline - current) / 5.0f));
                 }
             }
             if (world_residual && world_odom.valid && world_odom.fitness <= world_fitness &&
@@ -745,10 +896,15 @@ int main(int argc, char** argv) {
                         : gauge_params.forward_axis == argus::ForwardAxis::NegX ? -cloud.y[i]
                         : gauge_params.forward_axis == argus::ForwardAxis::PosY ? -cloud.x[i]
                                                                                 : cloud.x[i];
-                    const float relative_z = cloud.z[i] + gauge_sensor_height;
-                    if (forward < 15.0f || forward > geom_max_target_range ||
-                        std::fabs(lateral) > gauge_half_width || relative_z < 0.0f ||
-                        relative_z > gauge_height) {
+                    const bool track_mode = track_corridor_mode;
+                    const float range =
+                        std::sqrt(cloud.x[i] * cloud.x[i] + cloud.y[i] * cloud.y[i] +
+                                  cloud.z[i] * cloud.z[i]);
+                    if ((track_mode ? range : forward) < 15.0f ||
+                        (track_mode ? range : forward) > geom_max_target_range ||
+                        (!track_mode &&
+                         !fusion.gauge().contains(cloud.x[i], cloud.y[i], cloud.z[i])) ||
+                        (track_mode && !cloud.ground_mask.empty() && cloud.ground_mask[i])) {
                         continue;
                     }
                     const Eigen::Vector3d local(cloud.x[i], cloud.y[i], cloud.z[i]);
@@ -760,7 +916,19 @@ int main(int argc, char** argv) {
                     keys.push_back(key);
                     const bool first_in_frame = frame_keys.insert(key).second;
                     if (k >= world_warmup && world_component_mode && !seen_nearby(ix, iy, iz)) {
-                        world_samples.push_back({world.cast<float>(), forward});
+                        float path_distance = 0.0f;
+                        float path_offset = 0.0f;
+                        const Eigen::Vector2f sensor = pose.translation().head<2>().cast<float>();
+                        const Eigen::Vector2f candidate = world.head<2>().cast<float>();
+                        if (!track_corridor_mode ||
+                            (track_corridor.contains(sensor, candidate, path_distance,
+                                                     path_offset) &&
+                             fusion.gauge().contains_at_path(path_distance, path_offset,
+                                                             cloud.z[i]))) {
+                            world_samples.push_back({world.cast<float>(), track_corridor_mode
+                                                                              ? path_distance
+                                                                              : forward});
+                        }
                     } else if (k >= world_warmup && !world_component_mode && first_in_frame &&
                                !seen_nearby(ix, iy, iz) &&
                                ++world_evidence_counts[key] >= world_evidence) {
@@ -774,14 +942,68 @@ int main(int argc, char** argv) {
             }
             if (world_component_mode) {
                 const auto components = world_components(world_samples, 0.65f);
-                const auto result = update_world_tracks(world_tracks, components, k, 0.9f);
+                if (world_component_detail) {
+                    for (const auto& component : components) {
+                        const Eigen::Vector3f extent = component.high - component.low;
+                        std::cerr << "component," << k << ',' << component.forward << ','
+                                  << component.center.x() << ',' << component.center.y() << ','
+                                  << component.center.z() << ',' << component.points << ','
+                                  << extent.x() << ',' << extent.y() << ',' << extent.z() << '\n';
+                    }
+                }
+                auto result = update_world_tracks(world_tracks, components, k, 0.9f,
+                                                  world_max_component_points, world_max_y_extent,
+                                                  world_max_track_age);
+                if (track_corridor_mode) {
+                    const Eigen::Vector2f sensor =
+                        world_odom.pose.translation().head<2>().cast<float>();
+                    std::vector<WorldTrack> axis_tracks;
+                    for (const auto& track : result.confirmed) {
+                        float candidate_arc = 0.0f;
+                        float lateral_offset = 0.0f;
+                        const Eigen::Vector3d local =
+                            world_odom.pose.inverse() * track.center.cast<double>();
+                        if (track_corridor.contains(sensor, track.center.head<2>(), candidate_arc,
+                                                    lateral_offset) &&
+                            (world_max_axis_offset == 0.0f ||
+                             lateral_offset <= world_max_axis_offset) &&
+                            fusion.gauge().contains_at_path(candidate_arc, lateral_offset,
+                                                            static_cast<float>(local.z()))) {
+                            axis_tracks.push_back(track);
+                        }
+                    }
+                    result.alert = !axis_tracks.empty();
+                    result.confirmed = std::move(axis_tracks);
+                    if (result.alert) {
+                        const auto& track =
+                            *std::min_element(result.confirmed.begin(), result.confirmed.end(),
+                                              [](const WorldTrack& a, const WorldTrack& b) {
+                                                  return a.forward < b.forward;
+                                              });
+                        result.forward = track.forward;
+                        result.center = track.center;
+                        result.extent = track.high - track.low;
+                        result.points = track.points;
+                        result.hits = track.hits;
+                    }
+                }
+                if (world_component_detail) {
+                    for (const auto& track : result.confirmed) {
+                        const Eigen::Vector3f extent = track.high - track.low;
+                        std::cerr << "confirmed," << k << ',' << track.forward << ','
+                                  << track.center.x() << ',' << track.center.y() << ','
+                                  << track.center.z() << ',' << track.points << ',' << extent.x()
+                                  << ',' << extent.y() << ',' << extent.z() << ',' << track.hits
+                                  << '\n';
+                    }
+                }
                 std::cout << k << ',' << (result.alert ? 1 : 0) << ',' << result.components << ','
                           << result.tracks << ',' << result.forward << ',' << world_samples.size()
                           << ',' << (world_odom.valid ? 1 : 0) << ',' << world_odom.fitness << ','
                           << result.center.x() << ',' << result.center.y() << ','
                           << result.center.z() << ',' << result.extent.x() << ','
                           << result.extent.y() << ',' << result.extent.z() << ',' << result.points
-                          << ',' << result.hits << '\n';
+                          << ',' << result.hits << ',' << result.oversized << '\n';
                 continue;
             }
             const argus::AnomalySet nr = no_return.detect(cloud, ri);
@@ -809,16 +1031,46 @@ int main(int argc, char** argv) {
                 std::cerr << "  после фильтров: " << cls.size() << "\n";
                 for (const auto& c : cls) {
                     const Eigen::Vector3f ext = c.max_corner - c.min_corner;
+                    uint32_t gauge_points = 0;
+                    for (uint32_t idx : c.indices) {
+                        if (idx < cloud.size() &&
+                            fusion.gauge().contains(cloud.x[idx], cloud.y[idx], cloud.z[idx])) {
+                            ++gauge_points;
+                        }
+                    }
                     std::cerr << "    kept n=" << c.point_count << " nearest=" << c.nearest_range
-                              << " fwd=" << c.forward_distance << " ext=" << ext.transpose()
-                              << " centroid=(" << c.centroid.transpose() << ")\n";
+                              << " gauge=" << gauge_points << " fwd=" << c.forward_distance
+                              << " ext=" << ext.transpose() << " centroid=("
+                              << c.centroid.transpose() << ")\n";
                 }
             }
-            const argus::FusionResult r = fusion.update(cloud, ri, geom, nr, 0.1f, 0.0f);
+            const argus::FusionResult r =
+                fusion.update(cloud, ri, geom, nr, temporal, {}, 0.1f, 0.0f,
+                              Eigen::Isometry3d::Identity(), false, false);
             std::cout << k << ',' << (r.alert ? 1 : 0) << ',' << r.clusters.size() << ','
                       << r.n_clusters_raw << ',' << r.n_filtered_out << ',' << r.tracks.size()
                       << ',' << r.nearest_forward_m << ',' << r.nearest_range_m << ','
                       << r.n_anom_points << ',' << r.n_anom_cells << '\n';
+            for (const argus::Cluster& candidate : r.candidates) {
+                const Eigen::Vector3f extent = candidate.max_corner - candidate.min_corner;
+                std::cerr << "CANDIDATE," << k << ','
+                          << (candidate.min_corner.x() + candidate.max_corner.x()) * 0.5f << ','
+                          << (candidate.min_corner.y() + candidate.max_corner.y()) * 0.5f << ','
+                          << (candidate.min_corner.z() + candidate.max_corner.z()) * 0.5f << ','
+                          << extent.x() << ',' << extent.y() << ',' << extent.z() << ','
+                          << candidate.nearest_range << ',' << candidate.point_count << ','
+                          << candidate.score << ',' << static_cast<int>(candidate.votes_geometry)
+                          << ',' << static_cast<int>(candidate.votes_no_return) << ','
+                          << static_cast<int>(candidate.votes_free_space) << '\n';
+            }
+            for (const argus::Track& track : r.tracks) {
+                if (!track.confirmed) continue;
+                std::cerr << "CONFIRMED," << k << ',' << track.state.x() << ',' << track.state.y()
+                          << ',' << track.state.z() << ',' << track.extent.x() << ','
+                          << track.extent.y() << ',' << track.extent.z() << ','
+                          << track.nearest_range << ',' << track.point_count << ',' << track.score
+                          << '\n';
+            }
             if (temporal_residual) {
                 temporal_history.push_back(ri.range);
                 if (temporal_history.size() > temporal_window) {

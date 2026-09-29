@@ -27,6 +27,7 @@ struct Track {
     Eigen::Matrix<float, 6, 6> covariance = Eigen::Matrix<float, 6, 6>::Identity();
     uint32_t hits = 0;
     uint32_t misses = 0;
+    uint32_t consecutive_misses = 0;
     bool confirmed = false;
 
     float nearest_range = 0.0f;
@@ -38,6 +39,7 @@ struct Track {
     uint8_t votes_free_space = 0;
     uint8_t votes_no_return = 0;
     uint8_t votes_geometry = 0;
+    uint8_t votes_temporal = 0;
 };
 
 class ObstacleTracker {

@@ -32,6 +32,13 @@ struct FusionParams {
     uint32_t free_space_min_cells = 30;
     uint32_t free_space_min_observations = 10;
     uint32_t free_space_warmup_frames = 60;
+    bool use_temporal_candidates = false;
+    uint32_t temporal_min_cluster_size = 10;
+    float temporal_min_extent_m = 0.15f;
+    float temporal_max_extent_m = 2.5f;
+    float temporal_merge_distance_m = 0.75f;
+    uint32_t max_confirmed_track_misses = 4;
+    float strict_track_freshness_range_m = 90.0f;
     bool update_model_with_clean_frames = true;
     bool compute_free_space_violation_rate = false;
     TunnelModelParams model;
@@ -43,6 +50,7 @@ FusionParams default_fusion_params();
 
 struct FusionResult {
     std::vector<Cluster> clusters;
+    std::vector<Cluster> candidates;
     std::vector<Track> tracks;
     uint32_t n_anom_points = 0;
     uint32_t n_anom_cells = 0;
@@ -82,6 +90,10 @@ public:
                         const AnomalySet& no_return, const AnomalySet& free_space, float dt,
                         float train_speed_mps, const Eigen::Isometry3d& pose,
                         bool caller_drives_model, bool pose_valid);
+    FusionResult update(const CleanCloud& cloud, const RangeImage& ri, const AnomalySet& geometry,
+                        const AnomalySet& no_return, const AnomalySet& temporal,
+                        const AnomalySet& free_space, float dt, float train_speed_mps,
+                        const Eigen::Isometry3d& pose, bool caller_drives_model, bool pose_valid);
 
     const ClearanceGauge& gauge() const { return gauge_; }
 

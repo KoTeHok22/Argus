@@ -135,6 +135,12 @@ TEST(Clustering, MinClusterSizeFallsWithRange) {
     EXPECT_EQ(argus::min_cluster_size_at(p, 120.0f), 6u);
     EXPECT_EQ(argus::min_cluster_size_at(p, 160.0f), 5u);
     EXPECT_EQ(argus::min_cluster_size_at(p, 250.0f), 3u);
+
+    p.min_cluster_size_long = 2;
+    p.size_long_range_m = 150.0f;
+    EXPECT_EQ(argus::min_cluster_size_at(p, 149.0f), 5u);
+    EXPECT_EQ(argus::min_cluster_size_at(p, 150.0f), 2u);
+    EXPECT_EQ(argus::min_cluster_size_at(p, 250.0f), 2u);
 }
 
 TEST(Clustering, WeakFarClusterPassesNearWouldNot) {

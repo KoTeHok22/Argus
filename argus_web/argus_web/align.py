@@ -89,16 +89,23 @@ def save_gauge(values: dict) -> dict:
             current[key] = number
     if float(current["half_width"]) <= 0 or float(current["height"]) <= 0:
         raise ValueError("Ширина и высота должны быть больше нуля")
-    if float(current["chamfer"]) < 0 or float(current["chamfer"]) >= float(current["half_width"]):
+    if (float(current["chamfer"]) < 0 or
+            float(current["chamfer"]) >= float(current["half_width"])):
         raise ValueError("Скос должен быть меньше ширины")
-    lines = ["argus_web:", "  ros__parameters:", "    gauge:"]
+    if float(current["safety_margin"]) < 0:
+        raise ValueError("Зазор не может быть отрицательным")
+    lines = ["    gauge:"]
     for key in GAUGE_KEYS:
         value = current[key]
         if key == "forward_axis":
             lines.append(f"      {key}: \"{value}\"")
         else:
             lines.append(f"      {key}: {float(value):.4f}")
-    ui_params_yaml().write_text("\n".join(lines) + "\n", encoding="utf-8")
+    source = params_yaml().read_text(encoding="utf-8")
+    block = re.compile(r"(?m)^    gauge:[ \t]*\n(?:      \S[^\n]*\n)*")
+    if not block.search(source):
+        raise ValueError("Габарит отсутствует в конфигурации детектора")
+    ui_params_yaml().write_text(block.sub("\n".join(lines) + "\n", source, count=1), encoding="utf-8")
     return gauge_profile(current)
 
 

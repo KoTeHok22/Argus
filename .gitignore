@@ -15,8 +15,9 @@
 *.frames
 
 data/ui/
-data/new_data_full/
-results/t32_new_data/
+data/recordings/
+data/dataset/
+results/
 
 # --- Артефакты сборки ROS 2 ---
 build/
@@ -78,3 +79,56 @@ secrets.yaml
 .repowise/
 .tmp_comment_cleanup/
 AGENTS.md
+
+*.md
+!/README.md
+!docs/EXPERIMENTS.md
+
+# --- Данные, макеты и артефакты прогонов: вне репозитория ---
+data/
+design/
+results/
+third_party/patchworkpp/
+docs/img/
+docs/video/
+
+# --- Скриншоты и служебные файлы инструментов ---
+*.png
+.kilo/
+.mcp.json
+codex_settings.json
+
+# --- Разведка и разовые прогоны: вне репозитория ---
+scripts/alert_summary.py
+scripts/bag2frames.py
+scripts/bag2npz.py
+scripts/bag_range_hunt.py
+scripts/bench_compare.py
+scripts/extract_dataset.sh
+scripts/extract_new_data_head.py
+scripts/extract_new_data_sample.py
+scripts/frames_stats.py
+scripts/fusion_report.py
+scripts/inspect_new_data.py
+scripts/manual_extract.py
+scripts/manual_pages.py
+scripts/play_bag.sh
+scripts/run_eval.sh
+scripts/run_new_data_full.py
+scripts/slice_bag.py
+scripts/t20_matrix.sh
+scripts/t21_odom200.sh
+scripts/t21_odom_bench.sh
+scripts/t22_confirm.sh
+scripts/t22_ground_bench.sh
+scripts/t23_new_data_sample.sh
+scripts/t32_batch_once.sh
+scripts/t32_fill.sh
+scripts/t32_watch.sh
+scripts/t33_window.py
+scripts/t36_shots.py
+scripts/tunnel_bench.sh
+scripts/tunnel_summary.py
+scripts/validate_frames_report.py
+scripts/gen-image.mjs
+scripts/synthetic_sweep.py

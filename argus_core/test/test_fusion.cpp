@@ -91,6 +91,123 @@ TEST(Fusion, ObstacleAheadTriggersConfirmedAlert) {
     EXPECT_EQ(f2.n_filtered_out, 0u);
 }
 
+TEST(Fusion, TemporalFragmentsMergeIntoOneCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    argus::AnomalySet temporal;
+    temporal.source = "temporal";
+    for (size_t i = 0; i < cloud.size(); ++i) {
+        const uint32_t az = static_cast<uint32_t>(i / kH);
+        const uint32_t ring = static_cast<uint32_t>(i % kH);
+        if (ring >= 3 && ring <= 5 && (az >= 200 && az <= 209 || az >= 245 && az <= 249)) {
+            temporal.indices.push_back(static_cast<uint32_t>(i));
+            temporal.score.push_back(0.7f);
+        }
+    }
+
+    argus::FusionParams p = fusion_params();
+    p.use_temporal_candidates = true;
+    p.temporal_min_cluster_size = 5;
+    p.temporal_merge_distance_m = 0.5f;
+    p.temporal_max_extent_m = 2.5f;
+    p.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipe(gauge_neg_y(), p);
+
+    const argus::FusionResult result = pipe.update(cloud, ri, {}, {}, temporal, {}, 0.1f, 0.0f,
+                                                   Eigen::Isometry3d::Identity(), false, false);
+
+    ASSERT_EQ(result.candidates.size(), 1u);
+    EXPECT_GT(result.candidates.front().point_count, 40u);
+    EXPECT_EQ(result.candidates.front().votes_temporal, 1u);
+}
+
+TEST(Fusion, UnconfirmedClusterIsPublishedAsCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    auto params = fusion_params();
+    params.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    const auto result = pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    ASSERT_FALSE(result.alert);
+    ASSERT_EQ(result.tracks.size(), 0u);
+    ASSERT_EQ(result.candidates.size(), 1u);
+    EXPECT_EQ(result.candidates.front().point_count, result.clusters.front().point_count);
+    EXPECT_GT(result.candidates.front().nearest_range, 0.0f);
+}
+
+TEST(Fusion, ConfirmedTrackIsNotDuplicatedAsCandidate) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    auto params = fusion_params();
+    params.tracking.min_hits_to_confirm = 2;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    const auto result = pipeline.update(cloud, ri, geometry_of_box(cloud), {}, 0.1f, 0.0f);
+    ASSERT_TRUE(result.alert);
+    EXPECT_FALSE(result.candidates.size());
+}
+
+TEST(Fusion, TemporalOnlyClusterIsCandidateButNotConfirmedAlert) {
+    const auto cloud = make_scene(0.0f);
+    const auto ri = ri_of(cloud);
+    argus::AnomalySet temporal = geometry_of_box(cloud);
+    temporal.source = "temporal";
+    auto params = fusion_params();
+    params.use_temporal_candidates = true;
+    params.tracking.min_hits_to_confirm = 3;
+    argus::FusionPipeline pipeline(gauge_neg_y(), params);
+    const auto result = pipeline.update(cloud, ri, {}, {}, temporal, {}, 0.1f, 0.0f,
+                                        Eigen::Isometry3d::Identity(), false, false);
+    EXPECT_FALSE(result.alert);
+    ASSERT_FALSE(result.candidates.empty());
+    EXPECT_EQ(result.candidates.front().votes_geometry, 0);
+    EXPECT_EQ(result.candidates.front().votes_temporal, 1);
+}
+
+TEST(Fusion, ConfirmedFarTrackStopsAlertingAfterStaleGeometry) {
+    argus::CleanCloud cloud;
+    cloud.rings = 8;
+    cloud.n_raw = 80;
+    for (uint32_t az = 0; az < 10; ++az) {
+        for (uint32_t ring = 0; ring < 8; ++ring) {
+            cloud.x.push_back(0.1f * static_cast<float>(ring));
+            cloud.y.push_back(-100.0f - 0.01f * static_cast<float>(az));
+            cloud.z.push_back(0.2f * static_cast<float>(ring));
+            cloud.intensity.push_back(1.0f);
+            cloud.raw_idx.push_back(az * 8 + ring);
+        }
+    }
+    argus::RangeImageParams range_params;
+    range_params.rings_fallback = 8;
+    const auto ri = argus::build_range_image(cloud, range_params);
+    argus::AnomalySet geometry;
+    for (uint32_t i = 0; i < cloud.size(); ++i) {
+        geometry.indices.push_back(i);
+        geometry.score.push_back(1.0f);
+    }
+    argus::FusionParams params;
+    params.clustering.min_cluster_size_near = 1;
+    params.clustering.min_cluster_size_mid = 1;
+    params.clustering.min_cluster_size_far = 1;
+    params.clustering.min_cluster_size_long = 1;
+    params.clustering.min_extent_m = 0.0f;
+    params.clustering.max_extent_m = 10.0f;
+    params.tracking.min_hits_to_confirm = 1;
+    params.tracking.min_hits_to_confirm_far = 1;
+    params.strict_track_freshness_range_m = 90.0f;
+    params.max_confirmed_track_misses = 2;
+    argus::ClearanceGaugeParams gauge_params;
+    gauge_params.forward_axis = argus::ForwardAxis::NegY;
+    gauge_params.half_width = 2.0f;
+    gauge_params.height = 5.0f;
+    argus::FusionPipeline pipeline(argus::ClearanceGauge(gauge_params), params);
+    ASSERT_TRUE(pipeline.update(cloud, ri, geometry, {}, 0.1f, 0.0f).alert);
+    for (uint32_t i = 0; i < params.max_confirmed_track_misses; ++i) {
+        EXPECT_TRUE(pipeline.update(cloud, ri, {}, {}, 0.1f, 0.0f).alert);
+    }
+    EXPECT_FALSE(pipeline.update(cloud, ri, {}, {}, 0.1f, 0.0f).alert);
+}
+
 TEST(Fusion, LateralWallFilteredByGauge) {
     const auto cloud = make_scene(4.8f);
     const auto ri = ri_of(cloud);
@@ -102,6 +219,27 @@ TEST(Fusion, LateralWallFilteredByGauge) {
     EXPECT_FALSE(f2.alert);
     EXPECT_TRUE(f2.clusters.empty());
     EXPECT_GT(f2.n_filtered_out, 0u);
+}
+
+TEST(Fusion, GaugeWidthControlsAlertWithoutIncludingSideWall) {
+    const auto cloud = make_scene(1.0f);
+    const auto ri = ri_of(cloud);
+    const auto geometry = geometry_of_box(cloud);
+
+    argus::ClearanceGaugeParams narrow;
+    narrow.forward_axis = argus::ForwardAxis::NegY;
+    narrow.half_width = 1.4f;
+    narrow.safety_margin = 0.1f;
+    argus::FusionPipeline narrow_pipe(argus::ClearanceGauge(narrow), fusion_params());
+    narrow_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    const auto excluded = narrow_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    EXPECT_FALSE(excluded.alert);
+
+    narrow.half_width = 1.7f;
+    argus::FusionPipeline wide_pipe(argus::ClearanceGauge(narrow), fusion_params());
+    wide_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    const auto included = wide_pipe.update(cloud, ri, geometry, {}, 0.1f, 0.0f);
+    EXPECT_TRUE(included.alert);
 }
 
 TEST(Fusion, MinVotesGateRequiresSecondDetector) {

@@ -17,6 +17,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Candidate.msg"
   "msg/Obstacle.msg"
   "msg/ObstacleArray.msg"
   "msg/Diagnostics.msg"

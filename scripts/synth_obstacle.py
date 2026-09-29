@@ -101,8 +101,8 @@ def read_poses(path, frames):
 
 def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
                n_raw=None, no_return=None, pod=0.0, seed=0,
-               ray_origin=None, ray_rotation=None):
-    length, width, height = PRESETS[preset]
+               ray_origin=None, ray_rotation=None, dimensions=None):
+    length, width, height = PRESETS[preset] if dimensions is None else dimensions
     y0 = -(distance_m + length)
     y1 = -distance_m
     z0 = -1.2 + vertical_m
@@ -122,6 +122,7 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
     out["z"][replace] = entry[:, 2]
     nr_left = no_return
     added = 0
+    deltas = ranges[replace] - tmin[replace]
     if pod > 0.0 and n_raw and no_return is not None and len(no_return):
         raw = pts["raw"].astype(np.int64)
         occupied = np.zeros(n_raw, dtype=bool)
@@ -172,6 +173,7 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
                 added = len(idx)
     return out, nr_left, {
         "preset": preset,
+        "dimensions_m": [length, width, height],
         "distance_m": distance_m,
         "lateral_m": lateral_m,
         "vertical_m": vertical_m,
@@ -180,6 +182,8 @@ def insert_box(pts, distance_m, preset, lateral_m=0.0, vertical_m=0.0,
         "box_max": box_max.tolist(),
         "rays_replaced": int(replace.sum()),
         "rays_added": added,
+        "range_delta_mean_m": float(deltas.mean()) if len(deltas) else 0.0,
+        "range_delta_max_m": float(deltas.max()) if len(deltas) else 0.0,
     }
 
 
@@ -189,6 +193,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--distance", type=float, required=True)
     ap.add_argument("--preset", choices=sorted(PRESETS), default="cart")
+    ap.add_argument("--length", type=float)
+    ap.add_argument("--width", type=float)
+    ap.add_argument("--height", type=float)
     ap.add_argument("--lateral", type=float, default=0.0)
     ap.add_argument("--vertical", type=float, default=0.0)
     ap.add_argument("--frames", type=int, default=40)
@@ -198,6 +205,14 @@ def main():
     ap.add_argument("--truth", required=True)
     ap.add_argument("--poses")
     args = ap.parse_args()
+    dimension_values = (args.length, args.width, args.height)
+    if any(value is not None for value in dimension_values):
+        if any(value is None or not np.isfinite(value) or value <= 0
+               for value in dimension_values):
+            raise ValueError("length, width, and height must all be positive and finite")
+        dimensions = dimension_values
+    else:
+        dimensions = None
     frames = read_frames(args.src)[: args.frames]
     if not frames:
         raise ValueError("source has no frames")
@@ -220,6 +235,7 @@ def main():
         if k < args.start_frame:
             pts2, nr2, info = pts, nr, {
                 "preset": args.preset,
+                "dimensions_m": list(dimensions or PRESETS[args.preset]),
                 "distance_m": args.distance,
                 "lateral_m": args.lateral,
                 "vertical_m": args.vertical,
@@ -228,11 +244,14 @@ def main():
                 "box_max": [],
                 "rays_replaced": 0,
                 "rays_added": 0,
+                "range_delta_mean_m": 0.0,
+                "range_delta_max_m": 0.0,
             }
         else:
             pts2, nr2, info = insert_box(
                 pts, args.distance, args.preset, args.lateral, args.vertical,
                 n_raw, nr, args.pod, args.seed + k, ray_origin, ray_rotation,
+                dimensions,
             )
         if poses:
             box_min = np.asarray(info["box_min"])
@@ -261,6 +280,8 @@ def main():
             info["heading_deg"] = float(np.rad2deg(np.arctan2(rotation[1, 0], rotation[0, 0])))
         if poses:
             info["frame"] = k
+        else:
+            info["frame"] = k
         changed.append((stamp, n_raw, pts2, nr2))
         replaced += info["rays_replaced"]
         added += info["rays_added"]
@@ -268,11 +289,10 @@ def main():
     truth = dict(truth_frames[-1])
     truth["rays_replaced"] = replaced
     truth["rays_added"] = added
-    if poses:
-        truth["mode"] = "world_fixed"
-        truth["poses"] = args.poses
-        truth["anchor_frame"] = args.start_frame
-        truth["frames"] = truth_frames
+    truth["mode"] = "world_fixed" if poses else "sensor_fixed"
+    truth["poses"] = args.poses
+    truth["anchor_frame"] = args.start_frame
+    truth["frames"] = truth_frames
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     write_frames(args.out, changed)
     with open(args.truth, "w", encoding="utf-8") as fh:

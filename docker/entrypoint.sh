@@ -15,8 +15,9 @@ bag_topic() {
 
 case "$MODE" in
   detect)
-    BAG="${1:?usage: detect <bag_dir> [rate]}"
+    BAG="${1:?usage: detect <bag_dir> [rate] [params_file]}"
     RATE="${2:-1.0}"
+    PARAMS_FILE="${3:-${ARGUS_PARAMS_FILE:-}}"
     TOPIC="$(bag_topic "$BAG")"
     if [ "$RATE" = "0" ]; then
       RATE="1"
@@ -25,7 +26,11 @@ case "$MODE" in
     echo "bag=$BAG topic=$TOPIC rate=$RATE csv=$ARGUS_LATENCY_CSV"
     python3 /opt/argus/detect_watch.py &
     WATCH_PID=$!
-    setsid ros2 launch argus_launch argus.launch.py lidar_topic:="$TOPIC" &
+    if [ -n "$PARAMS_FILE" ]; then
+      setsid ros2 launch argus_launch argus.launch.py lidar_topic:="$TOPIC" params_file:="$PARAMS_FILE" &
+    else
+      setsid ros2 launch argus_launch argus.launch.py lidar_topic:="$TOPIC" &
+    fi
     LAUNCH_PID=$!
     sleep 5
     ros2 bag play "$BAG" \
@@ -93,7 +98,7 @@ rate по умолчанию 1 (реальное время). --shm-size=256m о
       detect /data/doubleT_obstacle 0
 
   docker run --rm --shm-size=256m -p 8080:8080 \
-      -v "$PWD/data":/data argus ui
+      -v "$PWD/data/recordings":/data argus ui
 EOF
     ;;
 esac

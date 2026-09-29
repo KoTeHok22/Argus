@@ -86,7 +86,8 @@ function proofLine(report) {
 
 function reportForBag(reports, bagId) {
   if (!bagId) return null;
-  return (reports || []).find((item) => item.name === bagId) || null;
+  const items = (reports || []).filter((item) => item.name === bagId || item.name.startsWith(`${bagId}_`));
+  return items.find((item) => item.blocked > 0) || items[0] || null;
 }
 
 function verdictOf(report, row, view) {
@@ -96,8 +97,11 @@ function verdictOf(report, row, view) {
   if (view && view.geom === false && view.noReturn === false && view.freeSpace === false) {
     return { code: "unsure", chip: "ВЫКЛ", cls: "warn-text", phrase: "Признаки обнаружения выключены", meters: null };
   }
-  if (!row || row.status === "DEGRADED") {
-    return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен", meters: null };
+  if (!row) {
+    return { code: "not_covered", chip: "НЕТ РЕЗУЛЬТАТА", cls: "warn-text", phrase: "Для этого кадра нет результата детектора", meters: null };
+  }
+  if (row.status === "DEGRADED") {
+    return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен: кадр обработан не полностью", meters: null };
   }
   if (row.status === "BLOCKED" && row.nearest_m != null) {
     return {
@@ -328,7 +332,7 @@ function planOf(x, y, gauge) {
 
 function fitCanvas(canvas) {
   const rect = canvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = 1;
   const width = Math.max(1, Math.round(rect.width * ratio));
   const height = Math.max(1, Math.round(rect.height * ratio));
   if (canvas.width !== width || canvas.height !== height) {
@@ -378,8 +382,11 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.candidates || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
+  const image = ctx.createImageData(w, h);
+  const pixels = image.data;
   for (let i = 0; i < n; i += 1) {
     const [fwd, side] = planOf(xyz[i * 3], xyz[i * 3 + 1], gauge);
     if (fwd < 0.3 || fwd > 90) continue;
@@ -389,15 +396,21 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     if (layers.ground && (!view || view.ground !== false) && z < floor) continue;
     if (Math.abs(side) > hw * 2.4) continue;
     const [px, py] = project(fwd, side, z);
-    if (px < -2 || py < -2 || px >= w + 2 || py >= h + 2) continue;
+    const x = px | 0;
+    const y = py | 0;
+    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+    const offset = (y * w + x) * 4;
     const b = Math.max(46, Math.min(215, 215 - fwd * 2.3));
-    ctx.fillStyle = `rgb(${b},${b + 6},${b + 12})`;
-    ctx.fillRect(px, py, 1.4, 1.4);
+    pixels[offset] = b;
+    pixels[offset + 1] = b + 6;
+    pixels[offset + 2] = b + 12;
+    pixels[offset + 3] = 255;
     if (near != null && fwd > near - 1.5 && fwd < near + 1.5 && Math.abs(side) <= hw) {
       sides.push(side);
       zs.push(z);
     }
   }
+  ctx.putImageData(image, 0, 0);
   if (gauge && gauge.near && gauge.far && layers.gauge) {
     ctx.strokeStyle = "rgba(91,122,140,0.9)";
     ctx.lineWidth = Math.max(1, w / 1400);
@@ -458,6 +471,27 @@ function paintPerspective(ctx, canvas, xyz, gauge, row, layers, focusSide) {
       ctx.stroke();
     }
   }
+  if (candidates.length) {
+    ctx.strokeStyle = "#d5a84f";
+    ctx.lineWidth = Math.max(1, w / 1500);
+    candidates.forEach((candidate) => {
+      const position = candidate.position || [];
+      const extent = candidate.extent || [];
+      if (position.length !== 3 || extent.length !== 3) return;
+      const fwd = -Number(position[1]);
+      const side = Number(position[0]);
+      const halfFwd = Number(extent[1]) / 2;
+      const halfSide = Number(extent[0]) / 2;
+      const a = project(fwd - halfFwd, side - halfSide, Number(position[2]));
+      const b = project(fwd + halfFwd, side + halfSide, Number(position[2]) + Number(extent[2]));
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(a[0], b[1], b[0] - a[0], a[1] - b[1]);
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#f1d48a";
+      ctx.font = `${Math.round(h / 42)}px Consolas, monospace`;
+      ctx.fillText("КАНДИДАТ", a[0] + 6, Math.max(16, b[1] - 6));
+    });
+  }
 }
 
 function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
@@ -473,9 +507,12 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
   const sides = [];
   const zs = [];
   const blocked = layers.box && row && row.status === "BLOCKED" && row.nearest_m != null;
+  const candidates = layers.box && row && row.status !== "BLOCKED" ? (row.candidates || []) : [];
   const near = blocked ? row.nearest_m : null;
   const n = xyz.length / 3;
   const yOf = (side) => Math.round(h / 2 - ((side - focusSide) / lateral) * (h * 0.42));
+  const image = ctx.createImageData(w, h);
+  const pixels = image.data;
   for (let i = 0; i < n; i += 1) {
     const [fwd, side] = planOf(xyz[i * 3], xyz[i * 3 + 1], gauge);
     if (fwd < 0 || fwd > span) continue;
@@ -487,21 +524,18 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     const px = Math.round((fwd / span) * (w - 24) + 12);
     const py = yOf(side);
     if (px < 0 || py < 0 || px >= w || py >= h) continue;
-    const key = py * w + px;
+    const offset = (py * w + px) * 4;
     const inside = Math.abs(side) <= hw;
-    const prev = bins.get(key);
-    if (!prev || inside) bins.set(key, inside);
+    pixels[offset] = inside ? 215 : 89;
+    pixels[offset + 1] = inside ? 228 : 98;
+    pixels[offset + 2] = inside ? 236 : 107;
+    pixels[offset + 3] = 255;
     if (near != null && fwd > near - 1.5 && fwd < near + 1.5 && inside) {
       sides.push(side);
       zs.push(z);
     }
   }
-  bins.forEach((inside, key) => {
-    const px = key % w;
-    const py = (key - px) / w;
-    ctx.fillStyle = inside ? "#d7e4ec" : "#59626b";
-    ctx.fillRect(px, py, 1, 1);
-  });
+  ctx.putImageData(image, 0, 0);
   if (gauge && gauge.left && gauge.right && layers.gauge) {
     ctx.strokeStyle = "rgba(91,122,140,0.95)";
     ctx.lineWidth = Math.max(1, w / 1200);
@@ -534,6 +568,27 @@ function paintPlan(ctx, canvas, xyz, gauge, row, layers, focusSide) {
     ctx.fillText(label, Math.min(w - 60, mx + 8), Math.max(14, y0 - 6));
     void my;
   }
+  if (candidates.length) {
+    ctx.strokeStyle = "#d5a84f";
+    ctx.lineWidth = Math.max(1, w / 1300);
+    ctx.setLineDash([6, 4]);
+    candidates.forEach((candidate) => {
+      const position = candidate.position || [];
+      const extent = candidate.extent || [];
+      if (position.length !== 3 || extent.length !== 3) return;
+      const fwd = -Number(position[1]);
+      const side = Number(position[0]);
+      const x0 = ((fwd - Number(extent[1]) / 2) / span) * (w - 24) + 12;
+      const x1 = ((fwd + Number(extent[1]) / 2) / span) * (w - 24) + 12;
+      const y0 = yOf(side + Number(extent[0]) / 2);
+      const y1 = yOf(side - Number(extent[0]) / 2);
+      ctx.strokeRect(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0));
+      ctx.fillStyle = "#f1d48a";
+      ctx.font = `${Math.round(h / 34)}px Consolas, monospace`;
+      ctx.fillText("КАНДИДАТ", Math.min(w - 90, x0 + 6), Math.max(14, Math.min(y0, y1) - 6));
+    });
+    ctx.setLineDash([]);
+  }
 }
 
 function paintScene(mode) {
@@ -543,20 +598,28 @@ function paintScene(mode) {
   };
 }
 
+const cloudCache = new Map();
+
 function fetchCloud(bagId, frame, synthetic = false) {
   const url = synthetic
     ? `/api/synthetic/${encodeURIComponent(bagId)}?frame=${frame}`
     : `/api/cloud?bag=${encodeURIComponent(bagId)}&frame=${frame}`;
+  const key = `${bagId}:${frame}:${synthetic ? 1 : 0}`;
+  const cached = cloudCache.get(key);
+  if (cached) return cached;
   return fetch(url).then(async (res) => {
     if (!res.ok) throw new Error("Нет кадра");
     const buf = await res.arrayBuffer();
-    return {
+    const cloud = {
       xyz: new Float32Array(buf),
       points: Number(res.headers.get("X-Argus-Points") || 0),
       raw: Number(res.headers.get("X-Argus-Raw") || 0),
       total: Number(res.headers.get("X-Argus-Total") || 0),
       stamp: res.headers.get("X-Argus-Stamp") || "",
     };
+    cloudCache.set(key, cloud);
+    if (cloudCache.size > 40) cloudCache.delete(cloudCache.keys().next().value);
+    return cloud;
   });
 }
 
@@ -763,7 +826,7 @@ async function pageBags() {
   const items = data.items || [];
   const jobRows = jobs.length
     ? jobs.map((j) => {
-        if (j.status === "parsing") {
+        if (["queued", "parsing", "analyzing", "starting", "running"].includes(j.status)) {
           const pct = Math.round((j.progress || 0) * 100);
           return `
             <div class="job">
@@ -771,10 +834,10 @@ async function pageBags() {
               ${ringSvg(j.progress)}
               <div class="info">
                 <div class="name">${j.name}</div>
-                <div class="sub">Распаковка архива${j.notes ? ` · ${j.notes}` : ""}</div>
+                <div class="sub">${j.status === "queued" ? "Файл принят" : j.status === "parsing" ? "Распаковка архива" : "Детектор обрабатывает запись"}${j.notes ? ` · ${j.notes}` : ""}</div>
                 <div class="bar"><div class="progress"><span style="width:${pct}%"></span></div></div>
               </div>
-              ${chip(STATUS.parsing, "warn")}
+              ${chip(STATUS[j.status] || "ОБРАБОТКА", "warn")}
               <span></span>
             </div>`;
         }
@@ -786,8 +849,8 @@ async function pageBags() {
               <div class="name">${j.name}</div>
               <div class="sub">${j.error ? j.error : j.bag ? `${fmtSize(j.bag.size_bytes)} · ${fmtInt(j.bag.frames)} кадров` : ""}</div>
             </div>
-            ${chip(STATUS[j.status] || j.status, kind)}
-            ${j.status === "ready" && j.bag ? `<a href="#/efir/${encodeURIComponent(j.bag.id)}"><button class="btn sq" type="button" title="Эфир">${ICO.play}</button></a>` : "<span></span>"}
+            ${chip(STATUS[j.status] || (j.status === "ready" ? "ГОТОВО" : j.status === "incomplete" ? "НЕ СОБРАНА" : j.status === "error" ? "ОШИБКА" : j.status), kind)}
+            ${j.report_id ? `<a href="#/otchet/${encodeURIComponent(j.report_id)}"><button class="btn tiny accent" type="button">Отчёт</button></a>` : j.status === "ready" && j.bag ? `<a href="#/efir/${encodeURIComponent(j.bag.id)}"><button class="btn sq" type="button" title="Эфир">${ICO.play}</button></a>` : "<span></span>"}
           </div>`;
       }).join("")
     : '<p class="muted" style="margin:6px 0">Очередь пуста.</p>';
@@ -861,7 +924,7 @@ async function pageBags() {
     document.getElementById("dz-file").value = "";
     msg.textContent = "";
   });
-  if (jobs.some((j) => j.status === "parsing")) addTimer(setTimeout(() => route(), 3000));
+  if (jobs.some((j) => ["queued", "parsing", "analyzing", "starting", "running"].includes(j.status))) addTimer(setTimeout(() => route(), 3000));
 }
 
 async function pageLive(bagId) {
@@ -894,6 +957,9 @@ async function pageLive(bagId) {
     return;
   }
   const firstAlert = report && report.first_blocked_frame != null ? report.first_blocked_frame : -1;
+  const requestedParams = new URLSearchParams(location.hash.split("?")[1] || "");
+  const requestedFrame = requestedParams.get("frame");
+  const requestedStamp = requestedParams.get("stamp");
   view.innerHTML = `
     <div class="live-grid">
       <section class="card vp-card">
@@ -970,7 +1036,7 @@ async function pageLive(bagId) {
     if (row.stamp_ns != null) byStamp.set(String(row.stamp_ns), row);
   });
   let stamps = [];
-  let frame = firstAlert >= 0 ? firstAlert : 0;
+  let frame = requestedFrame != null ? Number(requestedFrame) : firstAlert >= 0 ? firstAlert : 0;
   scrub.value = String(frame);
   let playing = false;
   let loading = false;
@@ -1100,7 +1166,9 @@ async function pageLive(bagId) {
         pair("Дальность", v.meters != null ? fmtMeters(v.meters) : "—"),
         pair("Вперёд", row && row.forward_m != null ? fmtMeters(row.forward_m) : "—"),
         pair("Объектов", row ? fmtInt(row.objects) : "—"),
-        pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
+        ...(row && row.obstacles ? row.obstacles.map((obstacle) => pair(`Габариты трека ${obstacle.track_id}`, obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
+        ...(row && row.candidates ? row.candidates.map((candidate) => pair(`Кандидат ${candidate.candidate_id}`, candidate.extent.map((value) => fmtNum(value, 2)).join(" × ") + " м")) : []),
+        pair("Статус", v.code === "blocked" ? '<span class="ok-text">ПОДТВЕРЖДЁН</span>' : v.code === "not_covered" ? '<span class="warn-text">НЕТ РЕЗУЛЬТАТА</span>' : v.code === "unsure" ? '<span class="warn-text">НЕ УВЕРЕН</span>' : v.code === "not_run" ? "—" : '<span class="muted">—</span>'),
       ].join("");
       document.getElementById("frame-kv").innerHTML = [
         pair("Частота", (row && row.fps != null ? fmtNum(row.fps, 1) : fmtNum(hz, 1))),
@@ -1136,6 +1204,14 @@ async function pageLive(bagId) {
   api(`/api/stamps?bag=${encodeURIComponent(selected.id)}`)
     .then((data2) => {
       stamps = data2.stamps || [];
+      if (requestedStamp) {
+        const stampFrame = stamps.indexOf(requestedStamp);
+        if (stampFrame >= 0) {
+          frame = stampFrame;
+          drawFrame();
+          return;
+        }
+      }
       const matched = stamps.findIndex((stamp) => {
         const row = byStamp.get(String(stamp));
         return row && row.status === "BLOCKED";
@@ -1277,7 +1353,14 @@ async function pageReports(reportId) {
   const clearSeries = rows.map((r, i) => i + 1 - blockedSeries[i]);
   const nearestSeries = rows.map((r) => r.nearest_m).filter((v) => v != null);
   const alertRow = rows.find((r) => r.status === "BLOCKED");
-  const liveLink = current.name ? `#/efir/${encodeURIComponent(current.name)}` : "#/efir";
+  const liveLink = current.bag_id ? `#/efir/${encodeURIComponent(current.bag_id)}` : "#/efir";
+  const detectedObstacles = (alertRow && alertRow.obstacles) || [];
+  const degradedRows = rows.filter((row) => row.status === "DEGRADED");
+  const obstacleText = detectedObstacles.length
+    ? detectedObstacles.map((obstacle) => `${obstacle.track_id}: ${obstacle.extent.map((value) => fmtNum(value, 2)).join(" × ")} м`).join(" · ")
+    : alertRow
+      ? "Для кадра детектор не передал геометрию препятствия"
+      : "В отчёте нет подтверждённого препятствия";
   view.innerHTML = `
     <div class="report-top">
       <div class="title"><span>ОТЧЁТ</span>${current.name}</div>
@@ -1304,6 +1387,13 @@ async function pageReports(reportId) {
         <div class="chart">${histogramSvg(latSeries, (current.latency_ms || {}).median, (current.latency_ms || {}).p95)}</div>
       </section>
     </div>
+    <section class="card">
+      <h2>${alertRow ? "Кадр тревоги" : "Кадр без подтверждённой тревоги"}</h2>
+      <p class="muted">${alertRow ? `Кадр ${fmtInt((alertRow.index || 0) + 1)} · ${fmtMeters(alertRow.nearest_m)}` : "В отчёте нет кадра с препятствием"}</p>
+      <p>${obstacleText}</p>
+      ${degradedRows.length ? `<p class="warn-text">Не полностью обработано кадров: ${fmtInt(degradedRows.length)}. По ним детектор не подтвердил отсутствие препятствия.</p>` : ""}
+      ${alertRow && current.bag_id ? `<a href="#/efir/${encodeURIComponent(current.bag_id)}?stamp=${encodeURIComponent(alertRow.stamp_ns || "")}"><button class="btn accent" type="button">Открыть кадр с облаком</button></a><img class="report-frame" src="/api/reports/${encodeURIComponent(current.id)}/frame.png?frame=${encodeURIComponent(alertRow.index || 0)}&stamp=${encodeURIComponent(alertRow.stamp_ns || "")}" alt="Облако точек в кадре тревоги">` : ""}
+    </section>
     <section class="card">
       <h2>Таблица кадров</h2>
       <div style="overflow-x:auto">
@@ -1400,6 +1490,7 @@ async function pageParams() {
     ["height", "Высота, м", gauge.height],
     ["sensor_height", "Высота сенсора, м", gauge.sensor_height],
     ["base_offset", "Смещение от рельса, м", gauge.base_offset],
+    ["safety_margin", "Запас по высоте и перед носом, м", gauge.safety_margin],
   ];
   view.innerHTML = `
     <div class="settings-grid">
@@ -1527,10 +1618,168 @@ async function pageParams() {
   });
 }
 
+async function pageTunnelLab() {
+  const data = await api("/api/lab/sources");
+  const sources = data.items || [];
+  let labGauge = null;
+  try { labGauge = await api("/api/gauge"); } catch (err) { void err; }
+  view.innerHTML = `
+    <div class="lab-grid">
+      <section class="card lab-main">
+        <div class="card-head"><h2>Туннельная лаборатория</h2><span id="lab-state" class="muted">Источник не запущен</span></div>
+        <div class="lab-viewport"><canvas id="lab-canvas"></canvas><div id="lab-overlay" class="lab-overlay">Выберите сцену и задайте объект</div></div>
+        <div class="player"><button id="lab-play" class="btn accent" type="button">Запустить прогон</button><span id="lab-progress" class="muted">Кадр —</span></div>
+      </section>
+      <section class="card lab-controls">
+        <h2>Сцена</h2>
+        <label>Источник кадров<select id="lab-source">${sources.map((source) => `<option value="${source.id}">${source.name}</option>`).join("")}</select></label>
+        <div class="lab-form-grid">
+          <label>Длина, м<input id="lab-length" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Ширина, м<input id="lab-width" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Высота, м<input id="lab-height" type="number" min="0.05" step="0.05" value="1"></label>
+          <label>Дальность, м<input id="lab-distance" type="number" min="1" step="1" value="20"></label>
+        </div>
+        <label>Положение<select id="lab-position"><option value="0,0.8">Сверху</option><option value="0,0">По центру</option><option value="0,-0.4">Снизу</option><option value="-1.2,0.8">Слева сверху</option><option value="1.2,0.8">Справа сверху</option></select></label>
+        <p id="lab-help" class="muted">Прогон будет создан сервером из выбранной сцены. UI не рисует синтетическую цель сам.</p>
+      </section>
+      <section class="card lab-results"><h2>Результат detector</h2><div id="lab-result" class="kv2"><div class="muted">Результатов нет</div></div></section>
+    </div>
+  `;
+  const canvas = document.getElementById("lab-canvas");
+  const ctx = canvas.getContext("2d");
+  let job = null;
+  let timer = null;
+  let frame = 0;
+  let frameDataEvents = [];
+  function draw(points, rows) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#0d1013";
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.strokeStyle = "#334752";
+    ctx.strokeRect(24, 24, rect.width - 48, rect.height - 48);
+    const row = rows && rows[frame];
+    const hw = labGauge?.half_width ?? 1.5;
+    const floor = groundFloor(labGauge);
+    const cx = rect.width / 2;
+    const cy = rect.height * 0.48;
+    const F = Math.min(rect.width * 0.85, rect.height * 1.5);
+    const d0 = 2.2;
+    const project = (forward, side, z) => {
+      const depth = forward + d0;
+      return [cx + side * (F / depth), cy - (z * F) / depth];
+    };
+    ctx.fillStyle = "#a9c3cf";
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    let plotted = 0;
+    for (let i = 0; i < points.length; i += 3) {
+      const [forward, side] = planOf(Number(points[i]), Number(points[i + 1]), labGauge);
+      const z = Number(points[i + 2]);
+      if (forward < 0.3 || forward > 90 || z < floor || Math.abs(side) > hw * 2.4) continue;
+      const [x, y] = project(forward, side, z);
+      if (Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x < rect.width && y >= 0 && y < rect.height) {
+        ctx.fillRect(x - 1, y - 1, 2, 2);
+        plotted += 1;
+      }
+    }
+    if (labGauge?.near && labGauge?.far) {
+      ctx.strokeStyle = "rgba(91,122,140,0.9)";
+      ctx.lineWidth = 1;
+      const loop = (poly) => {
+        ctx.beginPath();
+        poly.forEach((point, index) => {
+          const [forward, side] = planOf(point[0], point[1], labGauge);
+          const [x, y] = project(Math.max(0.6, forward), side, point[2]);
+          if (!index) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      };
+      loop(labGauge.near);
+      loop(labGauge.far);
+    }
+    canvas.dataset.plotted = String(plotted);
+    if (points.length && frameDataEvents.length) {
+      frameDataEvents.forEach((event) => {
+        const position = event.position || [];
+        const extent = event.extent || [];
+        if (position.length !== 3 || extent.length !== 3) return;
+        const [forward, side] = planOf(Number(position[0]), Number(position[1]), labGauge);
+        const [x, y] = project(forward, side, Number(position[2]));
+        const boxWidth = Math.max(6, Number(extent[0]) * (F / (forward + d0)));
+        const boxHeight = Math.max(6, Number(extent[2]) * (F / (forward + d0)));
+        ctx.strokeStyle = event.kind === "confirmed" ? "#d05f50" : "#d5a84f";
+        ctx.setLineDash(event.kind === "confirmed" ? [] : [6, 4]);
+        ctx.strokeRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
+        ctx.setLineDash([]);
+      });
+    }
+  }
+  async function poll() {
+    if (!job) return;
+    const next = await api(`/api/lab/jobs/${encodeURIComponent(job.id)}`);
+    job = next;
+    document.getElementById("lab-state").textContent = next.status;
+    document.getElementById("lab-progress").textContent = `Кадр ${next.status === "ready" ? `${frame + 1} / ${next.frames}` : "подготовка"}`;
+    if (next.status === "ready") {
+      const frameData = await api(`/api/lab/jobs/${encodeURIComponent(next.id)}/frame?frame=${frame}`).catch(() => null);
+      const rows = next.rows || [];
+      const result = document.getElementById("lab-result");
+      result.innerHTML = [pair("Кандидатных кадров", fmtInt(next.candidates)), pair("Подтверждённых кадров", fmtInt(next.confirmed)), pair("Источник", next.source)].join("");
+      if (frameData) {
+        frameDataEvents = frameData.events;
+        draw(frameData.points.flat(), rows);
+        document.getElementById("lab-overlay").textContent = frameData.points.length ? `${frameData.points.length.toLocaleString("ru-RU")} точек · ${frameData.event_count || 0} detector events` : "В этом кадре нет валидных точек";
+      }
+      if (frame + 1 < next.frames) {
+        frame += 1;
+        addTimer(setTimeout(poll, 500));
+      }
+      return;
+    }
+    if (next.status === "error") {
+      document.getElementById("lab-play").disabled = false;
+      document.getElementById("lab-help").textContent = next.error || "Прогон завершился с ошибкой";
+      return;
+    }
+    addTimer(setTimeout(poll, 1000));
+  }
+  document.getElementById("lab-play").addEventListener("click", async () => {
+    if (job && ["queued", "generating", "detecting"].includes(job.status)) return;
+    clearTimers();
+    frame = 0;
+    frameDataEvents = [];
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById("lab-overlay").textContent = "Подготовка кадра…";
+    document.getElementById("lab-play").disabled = true;
+    const [lateral, vertical] = document.getElementById("lab-position").value.split(",");
+    job = await api("/api/lab/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: document.getElementById("lab-source").value,
+        length: document.getElementById("lab-length").value,
+        width: document.getElementById("lab-width").value,
+        height: document.getElementById("lab-height").value,
+        distance: document.getElementById("lab-distance").value,
+        lateral,
+        vertical,
+      }),
+    });
+    document.getElementById("lab-play").disabled = false;
+    poll();
+  });
+}
+
 async function route() {
   clearTimers();
   const hash = (location.hash || "#/").replace(/^#/, "") || "/";
-  const parts = hash.split("/").filter(Boolean);
+  const [path] = hash.split("?");
+  const parts = path.split("/").filter(Boolean);
   const head = `/${parts[0] || ""}`;
   setNav(head === "/" ? "/" : head);
   try {

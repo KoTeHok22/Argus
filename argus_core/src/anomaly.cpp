@@ -132,40 +132,56 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
     const uint32_t w = ri.width;
     const uint32_t h = ri.height;
     const size_t n_cells = static_cast<size_t>(w) * h;
-    const uint32_t half = std::min(p_.median_half_window, (w - 1) / 2);
-
-    std::vector<float> baseline(n_cells, std::numeric_limits<float>::quiet_NaN());
-    std::vector<float> win;
-    win.reserve(2 * static_cast<size_t>(half) + 1);
-    for (uint32_t r = 0; r < h; ++r) {
-        win.clear();
-        for (uint32_t d = 0; d <= 2 * half; ++d) {
-            const float v = ri.range[ri.idx(d % w, r)];
-            if (std::isfinite(v)) {
-                win.push_back(v);
+    const auto build_baseline = [&](uint32_t configured_half) {
+        const uint32_t half = std::min(configured_half, (w - 1) / 2);
+        std::vector<float> values(n_cells, std::numeric_limits<float>::quiet_NaN());
+        std::vector<float> win;
+        win.reserve(2 * static_cast<size_t>(half) + 1);
+        for (uint32_t r = 0; r < h; ++r) {
+            win.clear();
+            for (uint32_t d = 0; d <= 2 * half; ++d) {
+                const float value = ri.range[ri.idx(d % w, r)];
+                if (std::isfinite(value)) {
+                    win.push_back(value);
+                }
+            }
+            std::sort(win.begin(), win.end());
+            for (uint32_t az = half; az < w + half; ++az) {
+                const uint32_t c = az % w;
+                values[ri.idx(c, r)] = median_of_sorted(win);
+                const float out_v = ri.range[ri.idx((c + w - half) % w, r)];
+                const float in_v = ri.range[ri.idx((c + half + 1) % w, r)];
+                if (std::isfinite(out_v)) sorted_remove_one(win, out_v);
+                if (std::isfinite(in_v)) sorted_insert(win, in_v);
             }
         }
-        std::sort(win.begin(), win.end());
-        for (uint32_t az = half; az < w + half; ++az) {
-            const uint32_t c = az % w;
-            baseline[ri.idx(c, r)] = median_of_sorted(win);
-            const float out_v = ri.range[ri.idx((c + w - half) % w, r)];
-            const float in_v = ri.range[ri.idx((c + half + 1) % w, r)];
-            if (std::isfinite(out_v)) sorted_remove_one(win, out_v);
-            if (std::isfinite(in_v)) sorted_insert(win, in_v);
-        }
+        return values;
+    };
+    const auto baseline = build_baseline(p_.median_half_window);
+    const bool has_override = p_.median_half_window_override != p_.median_half_window;
+    const auto override_baseline =
+        has_override ? build_baseline(p_.median_half_window_override) : baseline;
+    std::vector<float> selected_baseline(n_cells);
+    for (size_t i = 0; i < n_cells; ++i) {
+        const float range = ri.range[i];
+        const bool use_override = has_override && std::isfinite(range) &&
+                                  range >= p_.median_window_override_min_range_m &&
+                                  range <= p_.median_window_override_max_range_m;
+        selected_baseline[i] = use_override ? override_baseline[i] : baseline[i];
     }
 
     std::vector<uint8_t> hit(n_cells, 0);
     std::vector<float> resid(n_cells, 0.0f);
     for (size_t i = 0; i < n_cells; ++i) {
         const float v = ri.range[i];
-        const float b = baseline[i];
+        const float b = selected_baseline[i];
         if (!std::isfinite(v) || !std::isfinite(b) || v < p_.min_range) {
             continue;
         }
         const float d = b - v;
-        if (d > p_.residual_threshold_m) {
+        const float residual_threshold =
+            v >= p_.far_range_m ? p_.residual_threshold_far_m : p_.residual_threshold_m;
+        if (d > residual_threshold) {
             hit[i] = 1;
             resid[i] = d;
         }
@@ -217,7 +233,10 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
 
         const size_t cells = cand.cells.size();
-        if (cells < p_.min_cells) {
+        const bool far_candidate = nearest >= p_.far_range_m;
+        const uint32_t min_cells = far_candidate ? p_.min_cells_far : p_.min_cells;
+        const float min_fill = far_candidate ? p_.min_fill_far : p_.min_fill;
+        if (cells < min_cells) {
             continue;
         }
 
@@ -228,7 +247,7 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
         }
         const float fill =
             static_cast<float>(cells) / static_cast<float>((span + 1) * (r1 - r0 + 1));
-        if (fill < p_.min_fill) {
+        if (fill < min_fill) {
             continue;
         }
         if (nearest < p_.min_range || nearest > p_.max_target_range_m) {
@@ -323,6 +342,71 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             out.indices.push_back(ci);
             out.score.push_back(std::min(1.0f, resid[cidx] / (2.0f * p_.residual_threshold_m)));
         }
+    }
+    return out;
+}
+
+TemporalResidualDetector::TemporalResidualDetector(const TemporalResidualParams& params)
+    : params_(params) {}
+
+void TemporalResidualDetector::reset() {
+    history_.clear();
+    width_ = 0;
+    height_ = 0;
+}
+
+AnomalySet TemporalResidualDetector::detect(const CleanCloud& cloud, const RangeImage& ri) {
+    AnomalySet out;
+    out.source = name();
+    if (!ri.valid() || params_.window_frames == 0) {
+        reset();
+        return out;
+    }
+    if (width_ != ri.width || height_ != ri.height) {
+        history_.clear();
+        width_ = ri.width;
+        height_ = ri.height;
+    }
+    if (history_.size() >= 2) {
+        std::vector<uint32_t> cell_to_cloud(ri.range.size(), std::numeric_limits<uint32_t>::max());
+        for (size_t index = 0; index < cloud.size(); ++index) {
+            const uint32_t cell =
+                cloud.raw_idx.empty() ? static_cast<uint32_t>(index) : cloud.raw_idx[index];
+            if (cell < cell_to_cloud.size()) {
+                cell_to_cloud[cell] = static_cast<uint32_t>(index);
+            }
+        }
+        std::vector<float> values;
+        values.reserve(history_.size());
+        for (size_t cell = 0; cell < ri.range.size(); ++cell) {
+            const float current = ri.range[cell];
+            const uint32_t cloud_index = cell_to_cloud[cell];
+            if (!std::isfinite(current) || cloud_index == std::numeric_limits<uint32_t>::max() ||
+                current < params_.min_range_m || current > params_.max_range_m) {
+                continue;
+            }
+            values.clear();
+            for (const auto& frame : history_) {
+                if (std::isfinite(frame[cell])) {
+                    values.push_back(frame[cell]);
+                }
+            }
+            if (values.size() < 2) {
+                continue;
+            }
+            std::sort(values.begin(), values.end());
+            const float baseline = values[values.size() / 2];
+            const float residual = baseline - current;
+            if (residual <= params_.residual_threshold_m) {
+                continue;
+            }
+            out.indices.push_back(cloud_index);
+            out.score.push_back(std::min(1.0f, residual / (2.0f * params_.residual_threshold_m)));
+        }
+    }
+    history_.push_back(ri.range);
+    if (history_.size() > params_.window_frames) {
+        history_.erase(history_.begin());
     }
     return out;
 }

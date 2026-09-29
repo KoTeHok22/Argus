@@ -32,6 +32,21 @@ TEST(Gauge, SafetyMarginDoesNotWidenLateralContains) {
     EXPECT_FALSE(g.contains(50.0f, 1.50f, 2.0f));
 }
 
+TEST(Gauge, PathCoordinatesUseSameClearanceProfile) {
+    auto params = default_gauge().params();
+    params.half_width = 1.5f;
+    params.height = 2.1f;
+    params.chamfer = 0.2f;
+    params.sensor_height = 1.2f;
+    params.safety_margin = 0.1f;
+    const argus::ClearanceGauge gauge(params);
+    EXPECT_TRUE(gauge.contains_at_path(20.0f, 1.4f, 0.0f));
+    EXPECT_FALSE(gauge.contains_at_path(20.0f, 1.51f, 0.0f));
+    EXPECT_FALSE(gauge.contains_at_path(20.0f, 1.4f, 1.01f));
+    EXPECT_FALSE(gauge.contains_at_path(20.0f, 0.0f, 1.01f));
+    EXPECT_FALSE(gauge.contains_at_path(301.0f, 0.0f, 0.0f));
+}
+
 TEST(Gauge, BoundaryExact) {
     const auto g = default_gauge();
     EXPECT_TRUE(g.contains(50.0f, 1.45f, 2.0f));

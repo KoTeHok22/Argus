@@ -32,6 +32,7 @@ public:
     explicit ClearanceGauge(const ClearanceGaugeParams& p);
 
     bool contains(float x, float y, float z) const;
+    bool contains_at_path(float forward, float lateral, float z) const;
 
     float forward_distance(float x, float y, float z) const;
 

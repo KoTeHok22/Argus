@@ -16,14 +16,14 @@ constexpr float kWallRange = 25.5f;
 constexpr float kBoxRange = 16.9f;
 
 argus::CleanCloud make_wall_cloud(float box_range, uint32_t az0, uint32_t az1, uint32_t r0,
-                                  uint32_t r1) {
+                                  uint32_t r1, float wall_range = kWallRange) {
     argus::CleanCloud c;
     c.rings = kH;
     c.n_raw = kW * kH;
     for (uint32_t az = 0; az < kW; ++az) {
         for (uint32_t ring = 0; ring < kH; ++ring) {
             const bool in_box = az >= az0 && az <= az1 && ring >= r0 && ring <= r1;
-            const float d = in_box ? box_range : kWallRange;
+            const float d = in_box ? box_range : wall_range;
             c.x.push_back(d);
             c.y.push_back(0.0f);
             c.z.push_back(0.0f);
@@ -39,10 +39,14 @@ argus::GeometryResidualParams make_geom_params(uint32_t min_stable_frames) {
     argus::GeometryResidualParams p;
     p.median_half_window = 100;
     p.residual_threshold_m = 1.0f;
+    p.residual_threshold_far_m = 1.0f;
     p.min_cells = 50;
     p.min_fill = 0.3f;
     p.min_range = 4.0f;
     p.max_target_range_m = 45.0f;
+    p.far_range_m = 60.0f;
+    p.min_cells_far = 8;
+    p.min_fill_far = 0.12f;
     p.min_stable_frames = min_stable_frames;
     p.az_tolerance = 20;
     p.range_tolerance_m = 3.0f;
@@ -234,4 +238,119 @@ TEST(NoReturnDetector, DeadBaselineNotFlagged) {
     argus::NoReturnDetector det(p);
     const argus::AnomalySet set = det.detect(cloud, ri);
     EXPECT_TRUE(set.cells.empty());
+}
+
+TEST(GeometryResidualDetector, SparseFarCandidateUsesFarGate) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.far_range_m = 60.0f;
+    params.min_cells = 50;
+    params.min_cells_far = 8;
+    params.min_fill = 0.3f;
+    params.min_fill_far = 0.12f;
+    argus::GeometryResidualDetector detector(params);
+    const auto set = detector.detect(cloud, ri);
+    EXPECT_EQ(set.indices.size(), 12u);
+
+    params.far_range_m = 120.0f;
+    argus::GeometryResidualDetector near_gate(params);
+    EXPECT_TRUE(near_gate.detect(cloud, ri).indices.empty());
+
+    params.far_range_m = 60.0f;
+    params.max_target_range_m = 90.0f;
+    argus::GeometryResidualDetector range_gate(params);
+    EXPECT_TRUE(range_gate.detect(cloud, ri).indices.empty());
+}
+
+TEST(GeometryResidualDetector, FarResidualThresholdIsIndependent) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.far_range_m = 60.0f;
+    params.min_cells_far = 8;
+    params.min_fill_far = 0.12f;
+    params.residual_threshold_far_m = 60.0f;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_TRUE(detector.detect(cloud, ri).indices.empty());
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideRecoversWideTarget) {
+    const auto cloud = make_wall_cloud(20.0f, 160, 320, 1, 6, 180.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.median_window_override_min_range_m = 18.5f;
+    params.median_window_override_max_range_m = 40.0f;
+    params.median_half_window_override = 200;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_FALSE(detector.detect(cloud, ri).indices.empty());
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideLeavesFarTargetUnchanged) {
+    const auto cloud = make_wall_cloud(100.0f, 200, 203, 2, 4, 140.0f);
+    const auto ri = ri_of(cloud);
+    auto base = make_geom_params(1);
+    base.max_target_range_m = 150.0f;
+    auto overridden = base;
+    overridden.median_window_override_min_range_m = 18.5f;
+    overridden.median_window_override_max_range_m = 40.0f;
+    overridden.median_half_window_override = 200;
+    argus::GeometryResidualDetector base_detector(base);
+    argus::GeometryResidualDetector override_detector(overridden);
+    EXPECT_EQ(base_detector.detect(cloud, ri).indices, override_detector.detect(cloud, ri).indices);
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideLeavesFdTargetUnchanged) {
+    const auto cloud = make_wall_cloud(16.9f, 200, 203, 2, 4);
+    const auto ri = ri_of(cloud);
+    auto base = make_geom_params(1);
+    auto overridden = base;
+    overridden.median_window_override_min_range_m = 18.5f;
+    overridden.median_window_override_max_range_m = 40.0f;
+    overridden.median_half_window_override = 200;
+    argus::GeometryResidualDetector base_detector(base);
+    argus::GeometryResidualDetector override_detector(overridden);
+    EXPECT_EQ(base_detector.detect(cloud, ri).indices, override_detector.detect(cloud, ri).indices);
+}
+
+TEST(GeometryResidualDetector, NearRangeMedianOverrideIsScoped) {
+    const auto cloud = make_wall_cloud(20.0f, 194, 209, 1, 6, 180.0f);
+    const auto ri = ri_of(cloud);
+    auto params = make_geom_params(1);
+    params.max_target_range_m = 150.0f;
+    params.median_half_window = 100;
+    params.median_window_override_min_range_m = 18.5f;
+    params.median_window_override_max_range_m = 40.0f;
+    params.median_half_window_override = 200;
+    argus::GeometryResidualDetector detector(params);
+    EXPECT_FALSE(detector.detect(cloud, ri).indices.empty());
+}
+
+TEST(TemporalResidualDetector, AppearingBoxProducesIndicesAfterHistoryWarmup) {
+    argus::TemporalResidualParams params;
+    params.window_frames = 5;
+    params.residual_threshold_m = 0.5f;
+    params.min_range_m = 4.0f;
+    params.max_range_m = 45.0f;
+    argus::TemporalResidualDetector detector(params);
+    const auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto wall_range = ri_of(wall);
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    const auto box = make_wall_cloud(10.0f, 230, 250, 2, 5, 25.5f);
+    const auto result = detector.detect(box, ri_of(box));
+    EXPECT_FALSE(result.indices.empty());
+}
+
+TEST(TemporalResidualDetector, StableSceneProducesNoCandidates) {
+    argus::TemporalResidualParams params;
+    argus::TemporalResidualDetector detector(params);
+    const auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto range = ri_of(wall);
+    for (int frame = 0; frame < 8; ++frame) {
+        EXPECT_TRUE(detector.detect(wall, range).indices.empty());
+    }
 }

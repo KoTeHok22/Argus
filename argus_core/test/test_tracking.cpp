@@ -105,6 +105,12 @@ TEST(Tracking, FarTrackNeedsAccumulation) {
     const auto out5 = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
     ASSERT_EQ(out5.size(), 1u);
     EXPECT_EQ(out5[0].hits, 5u);
+    const auto missed = tr.update({}, 0.1f, 0.0f);
+    ASSERT_EQ(missed.size(), 1u);
+    EXPECT_EQ(missed[0].consecutive_misses, 1u);
+    const auto recovered = tr.update({make_cluster(0.0f, -160.0f, 0.0f)}, 0.1f, 0.0f);
+    ASSERT_EQ(recovered.size(), 1u);
+    EXPECT_EQ(recovered[0].consecutive_misses, 0u);
 }
 
 TEST(Tracking, ConfirmedStaysConfirmedAcrossRanges) {

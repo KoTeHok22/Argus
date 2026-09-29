@@ -15,6 +15,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
+#include <argus_msgs/msg/candidate.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
@@ -30,6 +31,7 @@ using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using AnomalySetMsg = argus_msgs::msg::AnomalySet;
 using Obstacle = argus_msgs::msg::Obstacle;
 using ObstacleArray = argus_msgs::msg::ObstacleArray;
+using Candidate = argus_msgs::msg::Candidate;
 using Marker = visualization_msgs::msg::Marker;
 using MarkerArray = visualization_msgs::msg::MarkerArray;
 
@@ -71,6 +73,22 @@ public:
     FusionNode() : Node("argus_fusion") {
         gauge_params_ = read_gauge_params();
         params_ = read_fusion_params();
+        params_.temporal_min_extent_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_min_extent_m", params_.temporal_min_extent_m));
+        params_.temporal_max_extent_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_max_extent_m", params_.temporal_max_extent_m));
+        params_.temporal_merge_distance_m = static_cast<float>(declare_parameter<double>(
+            "fusion.temporal_merge_distance_m", params_.temporal_merge_distance_m));
+        params_.use_temporal_candidates = declare_parameter<bool>("fusion.use_temporal_candidates",
+                                                                  params_.use_temporal_candidates);
+        params_.temporal_min_cluster_size = static_cast<uint32_t>(
+            declare_parameter<int>("fusion.temporal_min_cluster_size",
+                                   static_cast<int>(params_.temporal_min_cluster_size)));
+        if (params_.temporal_min_cluster_size == 0 || params_.temporal_min_extent_m <= 0.0f ||
+            params_.temporal_max_extent_m < params_.temporal_min_extent_m ||
+            params_.temporal_merge_distance_m < 0.0f) {
+            throw std::invalid_argument("invalid temporal candidate cluster limits");
+        }
 
         default_dt_ = declare_parameter<double>("fusion.default_dt_s", 0.1);
         stale_timeout_ = declare_parameter<double>("fusion.stale_timeout_s", 1.0);
@@ -116,6 +134,14 @@ public:
                 slots_[key].no_return = msg;
                 try_process(key);
             });
+        if (params_.use_temporal_candidates) {
+            sub_temporal_ = create_subscription<AnomalySetMsg>(
+                "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
+                    const uint64_t key = stamp_ns(msg->header.stamp);
+                    slots_[key].temporal = msg;
+                    try_process(key);
+                });
+        }
         sub_free_space_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_fs", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
                 const uint64_t key = stamp_ns(msg->header.stamp);
@@ -186,6 +212,10 @@ private:
             declare_parameter<double>("fusion.critical_ttc_s", p.critical_ttc_s));
         p.min_votes_for_alert = static_cast<uint32_t>(declare_parameter<int>(
             "fusion.min_votes_for_alert", static_cast<int>(p.min_votes_for_alert)));
+        p.max_confirmed_track_misses = static_cast<uint32_t>(declare_parameter<int>(
+            "fusion.max_confirmed_track_misses", static_cast<int>(p.max_confirmed_track_misses)));
+        p.strict_track_freshness_range_m = static_cast<float>(declare_parameter<double>(
+            "fusion.strict_track_freshness_range_m", p.strict_track_freshness_range_m));
         p.ground_filter = declare_parameter<bool>("fusion.ground_filter", p.ground_filter);
         p.ground_clearance_m = static_cast<float>(
             declare_parameter<double>("fusion.ground_clearance_m", p.ground_clearance_m));
@@ -211,6 +241,10 @@ private:
             declare_parameter<double>("clustering.size_mid_range_m", c.size_mid_range_m));
         c.size_far_range_m = static_cast<float>(
             declare_parameter<double>("clustering.size_far_range_m", c.size_far_range_m));
+        c.min_cluster_size_long = static_cast<uint32_t>(declare_parameter<int>(
+            "clustering.min_cluster_size_long", static_cast<int>(c.min_cluster_size_long)));
+        c.size_long_range_m = static_cast<float>(
+            declare_parameter<double>("clustering.size_long_range_m", c.size_long_range_m));
         c.max_cluster_size = static_cast<uint32_t>(declare_parameter<int>(
             "clustering.max_cluster_size", static_cast<int>(c.max_cluster_size)));
         c.min_extent_m = static_cast<float>(
@@ -244,7 +278,8 @@ private:
             return;
         }
         const FrameSlot& slot = it->second;
-        if (!slot.cloud || !slot.geometry || !slot.no_return) {
+        if (!slot.cloud || !slot.geometry || !slot.no_return ||
+            (params_.use_temporal_candidates && !slot.temporal)) {
             return;
         }
 
@@ -281,9 +316,10 @@ private:
         if (pose_valid && slot.free_space) {
             free_space = msg_to_set(*slot.free_space);
         }
-        const FusionResult result = pipeline_->update(
-            cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return), free_space, dt,
-            static_cast<float>(train_speed_), pose, true, pose_valid);
+        const FusionResult result =
+            pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
+                              slot.temporal ? msg_to_set(*slot.temporal) : AnomalySet{}, free_space,
+                              dt, static_cast<float>(train_speed_), pose, true, pose_valid);
         const float processing_ms = ms_since(t0);
         ++frames_processed_;
 
@@ -313,6 +349,28 @@ private:
                 status = ObstacleArray::STATUS_WARNING;
             }
             out.obstacles.push_back(o);
+        }
+        for (size_t i = 0; i < result.candidates.size(); ++i) {
+            const Cluster& c = result.candidates[i];
+            Candidate candidate;
+            candidate.header = out.header;
+            candidate.candidate_id = static_cast<uint32_t>(i);
+            candidate.position.x = (c.min_corner.x() + c.max_corner.x()) * 0.5f;
+            candidate.position.y = (c.min_corner.y() + c.max_corner.y()) * 0.5f;
+            candidate.position.z = (c.min_corner.z() + c.max_corner.z()) * 0.5f;
+            candidate.extent.x = (c.max_corner - c.min_corner).x();
+            candidate.extent.y = (c.max_corner - c.min_corner).y();
+            candidate.extent.z = (c.max_corner - c.min_corner).z();
+            candidate.range_m = c.nearest_range;
+            candidate.confidence = c.score;
+            candidate.votes_free_space = c.votes_free_space;
+            candidate.votes_no_return = c.votes_no_return;
+            candidate.votes_geometry = c.votes_geometry;
+            candidate.votes_temporal = c.votes_temporal;
+            candidate.votes_temporal = c.votes_temporal;
+            candidate.point_count = c.point_count;
+            candidate.reason = reason_of(c);
+            out.candidates.push_back(candidate);
         }
         if (!result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
@@ -613,6 +671,26 @@ private:
         return reason;
     }
 
+    static std::string reason_of(const Cluster& c) {
+        std::string reason;
+        if (c.votes_temporal != 0) {
+            reason += "temporal+";
+        }
+        if (c.votes_free_space != 0) {
+            reason += "free_space+";
+        }
+        if (c.votes_no_return != 0) {
+            reason += "no_return+";
+        }
+        if (c.votes_geometry != 0) {
+            reason += "geometry+";
+        }
+        if (!reason.empty()) {
+            reason.pop_back();
+        }
+        return reason;
+    }
+
     void check_stale() {
         const auto now_tp = std::chrono::steady_clock::now();
         if (last_output_.time_since_epoch().count() > 0) {
@@ -638,6 +716,7 @@ private:
         CleanCloudMsg::ConstSharedPtr cloud;
         AnomalySetMsg::ConstSharedPtr geometry;
         AnomalySetMsg::ConstSharedPtr no_return;
+        AnomalySetMsg::ConstSharedPtr temporal;
         AnomalySetMsg::ConstSharedPtr free_space;
     };
 
@@ -674,6 +753,7 @@ private:
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_clean_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_geometry_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_no_return_;
+    rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_temporal_;
     rclcpp::Subscription<AnomalySetMsg>::SharedPtr sub_free_space_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr sub_pose_;
     rclcpp::Publisher<ObstacleArray>::SharedPtr pub_obstacles_;

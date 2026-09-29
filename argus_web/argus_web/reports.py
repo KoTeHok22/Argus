@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from pathlib import Path
 
@@ -74,6 +75,28 @@ def _stamp_of(row: dict) -> int | None:
         return None
 
 
+def _obstacles(row: dict) -> list[dict]:
+    raw = row.get("obstacles_json") or ""
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
+def _candidates(row: dict) -> list[dict]:
+    raw = row.get("candidates_json") or ""
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
+
+
 def _timed_row(row: dict) -> bool:
     for key in ("t_alert_path_ms", "t_detect_ms", "t_filter_ms"):
         value = _num(row.get(key))
@@ -83,7 +106,9 @@ def _timed_row(row: dict) -> bool:
 
 
 def _is_latency(fields: list[str]) -> bool:
-    return "stamp_ns" in fields and "status" in fields
+    return "status" in fields and (
+        "stamp_ns" in fields or "t_alert_path_ms" in fields or "t_detect_ms" in fields
+    )
 
 
 def _is_fusion(fields: list[str]) -> bool:
@@ -95,9 +120,9 @@ def summarize_latency(rows: list[dict]) -> dict:
     for row in rows:
         name = row.get("status") or "UNKNOWN"
         statuses[name] = statuses.get(name, 0) + 1
-    usable = [r for r in rows if (r.get("status") or "") not in ("", "DEGRADED") and _timed_row(r)]
+    usable = [row for row in rows if (row.get("status") or "") != ""]
     if not usable:
-        usable = [r for r in rows if _timed_row(r)] or rows
+        usable = rows
     blocked = [r for r in usable if r.get("status") == "BLOCKED"]
     clear = [r for r in usable if r.get("status") == "CLEAR"]
     nearest = [
@@ -117,11 +142,16 @@ def summarize_latency(rows: list[dict]) -> dict:
         frames_out.append(
             {
                 "index": i,
+                "source_index": _num(row.get("source_frame")) if _num(row.get("source_frame")) is not None else _num(row.get("frame")),
                 "stamp_ns": (str(stamp) if (stamp := _stamp_of(row)) is not None else None),
                 "status": row.get("status"),
                 "status_label": STATUS_LABEL.get(row.get("status") or "", row.get("status")),
                 "nearest_m": nearest_m if nearest_m and nearest_m > 0 else None,
+                "forward_m": _num(row.get("forward_m")),
                 "objects": int(_num(row.get("objects")) or 0),
+                "obstacles": _obstacles(row),
+                "candidates": _candidates(row),
+                "point_count": int(_num(row.get("points")) or 0),
                 "fps": _num(row.get("fps")),
                 "latency_ms": _num(row.get("t_alert_path_ms")),
                 "explain": (row.get("explain") or "").strip() or None,
@@ -176,6 +206,7 @@ def summarize_fusion(rows: list[dict]) -> dict:
                 "nearest_m": _num(row.get("range_m")) if alert else None,
                 "forward_m": _num(row.get("forward_m")) if alert else None,
                 "objects": int(_num(row.get("tracks")) or 0),
+                "obstacles": [],
                 "latency_ms": None,
             }
         )
@@ -234,6 +265,7 @@ def load_report(path: Path) -> dict:
             "fps": None,
             "latency_ms": {"median": None, "p95": None, "max": None},
             "rows": [],
+            "obstacles": [],
         }
     summary.update(
         {
@@ -243,9 +275,26 @@ def load_report(path: Path) -> dict:
             "file_name": path.name,
             "size_bytes": path.stat().st_size if path.is_file() else 0,
             "mtime": path.stat().st_mtime if path.is_file() else 0,
+            "bag_id": _report_bag_id(path.stem, path),
+            "screenshots": [f"/api/reports/{path.stem}/frame.png?frame={row['index']}" for row in summary.get("rows", []) if row.get("status") == "BLOCKED"],
+            "source_frames": [row.get("source_index") for row in summary.get("rows", [])],
         }
     )
     return summary
+
+
+def _report_bag_id(stem: str, path: Path) -> str | None:
+    from argus_web.bags import list_bags
+
+    matches = [bag["id"] for bag in list_bags() if stem.startswith(f"{bag['id']}_")]
+    if matches:
+        return max(matches, key=len)
+    for index in range(len(stem)):
+        if stem.startswith(("_202", "_203"), index) and stem[index + 4:index + 5].isdigit():
+            return stem[:index]
+    if path.parent.name == "runs":
+        return stem.rsplit("_", 1)[0] if "_" in stem else None
+    return _guess_bag(stem)
 
 
 KEEP_RESULTS = {
