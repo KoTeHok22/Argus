@@ -18,6 +18,8 @@ COPY argus_node_odometry     /ws/argus_node_odometry
 COPY argus_node_tunnel_model /ws/argus_node_tunnel_model
 COPY argus_node_detector     /ws/argus_node_detector
 COPY argus_node_fusion       /ws/argus_node_fusion
+COPY argus_node_watchdog     /ws/argus_node_watchdog
+COPY argus_node_recorder     /ws/argus_node_recorder
 COPY argus_launch /ws/argus_launch
 COPY argus_eval   /ws/argus_eval
 COPY argus_web    /ws/argus_web
