@@ -36,7 +36,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-numpy \
     tar \
     zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-rosbag2 \
+    ros-humble-rosbag2-cpp \
+    ros-humble-rosbag2-compression \
+    ros-humble-rosbag2-compression-zstd \
+    ros-humble-rosbag2-interfaces \
+    ros-humble-rosbag2-py \
+    ros-humble-rosbag2-storage \
     ros-humble-rosbag2-storage-default-plugins \
+    ros-humble-rosbag2-transport \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --no-cache-dir zstandard
