@@ -1,0 +1,11 @@
+services:
+  dev:
+    image: argus-dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    volumes:
+      - ..:/ws
+    working_dir: /ws
+    shm_size: 256m
+    command: ["bash"]

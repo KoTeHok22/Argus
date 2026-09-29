@@ -6,6 +6,23 @@
 
 ## Быстрый старт
 
+Одна команда поднимает панель в браузере:
+
+```bash
+docker compose -f docker/docker-compose.yml up --build ui
+```
+
+Открыть `http://localhost:8080`. Первый запуск собирает образ (образ `osrf/ros` тянется из сети).
+
+Прогон записи детектором:
+
+```bash
+docker compose -f docker/docker-compose.yml run --rm argus \
+    detect /data/recordings/<recording>
+```
+
+Сборка образа и запуск без compose:
+
 ```bash
 ./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
@@ -14,24 +31,7 @@ docker run --rm --shm-size=256m \
      detect /data/<recording>
 ```
 
-`--shm-size=256m` может потребоваться для крупных сообщений при запуске в Docker.
-
-Панель в браузере (загрузка `.zst`, эфир облака, отчёт):
-
-```bash
-docker run --rm --shm-size=256m -p 8080:8080 \
-    -v "$PWD/data":/data \
-    -v "$PWD/results":/ws/results \
-    argus ui
-```
-
-Открыть `http://localhost:8080`. Без Docker:
-
-```bash
-./scripts/run_ui.sh
-```
-
-Windows:
+`--shm-size=256m` нужен для крупных сообщений при запуске в Docker. Панель без Docker: `./scripts/run_ui.sh`, в Windows:
 
 ```powershell
 $env:PYTHONPATH="argus_web"; python -m argus_web
