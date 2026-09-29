@@ -20,7 +20,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ../data:/data:ro
+      - ../data/recordings:/data:ro
       - ../results:/ws/results
       - ../data/ui:/ws/data/ui
     working_dir: /ws

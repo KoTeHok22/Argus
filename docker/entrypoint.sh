@@ -98,7 +98,7 @@ rate по умолчанию 1 (реальное время). --shm-size=256m о
       detect /data/doubleT_obstacle 0
 
   docker run --rm --shm-size=256m -p 8080:8080 \
-      -v "$PWD/data":/data argus ui
+      -v "$PWD/data/recordings":/data argus ui
 EOF
     ;;
 esac
