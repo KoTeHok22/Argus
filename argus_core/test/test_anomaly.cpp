@@ -354,3 +354,50 @@ TEST(TemporalResidualDetector, StableSceneProducesNoCandidates) {
         EXPECT_TRUE(detector.detect(wall, range).indices.empty());
     }
 }
+
+TEST(TemporalResidualDetector, StampGapResetsHistory) {
+    argus::TemporalResidualParams params;
+    params.window_frames = 5;
+    params.residual_threshold_m = 0.5f;
+    params.min_range_m = 4.0f;
+    params.max_range_m = 45.0f;
+    params.max_frame_gap_s = 0.5;
+    argus::TemporalResidualDetector detector(params);
+    auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto wall_range = ri_of(wall);
+    wall.stamp_s = 100.0;
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    wall.stamp_s = 100.1;
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    wall.stamp_s = 100.2;
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    wall.stamp_s = 100.3;
+    auto box = make_wall_cloud(10.0f, 230, 250, 2, 5, 25.5f);
+    box.stamp_s = 100.4;
+    EXPECT_FALSE(detector.detect(box, ri_of(box)).indices.empty());
+    wall.stamp_s = 100.4 + 5.0;
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    box.stamp_s = 105.5;
+    EXPECT_TRUE(detector.detect(box, ri_of(box)).indices.empty());
+}
+
+TEST(TemporalResidualDetector, BackwardsStampResetsHistory) {
+    argus::TemporalResidualParams params;
+    params.window_frames = 5;
+    params.residual_threshold_m = 0.5f;
+    params.min_range_m = 4.0f;
+    params.max_range_m = 45.0f;
+    params.max_frame_gap_s = 0.5;
+    argus::TemporalResidualDetector detector(params);
+    auto wall = make_wall_cloud(25.5f, kW, kW, 0, 0);
+    const auto wall_range = ri_of(wall);
+    for (int i = 0; i < 4; ++i) {
+        wall.stamp_s = 200.0 + i * 0.1;
+        detector.detect(wall, wall_range);
+    }
+    wall.stamp_s = 50.0;
+    EXPECT_TRUE(detector.detect(wall, wall_range).indices.empty());
+    auto box = make_wall_cloud(10.0f, 230, 250, 2, 5, 25.5f);
+    box.stamp_s = 50.1;
+    EXPECT_TRUE(detector.detect(box, ri_of(box)).indices.empty());
+}

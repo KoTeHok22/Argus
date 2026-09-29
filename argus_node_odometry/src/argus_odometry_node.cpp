@@ -4,6 +4,7 @@
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/clean_cloud.hpp>
 #include <argus_msgs/msg/diagnostics.hpp>
@@ -57,6 +58,9 @@ public:
         p.rest_translation_m =
             static_cast<float>(declare_parameter<double>("odometry.rest_translation_m", 0.20));
         p.keep_ground = declare_parameter<bool>("odometry.keep_ground", true);
+        p.max_fitness = static_cast<float>(declare_parameter<double>("odometry.max_fitness", 0.05));
+        p.min_correspondences_quality = static_cast<uint32_t>(
+            declare_parameter<int>("odometry.min_correspondences_quality", 100));
         const std::string axis_name = declare_parameter<std::string>("odometry.forward_axis", "-y");
         if (!parse_forward_axis(axis_name, p.forward_axis)) {
             p.forward_axis = ForwardAxis::NegY;
@@ -68,6 +72,12 @@ public:
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) { on_clean(msg); });
         pub_pose_ = create_publisher<geometry_msgs::msg::PoseStamped>("/argus/pose", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_odometry", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
 
         RCLCPP_INFO(get_logger(), "argus_odometry: 4DoF ICP, ось '%s'", axis_name.c_str());
     }
@@ -85,7 +95,7 @@ private:
         const OdometryResult r = odom_->update(cloud, cloud.stamp_s);
         const float t_ms = ms_since(t0);
 
-        if (r.valid) {
+        if (r.valid && r.quality_ok) {
             geometry_msgs::msg::PoseStamped pose;
             pose.header.stamp = msg->header.stamp;
             pose.header.frame_id = "odom";
@@ -104,10 +114,13 @@ private:
         Diagnostics d;
         d.header = msg->header;
         d.t_odometry_ms = t_ms;
-        d.model_ready = r.valid;
+        d.model_ready = r.valid && r.quality_ok;
         d.frames_processed = r.frames;
         d.n_points_valid = r.n_downsampled;
         d.n_points_rejected = r.valid ? 0u : 1u;
+        d.odom_fitness = r.fitness;
+        d.odom_correspondences = r.n_correspondences;
+        d.odom_quality_ok = r.quality_ok;
         d.fps = (t_prev_ms_ > 0.0f) ? 1000.0f / t_prev_ms_ : 0.0f;
         pub_diag_->publish(d);
         t_prev_ms_ = t_ms;
@@ -118,6 +131,8 @@ private:
     rclcpp::Subscription<CleanCloudMsg>::SharedPtr sub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_pose_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus

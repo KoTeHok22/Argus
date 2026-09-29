@@ -24,4 +24,11 @@ uint8 SEVERITY_INFO     = 0
 uint8 SEVERITY_WARNING  = 1
 uint8 SEVERITY_CRITICAL = 2
 
+uint8 object_class
+uint8 CLASS_UNKNOWN   = 0
+uint8 CLASS_PERSON    = 1
+uint8 CLASS_DEBRIS    = 2
+uint8 CLASS_EQUIPMENT = 3
+
 string reason
+string class_reason

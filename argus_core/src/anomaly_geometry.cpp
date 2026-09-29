@@ -1,123 +1,23 @@
 
-#include "argus_core/anomaly.hpp"
-
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
-#include "argus_core/tunnel_model.hpp"
+#include "anomaly_common.hpp"
+#include "argus_core/anomaly.hpp"
+#include "argus_core/range_image.hpp"
 
 namespace argus {
-namespace {
 
-constexpr uint32_t kNoCloudIndex = std::numeric_limits<uint32_t>::max();
-
-float median_of_sorted(const std::vector<float>& sorted) {
-    if (sorted.empty()) {
-        return std::numeric_limits<float>::quiet_NaN();
-    }
-    return sorted[sorted.size() / 2];
-}
-
-void sorted_insert(std::vector<float>& v, float x) {
-    v.insert(std::upper_bound(v.begin(), v.end(), x), x);
-}
-
-void sorted_remove_one(std::vector<float>& v, float x) {
-    const auto it = std::lower_bound(v.begin(), v.end(), x);
-    if (it != v.end() && *it == x) {
-        v.erase(it);
-    }
-}
-
-uint32_t cyclic_az_diff(uint32_t a, uint32_t b, uint32_t width) {
-    const uint32_t d = (a + width - b) % width;
-    return std::min(d, width - d);
-}
-
-std::vector<uint32_t> build_cell_to_cloud(const CleanCloud& cloud, size_t n_cells) {
-    std::vector<uint32_t> map(n_cells, kNoCloudIndex);
-    const bool has_raw = !cloud.raw_idx.empty();
-    for (size_t i = 0; i < cloud.size(); ++i) {
-        const uint32_t src = has_raw ? cloud.raw_idx[i] : static_cast<uint32_t>(i);
-        if (src < n_cells) {
-            map[src] = static_cast<uint32_t>(i);
-        }
-    }
-    return map;
-}
-
-} // namespace
-
-NoReturnDetector::NoReturnDetector(const NoReturnParams& p) : p_(p) {}
-
-AnomalySet NoReturnDetector::detect(const CleanCloud&, const RangeImage& ri) {
-    AnomalySet out;
-    out.source = name();
-    if (!ri.valid() || p_.azimuth_window == 0) {
-        return out;
-    }
-
-    const uint32_t w = ri.width;
-    const uint32_t h = ri.height;
-    const int aw = static_cast<int>(p_.azimuth_window);
-    const uint32_t max_run = std::max<uint32_t>(
-        p_.min_missing_run, static_cast<uint32_t>(p_.max_missing_run_deg * w / 360.0f) + 1);
-
-    for (uint32_t r = 0; r < h; ++r) {
-        uint32_t anchor = w;
-        for (uint32_t az = 0; az < w; ++az) {
-            if (ri.no_return_mask[ri.idx(az, r)] == 0) {
-                anchor = az;
-                break;
-            }
-        }
-        if (anchor == w) {
-            continue;
-        }
-
-        uint32_t run_start = 0;
-        bool in_run = false;
-        for (uint32_t step = 0; step <= w; ++step) {
-            const uint32_t az = (anchor + step) % w;
-            const bool missing = ri.no_return_mask[ri.idx(az, r)] != 0 && step < w;
-            if (missing && !in_run) {
-                run_start = az;
-                in_run = true;
-            } else if (!missing && in_run) {
-                in_run = false;
-                const uint32_t run_len = (az + w - run_start) % w;
-                if (run_len < p_.min_missing_run || run_len > max_run) {
-                    continue;
-                }
-                std::vector<float> base;
-                base.reserve(2 * static_cast<size_t>(aw));
-                for (int d = 1; d <= aw; ++d) {
-                    const uint32_t a1 = (run_start + w - static_cast<uint32_t>(d)) % w;
-                    const uint32_t a2 = (az + w - 1 + static_cast<uint32_t>(d)) % w;
-                    const float v1 = ri.range[ri.idx(a1, r)];
-                    const float v2 = ri.range[ri.idx(a2, r)];
-                    if (std::isfinite(v1)) base.push_back(v1);
-                    if (std::isfinite(v2)) base.push_back(v2);
-                }
-                const size_t total = 2 * static_cast<size_t>(aw);
-                const float frac = base.size() / static_cast<float>(total);
-                std::sort(base.begin(), base.end());
-                const float base_med = median_of_sorted(base);
-                if (frac >= p_.min_baseline_hits && base_med >= p_.min_range) {
-                    for (uint32_t k = 0; k < run_len; ++k) {
-                        const uint32_t a = (run_start + k) % w;
-                        out.cells.push_back(static_cast<uint32_t>(ri.idx(a, r)));
-                        out.cells_score.push_back(std::min(1.0f, frac));
-                    }
-                }
-            }
-        }
-    }
-    return out;
-}
+using anomaly_detail::build_cell_to_cloud;
+using anomaly_detail::cyclic_az_diff;
+using anomaly_detail::kNoCloudIndex;
+using anomaly_detail::median_of_sorted;
+using anomaly_detail::sorted_insert;
+using anomaly_detail::sorted_remove_one;
 
 GeometryResidualDetector::GeometryResidualDetector(const GeometryResidualParams& p) : p_(p) {}
 
@@ -342,109 +242,6 @@ AnomalySet GeometryResidualDetector::detect(const CleanCloud& cloud, const Range
             out.indices.push_back(ci);
             out.score.push_back(std::min(1.0f, resid[cidx] / (2.0f * p_.residual_threshold_m)));
         }
-    }
-    return out;
-}
-
-TemporalResidualDetector::TemporalResidualDetector(const TemporalResidualParams& params)
-    : params_(params) {}
-
-void TemporalResidualDetector::reset() {
-    history_.clear();
-    width_ = 0;
-    height_ = 0;
-}
-
-AnomalySet TemporalResidualDetector::detect(const CleanCloud& cloud, const RangeImage& ri) {
-    AnomalySet out;
-    out.source = name();
-    if (!ri.valid() || params_.window_frames == 0) {
-        reset();
-        return out;
-    }
-    if (width_ != ri.width || height_ != ri.height) {
-        history_.clear();
-        width_ = ri.width;
-        height_ = ri.height;
-    }
-    if (history_.size() >= 2) {
-        std::vector<uint32_t> cell_to_cloud(ri.range.size(), std::numeric_limits<uint32_t>::max());
-        for (size_t index = 0; index < cloud.size(); ++index) {
-            const uint32_t cell =
-                cloud.raw_idx.empty() ? static_cast<uint32_t>(index) : cloud.raw_idx[index];
-            if (cell < cell_to_cloud.size()) {
-                cell_to_cloud[cell] = static_cast<uint32_t>(index);
-            }
-        }
-        std::vector<float> values;
-        values.reserve(history_.size());
-        for (size_t cell = 0; cell < ri.range.size(); ++cell) {
-            const float current = ri.range[cell];
-            const uint32_t cloud_index = cell_to_cloud[cell];
-            if (!std::isfinite(current) || cloud_index == std::numeric_limits<uint32_t>::max() ||
-                current < params_.min_range_m || current > params_.max_range_m) {
-                continue;
-            }
-            values.clear();
-            for (const auto& frame : history_) {
-                if (std::isfinite(frame[cell])) {
-                    values.push_back(frame[cell]);
-                }
-            }
-            if (values.size() < 2) {
-                continue;
-            }
-            std::sort(values.begin(), values.end());
-            const float baseline = values[values.size() / 2];
-            const float residual = baseline - current;
-            if (residual <= params_.residual_threshold_m) {
-                continue;
-            }
-            out.indices.push_back(cloud_index);
-            out.score.push_back(std::min(1.0f, residual / (2.0f * params_.residual_threshold_m)));
-        }
-    }
-    history_.push_back(ri.range);
-    if (history_.size() > params_.window_frames) {
-        history_.erase(history_.begin());
-    }
-    return out;
-}
-
-FreeSpaceDetector::FreeSpaceDetector(TunnelModel* model, const FreeSpaceParams& p)
-    : model_(model), p_(p) {}
-
-AnomalySet FreeSpaceDetector::detect(const CleanCloud& cloud, const RangeImage& ri) {
-    return detect(cloud, ri, Eigen::Isometry3d::Identity());
-}
-
-AnomalySet FreeSpaceDetector::detect(const CleanCloud& cloud, const RangeImage& ri,
-                                     const Eigen::Isometry3d& pose) {
-    AnomalySet out;
-    out.source = name();
-    if (!p_.enabled || model_ == nullptr || !model_->ready() || !ri.valid()) {
-        return out;
-    }
-
-    const Eigen::Vector3f origin = (pose.inverse() * Eigen::Vector3d::Zero()).cast<float>();
-
-    for (size_t i = 0; i < cloud.size(); ++i) {
-        if (!cloud.ground_mask.empty() && i < cloud.ground_mask.size() &&
-            cloud.ground_mask[i] != 0) {
-            continue;
-        }
-        const Eigen::Vector3f lidar(cloud.x[i], cloud.y[i], cloud.z[i]);
-        const float range = (lidar - origin).norm();
-        if (!std::isfinite(range) || range < p_.min_range || range > p_.max_range) {
-            continue;
-        }
-        float confidence = 0.0f;
-        if (!model_->contradicts_free_space(lidar, confidence, pose, p_.min_confidence,
-                                            p_.min_free_observations)) {
-            continue;
-        }
-        out.indices.push_back(static_cast<uint32_t>(i));
-        out.score.push_back(confidence);
     }
     return out;
 }

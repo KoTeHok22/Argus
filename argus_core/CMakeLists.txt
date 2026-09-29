@@ -32,12 +32,20 @@ add_library(${PROJECT_NAME} SHARED
   src/tracking.cpp
   src/fusion.cpp
   src/explain.cpp
-  src/anomaly.cpp
+  src/anomaly_no_return.cpp
+  src/anomaly_geometry.cpp
+  src/anomaly_temporal.cpp
+  src/anomaly_free_space.cpp
   src/ground.cpp
   src/odometry.cpp
   src/tunnel_model.cpp
   src/tunnel_profile.cpp
   src/track_corridor.cpp
+  src/frame_sync.cpp
+  src/health_monitor.cpp
+  src/sensor_health.cpp
+  src/supervision.cpp
+  src/classification.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -110,6 +118,16 @@ if(BUILD_TESTING)
   target_link_libraries(test_tunnel_profile ${PROJECT_NAME})
   ament_add_gtest(test_track_corridor test/test_track_corridor.cpp)
   target_link_libraries(test_track_corridor ${PROJECT_NAME})
+  ament_add_gtest(test_frame_sync test/test_frame_sync.cpp)
+  target_link_libraries(test_frame_sync ${PROJECT_NAME})
+  ament_add_gtest(test_health_monitor test/test_health_monitor.cpp)
+  target_link_libraries(test_health_monitor ${PROJECT_NAME})
+  ament_add_gtest(test_sensor_health test/test_sensor_health.cpp)
+  target_link_libraries(test_sensor_health ${PROJECT_NAME})
+  ament_add_gtest(test_supervision test/test_supervision.cpp)
+  target_link_libraries(test_supervision ${PROJECT_NAME})
+  ament_add_gtest(test_classification test/test_classification.cpp)
+  target_link_libraries(test_classification ${PROJECT_NAME})
 endif()
 
 ament_package()

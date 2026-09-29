@@ -40,6 +40,12 @@ float compute_ttc(const Track& t, float train_speed_mps) {
     return x / closing;
 }
 
+float braking_distance_m(float speed_mps, const BrakingParams& p) {
+    const float v = std::max(0.0f, speed_mps);
+    const float a = std::max(p.decel_mps2, 1e-3f);
+    return v * std::max(0.0f, p.reaction_s) + v * v / (2.0f * a) + std::max(0.0f, p.margin_m);
+}
+
 std::vector<Track> ObstacleTracker::update(const std::vector<Cluster>& clusters, float dt,
                                            float train_speed_mps) {
     std::vector<bool> matched(clusters.size(), false);

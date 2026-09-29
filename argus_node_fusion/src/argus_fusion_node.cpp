@@ -1,6 +1,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
@@ -14,21 +15,31 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include <std_msgs/msg/float32.hpp>
+
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/candidate.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
+#include <argus_msgs/msg/diagnostics.hpp>
+#include <argus_msgs/msg/gauge_state.hpp>
 #include <argus_msgs/msg/obstacle.hpp>
 #include <argus_msgs/msg/obstacle_array.hpp>
 
+#include "argus_core/classification.hpp"
 #include "argus_core/explain.hpp"
+#include "argus_core/frame_sync.hpp"
 #include "argus_core/fusion.hpp"
 #include "argus_core/gauge.hpp"
 #include "argus_core/range_image.hpp"
+#include "argus_core/supervision.hpp"
+#include "fusion_markers.hpp"
 
 namespace argus {
 
 using CleanCloudMsg = argus_msgs::msg::CleanCloud;
 using AnomalySetMsg = argus_msgs::msg::AnomalySet;
+using DiagnosticsMsg = argus_msgs::msg::Diagnostics;
+using GaugeState = argus_msgs::msg::GaugeState;
 using Obstacle = argus_msgs::msg::Obstacle;
 using ObstacleArray = argus_msgs::msg::ObstacleArray;
 using Candidate = argus_msgs::msg::Candidate;
@@ -103,7 +114,44 @@ public:
         if (max_pending_ == 0) {
             throw std::invalid_argument("fusion.max_pending_frames must be > 0");
         }
-        train_speed_ = declare_parameter<double>("vehicle.default_speed_mps", 0.0);
+        default_speed_ = declare_parameter<double>("vehicle.default_speed_mps", 0.0);
+        train_speed_ = default_speed_;
+        speed_topic_ = declare_parameter<std::string>("vehicle.speed_topic", "");
+        speed_stale_s_ = declare_parameter<double>("vehicle.speed_stale_s", 1.0);
+        braking_.decel_mps2 =
+            static_cast<float>(declare_parameter<double>("vehicle.braking_decel_mps2", 1.3));
+        braking_.reaction_s =
+            static_cast<float>(declare_parameter<double>("vehicle.reaction_s", 0.5));
+        braking_.margin_m =
+            static_cast<float>(declare_parameter<double>("vehicle.braking_margin_m", 10.0));
+        if (braking_.decel_mps2 <= 0.0f) {
+            throw std::invalid_argument("vehicle.braking_decel_mps2 must be > 0");
+        }
+        if (speed_stale_s_ <= 0.0) {
+            throw std::invalid_argument("vehicle.speed_stale_s must be > 0");
+        }
+        dynamic_envelope_ = declare_parameter<bool>("vehicle.dynamic_envelope", true);
+        visibility_.min_z_rel_m = static_cast<float>(
+            declare_parameter<double>("vehicle.visibility_min_z_rel_m", visibility_.min_z_rel_m));
+        visibility_.half_angle_deg = static_cast<float>(declare_parameter<double>(
+            "vehicle.visibility_half_angle_deg", visibility_.half_angle_deg));
+        visibility_.max_range_m = static_cast<float>(
+            declare_parameter<double>("vehicle.visibility_max_range_m", visibility_.max_range_m));
+        visibility_margin_m_ =
+            static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
+        classification_.person_min_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_min_height_m", classification_.person_min_height_m));
+        classification_.person_max_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_max_height_m", classification_.person_max_height_m));
+        classification_.person_max_footprint_m = static_cast<float>(declare_parameter<double>(
+            "classification.person_max_footprint_m", classification_.person_max_footprint_m));
+        classification_.person_min_points = static_cast<uint32_t>(
+            declare_parameter<int>("classification.person_min_points",
+                                   static_cast<int>(classification_.person_min_points)));
+        classification_.debris_max_height_m = static_cast<float>(declare_parameter<double>(
+            "classification.debris_max_height_m", classification_.debris_max_height_m));
+        classification_.equipment_min_footprint_m = static_cast<float>(declare_parameter<double>(
+            "classification.equipment_min_footprint_m", classification_.equipment_min_footprint_m));
         publish_markers_ = declare_parameter<bool>("fusion.publish_markers", true);
         marker_max_range_ =
             static_cast<float>(declare_parameter<double>("fusion.marker_max_range_m", 60.0));
@@ -113,31 +161,47 @@ public:
             throw std::invalid_argument("fusion.marker_max_range_m must be > 0");
         }
 
+        sync_tolerance_ns_ = static_cast<uint64_t>(std::max<int>(
+                                 declare_parameter<int>("fusion.sync_tolerance_ms", 30), 1)) *
+                             1000000ULL;
+        pose_tolerance_ns_ = static_cast<uint64_t>(std::max<int>(
+                                 declare_parameter<int>("fusion.pose_tolerance_ms", 100), 1)) *
+                             1000000ULL;
+
         pipeline_ = std::make_unique<FusionPipeline>(ClearanceGauge(gauge_params_), params_);
+
+        FrameSyncParams sync_params;
+        sync_params.tolerance_ns = sync_tolerance_ns_;
+        sync_params.max_pending = max_pending_;
+        sync_params.require_temporal = params_.use_temporal_candidates;
+        sync_ = std::make_unique<FrameSynchronizer>(sync_params);
 
         auto qos = rclcpp::QoS(10);
         sub_clean_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key = sync_->add(FrameChannel::cloud, stamp_ns(msg->header.stamp));
                 slots_[key].cloud = msg;
                 try_process(key);
             });
         sub_geometry_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_g", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key =
+                    sync_->add(FrameChannel::geometry, stamp_ns(msg->header.stamp));
                 slots_[key].geometry = msg;
                 try_process(key);
             });
         sub_no_return_ = create_subscription<AnomalySetMsg>(
             "/argus/anom_nr", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                const uint64_t key = stamp_ns(msg->header.stamp);
+                const uint64_t key =
+                    sync_->add(FrameChannel::no_return, stamp_ns(msg->header.stamp));
                 slots_[key].no_return = msg;
                 try_process(key);
             });
         if (params_.use_temporal_candidates) {
             sub_temporal_ = create_subscription<AnomalySetMsg>(
                 "/argus/anom_temporal", qos, [this](AnomalySetMsg::ConstSharedPtr msg) {
-                    const uint64_t key = stamp_ns(msg->header.stamp);
+                    const uint64_t key =
+                        sync_->add(FrameChannel::temporal, stamp_ns(msg->header.stamp));
                     slots_[key].temporal = msg;
                     try_process(key);
                 });
@@ -156,6 +220,38 @@ public:
         if (publish_markers_) {
             pub_markers_ = create_publisher<MarkerArray>("/argus/markers", qos);
         }
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
+        sub_health_ = create_subscription<std_msgs::msg::String>(
+            "/argus/system_health", qos, [this](std_msgs::msg::String::ConstSharedPtr msg) {
+                system_ok_ = msg->data == "OK";
+                if (!system_ok_ && msg->data.rfind("DEAD:", 0) == 0) {
+                    dead_nodes_ = msg->data.substr(5);
+                } else {
+                    dead_nodes_.clear();
+                }
+            });
+        sub_sensor_ = create_subscription<DiagnosticsMsg>(
+            "/argus/diagnostics", qos, [this](DiagnosticsMsg::ConstSharedPtr msg) {
+                sensor_ok_ = msg->sensor_ok;
+                last_sensor_diag_at_ = std::chrono::steady_clock::now();
+            });
+        if (!speed_topic_.empty()) {
+            sub_speed_ = create_subscription<std_msgs::msg::Float32>(
+                speed_topic_, qos, [this](std_msgs::msg::Float32::ConstSharedPtr msg) {
+                    if (std::isfinite(msg->data) && msg->data >= 0.0f) {
+                        train_speed_ = msg->data;
+                        last_speed_at_ = std::chrono::steady_clock::now();
+                        speed_live_ = true;
+                    }
+                });
+            RCLCPP_INFO(get_logger(), "скорость поезда: топик '%s'", speed_topic_.c_str());
+        }
+        pub_gauge_state_ = create_publisher<GaugeState>("/argus/gauge_state", qos);
 
         const auto timer_period = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::duration<double>(stale_timeout_));
@@ -272,16 +368,23 @@ private:
         return p;
     }
 
+    void drop_expired_slots() {
+        for (const uint64_t key : sync_->take_expired()) {
+            slots_.erase(key);
+            poses_.erase(key);
+        }
+    }
+
     void try_process(uint64_t key) {
+        drop_expired_slots();
         const auto it = slots_.find(key);
         if (it == slots_.end()) {
             return;
         }
-        const FrameSlot& slot = it->second;
-        if (!slot.cloud || !slot.geometry || !slot.no_return ||
-            (params_.use_temporal_candidates && !slot.temporal)) {
+        if (!sync_->complete(key)) {
             return;
         }
+        const FrameSlot& slot = it->second;
 
         const CleanCloud cloud = msg_to_cloud(*slot.cloud);
         RangeImageParams ri_params;
@@ -307,7 +410,7 @@ private:
 
         const auto t0 = std::chrono::steady_clock::now();
         Eigen::Isometry3d pose = Eigen::Isometry3d::Identity();
-        const auto pose_it = poses_.find(key);
+        const auto pose_it = nearest_pose(key);
         const bool pose_valid = pose_it != poses_.end();
         if (pose_valid) {
             pose = pose_it->second;
@@ -316,25 +419,49 @@ private:
         if (pose_valid && slot.free_space) {
             free_space = msg_to_set(*slot.free_space);
         }
+        const float speed_mps = current_speed();
         const FusionResult result =
             pipeline_->update(cloud, ri, msg_to_set(*slot.geometry), msg_to_set(*slot.no_return),
                               slot.temporal ? msg_to_set(*slot.temporal) : AnomalySet{}, free_space,
-                              dt, static_cast<float>(train_speed_), pose, true, pose_valid);
+                              dt, speed_mps, pose, true, pose_valid);
         const float processing_ms = ms_since(t0);
         ++frames_processed_;
 
-        publish_result(result, *slot.cloud, processing_ms);
+        publish_result(result, *slot.cloud, cloud, processing_ms);
 
-        slots_.erase(slots_.begin(), slots_.upper_bound(key));
+        sync_->release(key);
+        slots_.erase(key);
         poses_.erase(poses_.begin(), poses_.upper_bound(key));
-        while (slots_.size() > max_pending_) {
-            slots_.erase(slots_.begin());
-        }
         last_output_ = std::chrono::steady_clock::now();
     }
 
+    std::map<uint64_t, Eigen::Isometry3d>::const_iterator nearest_pose(uint64_t key) const {
+        if (poses_.empty()) {
+            return poses_.end();
+        }
+        auto it = poses_.lower_bound(key);
+        auto best = poses_.end();
+        uint64_t best_dist = UINT64_MAX;
+        if (it != poses_.end()) {
+            best = it;
+            best_dist = it->first - key;
+        }
+        if (it != poses_.begin()) {
+            auto prev = std::prev(it);
+            const uint64_t dist = key - prev->first;
+            if (dist < best_dist) {
+                best = prev;
+                best_dist = dist;
+            }
+        }
+        if (best != poses_.end() && best_dist <= pose_tolerance_ns_) {
+            return best;
+        }
+        return poses_.end();
+    }
+
     void publish_result(const FusionResult& result, const CleanCloudMsg& clean,
-                        float processing_ms) {
+                        const CleanCloud& cloud, float processing_ms) {
         ObstacleArray out;
         out.header.stamp = clean.header.stamp;
         out.header.frame_id = clean.header.frame_id;
@@ -367,12 +494,18 @@ private:
             candidate.votes_no_return = c.votes_no_return;
             candidate.votes_geometry = c.votes_geometry;
             candidate.votes_temporal = c.votes_temporal;
-            candidate.votes_temporal = c.votes_temporal;
             candidate.point_count = c.point_count;
             candidate.reason = reason_of(c);
             out.candidates.push_back(candidate);
         }
-        if (!result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
+        const bool pose_required = params_.use_free_space;
+        if (pose_required && !result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
+            status = ObstacleArray::STATUS_DEGRADED;
+        }
+        if (!system_ok_ && status == ObstacleArray::STATUS_CLEAR) {
+            status = ObstacleArray::STATUS_DEGRADED;
+        }
+        if (!sensor_ok_ && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
         out.status = status;
@@ -381,8 +514,9 @@ private:
         out.processing_ms = processing_ms;
         out.fps = fps_;
         out.model_ready = false;
-        out.explain = explain_text(result, out, clean.header.frame_id);
+        out.explain = explain_text(result, out, cloud, clean.header.frame_id);
         pub_obstacles_->publish(out);
+        publish_gauge_state(out, cloud);
 
         publish_explain(out);
         if (pub_markers_) {
@@ -397,8 +531,27 @@ private:
         }
     }
 
+    void publish_gauge_state(const ObstacleArray& out, const CleanCloud& cloud) {
+        GaugeState gs;
+        gs.header = out.header;
+        gs.half_width = gauge_params_.half_width;
+        gs.height = gauge_params_.height;
+        gs.nose_offset = gauge_params_.nose_offset;
+        gs.max_range = gauge_params_.max_range;
+        gs.train_speed_mps = current_speed();
+        gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
+        if (out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f) {
+            clear_range = std::min(clear_range, out.nearest_range_m);
+        }
+        gs.clear_range_m = clear_range;
+        gs.speed_limit_mps =
+            speed_limit_for_visibility_mps(clear_range, braking_, visibility_margin_m_);
+        pub_gauge_state_->publish(gs);
+    }
+
     std::string explain_text(const FusionResult& result, const ObstacleArray& out,
-                             const std::string& frame_id) const {
+                             const CleanCloud& cloud, const std::string& frame_id) const {
         std::string text;
         text += "frame " + frame_id + "\n";
         if (!result.tracks.empty()) {
@@ -411,16 +564,39 @@ private:
                 static_cast<uint8_t>(t.votes_free_space + t.votes_no_return + t.votes_geometry);
             text += format_alert(t, reason);
         } else if (out.status == ObstacleArray::STATUS_DEGRADED) {
-            text += "DEGRADED: нет валидной позы одометрии, свободное пространство не проверено\n";
+            if (!sensor_ok_) {
+                text += "DEGRADED: сенсор неисправен (загрязнение/перекрытие окна)\n";
+            } else if (!system_ok_) {
+                text += "DEGRADED: молчат критические узлы: " + dead_nodes_ + "\n";
+            } else {
+                text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
+            }
         } else {
             text += format_clear(frames_processed_, fps_);
             text += "\n";
         }
-        char tail[160];
+        char tail[320];
+        const FrameSyncStats& ss = sync_->stats();
+        const float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
         std::snprintf(
-            tail, sizeof(tail), "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n",
+            tail, sizeof(tail),
+            "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n"
+            "supervision: clear=%.1f m limit=%.2f m/s speed=%.2f m/s\n"
+            "sync: arrivals=%llu snapped=%llu expired=%llu (нет cloud=%llu geom=%llu nr=%llu)\n",
             status_name(out.status).c_str(), out.obstacles_detected,
-            static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms));
+            static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms),
+            static_cast<double>(clear_range),
+            static_cast<double>(speed_limit_for_visibility_mps(
+                out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f
+                    ? std::min(clear_range, out.nearest_range_m)
+                    : clear_range,
+                braking_, visibility_margin_m_)),
+            static_cast<double>(current_speed()), static_cast<unsigned long long>(ss.arrivals),
+            static_cast<unsigned long long>(ss.snapped),
+            static_cast<unsigned long long>(ss.expired),
+            static_cast<unsigned long long>(ss.expired_missing_cloud),
+            static_cast<unsigned long long>(ss.expired_missing_geometry),
+            static_cast<unsigned long long>(ss.expired_missing_no_return));
         text += tail;
         return text;
     }
@@ -445,177 +621,16 @@ private:
     }
 
     void publish_markers(const ObstacleArray& out, const FusionResult& result) {
-        MarkerArray markers;
-
-        Marker gauge;
-        gauge.header = out.header;
-        gauge.ns = "gauge";
-        gauge.id = 0;
-        gauge.type = Marker::LINE_LIST;
-        gauge.action = Marker::ADD;
-        gauge.pose.orientation.w = 1.0;
-        gauge.scale.x = 0.06;
-        gauge.color.r = 0.25f;
-        gauge.color.g = 0.80f;
-        gauge.color.b = 1.0f;
-        gauge.color.a = 0.9f;
-        gauge.frame_locked = true;
         std::vector<Eigen::Vector3f> vertices;
         std::vector<uint32_t> indices;
         pipeline_->gauge().to_mesh(marker_max_range_, vertices, indices);
-        if (indices.empty() && vertices.size() >= 12) {
-            const size_t n_ring = vertices.size() / 2;
-            for (size_t i = 0; i < n_ring; ++i) {
-                const size_t j = (i + 1) % n_ring;
-                append_point(gauge, vertices[i]);
-                append_point(gauge, vertices[j]);
-                append_point(gauge, vertices[i + n_ring]);
-                append_point(gauge, vertices[j + n_ring]);
-                append_point(gauge, vertices[i]);
-                append_point(gauge, vertices[i + n_ring]);
-            }
-        } else {
-            for (size_t i = 0; i + 1 < indices.size(); i += 2) {
-                append_point(gauge, vertices[indices[i]]);
-                append_point(gauge, vertices[indices[i + 1]]);
-            }
+        std::vector<uint8_t> severities;
+        severities.reserve(result.tracks.size());
+        for (const Track& t : result.tracks) {
+            severities.push_back(severity_of(t));
         }
-        markers.markers.push_back(gauge);
-
-        const size_t n = std::min(result.tracks.size(), marker_max_obstacles_);
-        std::vector<uint32_t> visible_ids;
-        visible_ids.reserve(n);
-        for (size_t i = 0; i < n; ++i) {
-            const Track& t = result.tracks[i];
-            const uint8_t severity = severity_of(t);
-            markers.markers.push_back(box_marker(out.header, t, severity));
-            markers.markers.push_back(edge_marker(out.header, t, severity));
-            markers.markers.push_back(label_marker(out.header, t, severity));
-            visible_ids.push_back(t.id);
-        }
-        for (uint32_t id : tracked_ids_) {
-            if (std::find(visible_ids.begin(), visible_ids.end(), id) != visible_ids.end()) {
-                continue;
-            }
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_box", static_cast<int32_t>(id)));
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_edges", static_cast<int32_t>(id)));
-            markers.markers.push_back(
-                delete_marker(out.header, "obstacle_label", static_cast<int32_t>(id)));
-        }
-        tracked_ids_ = visible_ids;
-
-        pub_markers_->publish(markers);
-    }
-
-    static void append_point(Marker& marker, const Eigen::Vector3f& p) {
-        geometry_msgs::msg::Point point;
-        point.x = p.x();
-        point.y = p.y();
-        point.z = p.z();
-        marker.points.push_back(point);
-    }
-
-    static void marker_colour(Marker& marker, uint8_t severity) {
-        if (severity == Obstacle::SEVERITY_CRITICAL) {
-            marker.color.r = 1.0f;
-            marker.color.g = 0.20f;
-            marker.color.b = 0.20f;
-        } else if (severity == Obstacle::SEVERITY_WARNING) {
-            marker.color.r = 1.0f;
-            marker.color.g = 0.65f;
-            marker.color.b = 0.10f;
-        } else {
-            marker.color.r = 0.95f;
-            marker.color.g = 0.90f;
-            marker.color.b = 0.30f;
-        }
-    }
-
-    static Marker box_marker(const std_msgs::msg::Header& header, const Track& t,
-                             uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_box";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::CUBE;
-        m.action = Marker::ADD;
-        m.pose.position.x = t.state(0);
-        m.pose.position.y = t.state(1);
-        m.pose.position.z = t.state(2);
-        m.pose.orientation.w = 1.0;
-        m.scale.x = std::max(t.extent(0), 0.10f);
-        m.scale.y = std::max(t.extent(1), 0.10f);
-        m.scale.z = std::max(t.extent(2), 0.10f);
-        marker_colour(m, severity);
-        m.color.a = 0.18f;
-        m.frame_locked = true;
-        return m;
-    }
-
-    static Marker edge_marker(const std_msgs::msg::Header& header, const Track& t,
-                              uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_edges";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::LINE_LIST;
-        m.action = Marker::ADD;
-        m.pose.orientation.w = 1.0;
-        m.scale.x = 0.05;
-        marker_colour(m, severity);
-        m.color.a = 0.95f;
-        m.frame_locked = true;
-
-        const float hx = std::max(t.extent(0), 0.10f) * 0.5f;
-        const float hy = std::max(t.extent(1), 0.10f) * 0.5f;
-        const float hz = std::max(t.extent(2), 0.10f) * 0.5f;
-        const Eigen::Vector3f c = t.state.head<3>();
-        const Eigen::Vector3f corner[8] = {
-            c + Eigen::Vector3f(-hx, -hy, -hz), c + Eigen::Vector3f(hx, -hy, -hz),
-            c + Eigen::Vector3f(hx, hy, -hz),   c + Eigen::Vector3f(-hx, hy, -hz),
-            c + Eigen::Vector3f(-hx, -hy, hz),  c + Eigen::Vector3f(hx, -hy, hz),
-            c + Eigen::Vector3f(hx, hy, hz),    c + Eigen::Vector3f(-hx, hy, hz)};
-        const int edge[12][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
-                                 {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
-        for (const auto& e : edge) {
-            append_point(m, corner[e[0]]);
-            append_point(m, corner[e[1]]);
-        }
-        return m;
-    }
-
-    static Marker label_marker(const std_msgs::msg::Header& header, const Track& t,
-                               uint8_t severity) {
-        Marker m;
-        m.header = header;
-        m.ns = "obstacle_label";
-        m.id = static_cast<int32_t>(t.id);
-        m.type = Marker::TEXT_VIEW_FACING;
-        m.action = Marker::ADD;
-        m.pose.position.x = t.state(0);
-        m.pose.position.y = t.state(1);
-        m.pose.position.z = t.state(2) + std::max(t.extent(2), 0.10f) * 0.5f + 0.4f;
-        m.pose.orientation.w = 1.0;
-        m.scale.z = 0.7;
-        marker_colour(m, severity);
-        m.color.a = 1.0f;
-        m.frame_locked = true;
-        char buf[48];
-        std::snprintf(buf, sizeof(buf), "%.1f m", static_cast<double>(t.nearest_range));
-        m.text = buf;
-        return m;
-    }
-
-    static Marker delete_marker(const std_msgs::msg::Header& header, const std::string& ns,
-                                int32_t id) {
-        Marker m;
-        m.header = header;
-        m.ns = ns;
-        m.id = id;
-        m.action = Marker::DELETE;
-        return m;
+        pub_markers_->publish(build_frame_markers(out.header, vertices, indices, result.tracks,
+                                                  severities, marker_max_obstacles_, tracked_ids_));
     }
 
     Obstacle to_obstacle(const Track& t) {
@@ -639,12 +654,36 @@ private:
         o.point_count = t.point_count;
         o.severity = severity_of(t);
         o.reason = reason_of(t);
+        const Classification cls =
+            classify_object(t.extent(0), t.extent(1), t.extent(2), t.point_count, classification_);
+        o.object_class = static_cast<uint8_t>(cls.object_class);
+        o.class_reason = cls.reason;
         return o;
     }
 
+    float effective_critical_range() const {
+        if (!dynamic_envelope_) {
+            return params_.critical_range_m;
+        }
+        return std::max(params_.critical_range_m, braking_distance_m(current_speed(), braking_));
+    }
+
+    float current_speed() const {
+        if (speed_live_) {
+            const double idle =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - last_speed_at_)
+                    .count();
+            if (idle <= speed_stale_s_) {
+                return static_cast<float>(train_speed_);
+            }
+        }
+        return static_cast<float>(default_speed_);
+    }
+
     uint8_t severity_of(const Track& t) {
-        const bool critical = t.nearest_range < params_.critical_range_m ||
-                              (t.ttc >= 0.0f && t.ttc < params_.critical_ttc_s);
+        const float critical_range = effective_critical_range();
+        const bool critical =
+            t.nearest_range < critical_range || (t.ttc >= 0.0f && t.ttc < params_.critical_ttc_s);
         if (critical) {
             return Obstacle::SEVERITY_CRITICAL;
         }
@@ -707,9 +746,23 @@ private:
         out.obstacles_detected = 0;
         out.fps = 0.0f;
         out.model_ready = false;
+        out.explain = "DEGRADED: полные кадры не поступают\n";
         pub_obstacles_->publish(out);
+
+        GaugeState gs;
+        gs.header = out.header;
+        gs.half_width = gauge_params_.half_width;
+        gs.height = gauge_params_.height;
+        gs.nose_offset = gauge_params_.nose_offset;
+        gs.max_range = gauge_params_.max_range;
+        gs.train_speed_mps = current_speed();
+        gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        gs.clear_range_m = 0.0f;
+        gs.speed_limit_mps = 0.0f;
+        pub_gauge_state_->publish(gs);
+
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-                             "полные кадры не поступают, STATUS_DEGRADED");
+                             "полные кадры не поступают, STATUS_DEGRADED (лимит скорости 0)");
     }
 
     struct FrameSlot {
@@ -736,6 +789,21 @@ private:
     double default_dt_ = 0.1;
     double stale_timeout_ = 1.0;
     double train_speed_ = 0.0;
+    double default_speed_ = 0.0;
+    std::string speed_topic_;
+    double speed_stale_s_ = 1.0;
+    bool dynamic_envelope_ = true;
+    bool speed_live_ = false;
+    BrakingParams braking_;
+    VisibilityParams visibility_;
+    float visibility_margin_m_ = 10.0f;
+    ClassificationParams classification_;
+    std::chrono::steady_clock::time_point last_speed_at_{};
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
+    rclcpp::Subscription<DiagnosticsMsg>::SharedPtr sub_sensor_;
+    rclcpp::Publisher<GaugeState>::SharedPtr pub_gauge_state_;
+    bool sensor_ok_ = true;
+    std::chrono::steady_clock::time_point last_sensor_diag_at_{};
     bool publish_markers_ = true;
     float marker_max_range_ = 60.0f;
     size_t marker_max_obstacles_ = 16;
@@ -744,6 +812,9 @@ private:
     size_t max_pending_ = 16;
 
     std::unique_ptr<FusionPipeline> pipeline_;
+    std::unique_ptr<FrameSynchronizer> sync_;
+    uint64_t sync_tolerance_ns_ = 30000000;
+    uint64_t pose_tolerance_ns_ = 100000000;
     std::map<uint64_t, FrameSlot> slots_;
     std::map<uint64_t, Eigen::Isometry3d> poses_;
     uint64_t last_stamp_ns_ = 0;
@@ -759,7 +830,12 @@ private:
     rclcpp::Publisher<ObstacleArray>::SharedPtr pub_obstacles_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_explain_;
     rclcpp::Publisher<MarkerArray>::SharedPtr pub_markers_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_health_;
     rclcpp::TimerBase::SharedPtr stale_timer_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
+    bool system_ok_ = true;
+    std::string dead_nodes_;
 };
 
 } // namespace argus

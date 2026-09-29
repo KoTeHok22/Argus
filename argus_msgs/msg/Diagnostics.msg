@@ -35,3 +35,11 @@ float32 fps
 uint64 frames_processed
 uint64 alerts_total
 uint64 false_alerts_suppressed
+
+bool    sensor_ok
+float32 no_return_ratio
+float32 valid_ratio
+
+float32 odom_fitness
+uint32  odom_correspondences
+bool    odom_quality_ok

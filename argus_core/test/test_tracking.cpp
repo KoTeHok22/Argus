@@ -1,6 +1,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include "argus_core/tracking.hpp"
 
 namespace {
@@ -132,4 +134,46 @@ TEST(Tracking, ConfirmedStaysConfirmedAcrossRanges) {
         ASSERT_EQ(out.size(), 1u);
         EXPECT_TRUE(out[0].confirmed);
     }
+}
+
+TEST(BrakingDistance, ZeroSpeedIsMarginOnly) {
+    argus::BrakingParams p;
+    p.decel_mps2 = 1.3f;
+    p.reaction_s = 0.5f;
+    p.margin_m = 10.0f;
+    EXPECT_FLOAT_EQ(argus::braking_distance_m(0.0f, p), 10.0f);
+}
+
+TEST(BrakingDistance, MetroSpeed80Kmh) {
+    argus::BrakingParams p;
+    p.decel_mps2 = 1.3f;
+    p.reaction_s = 0.5f;
+    p.margin_m = 10.0f;
+    const float v = 80.0f / 3.6f;
+    const float expected = v * 0.5f + v * v / (2.0f * 1.3f) + 10.0f;
+    EXPECT_NEAR(argus::braking_distance_m(v, p), expected, 0.01f);
+    EXPECT_GT(argus::braking_distance_m(v, p), 180.0f);
+}
+
+TEST(BrakingDistance, MonotonicInSpeed) {
+    argus::BrakingParams p;
+    float prev = argus::braking_distance_m(0.0f, p);
+    for (float v = 1.0f; v <= 30.0f; v += 1.0f) {
+        const float d = argus::braking_distance_m(v, p);
+        EXPECT_GT(d, prev);
+        prev = d;
+    }
+}
+
+TEST(BrakingDistance, NegativeSpeedClamped) {
+    argus::BrakingParams p;
+    EXPECT_FLOAT_EQ(argus::braking_distance_m(-5.0f, p), argus::braking_distance_m(0.0f, p));
+}
+
+TEST(BrakingDistance, ZeroDecelDoesNotDivideByZero) {
+    argus::BrakingParams p;
+    p.decel_mps2 = 0.0f;
+    const float d = argus::braking_distance_m(10.0f, p);
+    EXPECT_TRUE(std::isfinite(d));
+    EXPECT_GT(d, 0.0f);
 }

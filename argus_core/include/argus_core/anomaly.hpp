@@ -85,6 +85,7 @@ struct TemporalResidualParams {
     float residual_threshold_m = 0.5f;
     float min_range_m = 4.0f;
     float max_range_m = 45.0f;
+    double max_frame_gap_s = 0.5;
 };
 
 class TemporalResidualDetector : public IAnomalyDetector {
@@ -99,6 +100,7 @@ private:
     std::vector<std::vector<float>> history_;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    double last_stamp_s_ = -1.0;
 };
 
 struct FreeSpaceParams {

@@ -25,6 +25,8 @@ struct OdometryParams {
     float rest_translation_m = 0.20f;
     bool keep_ground = true;
     ForwardAxis forward_axis = ForwardAxis::NegY;
+    float max_fitness = 0.05f;
+    uint32_t min_correspondences_quality = 100;
 };
 
 struct OdometryResult {
@@ -36,6 +38,7 @@ struct OdometryResult {
     uint32_t n_correspondences = 0;
     uint32_t n_downsampled = 0;
     bool valid = false;
+    bool quality_ok = false;
     uint32_t frames = 0;
 };
 

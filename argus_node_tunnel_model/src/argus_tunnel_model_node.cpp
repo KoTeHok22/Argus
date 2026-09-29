@@ -12,6 +12,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
+#include <std_msgs/msg/string.hpp>
 
 #include <argus_msgs/msg/anomaly_set.hpp>
 #include <argus_msgs/msg/clean_cloud.hpp>
@@ -69,6 +70,16 @@ public:
         profile_ = std::make_unique<TunnelProfile>(profile_params_);
         free_space_ = std::make_unique<FreeSpaceDetector>(model_.get(), free_space_params_);
 
+        if (!prior_map_path_.empty()) {
+            if (model_->load(prior_map_path_)) {
+                RCLCPP_INFO(get_logger(), "prior map загружена: %s (вокселей %zu)",
+                            prior_map_path_.c_str(), model_->voxel_count());
+            } else {
+                RCLCPP_ERROR(get_logger(), "prior map не загружена: %s — модель стартует с нуля",
+                             prior_map_path_.c_str());
+            }
+        }
+
         auto qos = rclcpp::QoS(10);
         sub_clean_ = create_subscription<CleanCloudMsg>(
             "/argus/clean", qos, [this](CleanCloudMsg::ConstSharedPtr msg) {
@@ -91,6 +102,12 @@ public:
 
         pub_free_space_ = create_publisher<AnomalySetMsg>("/argus/anom_fs", qos);
         pub_diag_ = create_publisher<Diagnostics>("/argus/diagnostics_model", qos);
+        pub_heartbeat_ = create_publisher<std_msgs::msg::String>("/argus/heartbeat", qos);
+        heartbeat_timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] {
+            std_msgs::msg::String beat;
+            beat.data = get_name();
+            pub_heartbeat_->publish(beat);
+        });
         if (publish_model_points_) {
             pub_model_ = create_publisher<sensor_msgs::msg::PointCloud2>("/argus/model", qos);
         }
@@ -174,6 +191,7 @@ private:
 
         free_space_warmup_frames_ =
             static_cast<uint32_t>(declare_parameter<int>("detector_free_space.warmup_frames", 60));
+        prior_map_path_ = declare_parameter<std::string>("tunnel_model.prior_map_path", "");
         process_period_s_ = declare_parameter<double>("tunnel_model.process_period_s", 0.05);
         pose_timeout_s_ = declare_parameter<double>("tunnel_model.pose_timeout_s", 1.0);
         publish_model_points_ = declare_parameter<bool>("tunnel_model.publish_points", true);
@@ -355,6 +373,7 @@ private:
     TunnelProfileParams profile_params_;
     FreeSpaceParams free_space_params_;
     uint32_t free_space_warmup_frames_ = 60;
+    std::string prior_map_path_;
     double process_period_s_ = 0.05;
     double pose_timeout_s_ = 1.0;
     bool publish_model_points_ = true;
@@ -378,7 +397,9 @@ private:
     rclcpp::Publisher<AnomalySetMsg>::SharedPtr pub_free_space_;
     rclcpp::Publisher<Diagnostics>::SharedPtr pub_diag_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_model_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_heartbeat_;
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr heartbeat_timer_;
 };
 
 } // namespace argus

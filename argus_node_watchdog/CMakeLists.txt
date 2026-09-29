@@ -1,6 +1,6 @@
 
 cmake_minimum_required(VERSION 3.8)
-project(argus_node_fusion)
+project(argus_node_watchdog)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -12,19 +12,16 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(visualization_msgs REQUIRED)
 find_package(argus_core REQUIRED)
 find_package(argus_msgs REQUIRED)
 
-add_executable(argus_fusion_node src/argus_fusion_node.cpp src/fusion_markers.cpp)
-target_compile_features(argus_fusion_node PUBLIC cxx_std_17)
-ament_target_dependencies(argus_fusion_node
-  rclcpp sensor_msgs std_msgs geometry_msgs visualization_msgs argus_core argus_msgs)
+add_executable(argus_watchdog_node src/argus_watchdog_node.cpp)
+target_compile_features(argus_watchdog_node PUBLIC cxx_std_17)
+ament_target_dependencies(argus_watchdog_node
+  rclcpp std_msgs argus_core argus_msgs)
 
-install(TARGETS argus_fusion_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS argus_watchdog_node DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
