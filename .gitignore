@@ -15,8 +15,9 @@
 *.frames
 
 data/ui/
-data/new_data_full/
-results/t32_new_data/
+data/recordings/
+data/dataset/
+results/
 
 # --- Артефакты сборки ROS 2 ---
 build/
@@ -90,7 +91,6 @@ results/
 third_party/patchworkpp/
 docs/img/
 docs/video/
-ProjectSubmission/
 
 # --- Скриншоты и служебные файлы инструментов ---
 *.png
