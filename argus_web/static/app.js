@@ -1787,7 +1787,6 @@ async function route() {
     else if (head === "/zapis") await pageBags();
     else if (head === "/efir") await pageLive(decodeURIComponent(parts[1] || ""));
     else if (head === "/otchet") await pageReports(decodeURIComponent(parts[1] || ""));
-    else if (head === "/tunnel-lab") await pageTunnelLab();
     else if (head === "/parametry") await pageParams();
     else view.innerHTML = empty("Нет такой страницы.");
   } catch (err) {

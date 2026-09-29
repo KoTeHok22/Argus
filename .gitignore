@@ -82,3 +82,18 @@ AGENTS.md
 *.md
 !/README.md
 !docs/EXPERIMENTS.md
+
+# --- Данные, макеты и артефакты прогонов: вне репозитория ---
+data/
+design/
+results/
+third_party/patchworkpp/
+docs/img/
+docs/video/
+ProjectSubmission/
+
+# --- Скриншоты и служебные файлы инструментов ---
+*.png
+.kilo/
+.mcp.json
+codex_settings.json

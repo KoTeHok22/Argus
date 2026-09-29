@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git ca-certificates \
     python3-colcon-common-extensions \
     libeigen3-dev libyaml-cpp-dev libpcl-dev libtbb-dev liblz4-dev \
+    clang-format \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ws
