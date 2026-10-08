@@ -12,8 +12,8 @@ struct VisibilityParams {
     float max_range_m = 300.0f;
 };
 
-float forward_visibility_m(const CleanCloud& cloud, const ClearanceGauge& gauge,
-                           const VisibilityParams& p);
+float observed_forward_range_m(const CleanCloud& cloud, const ClearanceGauge& gauge,
+                               const VisibilityParams& p);
 
 float speed_limit_for_visibility_mps(float visibility_m, const BrakingParams& braking,
                                      float margin_m);

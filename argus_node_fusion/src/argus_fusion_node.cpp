@@ -142,6 +142,12 @@ public:
             static_cast<float>(declare_parameter<double>("vehicle.visibility_margin_m", 10.0));
         unknown_visibility_m_ =
             static_cast<float>(declare_parameter<double>("vehicle.unknown_visibility_m", 30.0));
+        if (!std::isfinite(visibility_.half_angle_deg) || visibility_.half_angle_deg <= 0.0f ||
+            visibility_.half_angle_deg > 90.0f || !std::isfinite(visibility_.max_range_m) ||
+            visibility_.max_range_m <= 0.0f || !std::isfinite(visibility_.min_z_rel_m) ||
+            !std::isfinite(unknown_visibility_m_) || unknown_visibility_m_ < 0.0f) {
+            throw std::invalid_argument("invalid forward observation limits");
+        }
         classification_.person_min_height_m = static_cast<float>(declare_parameter<double>(
             "classification.person_min_height_m", classification_.person_min_height_m));
         classification_.person_max_height_m = static_cast<float>(declare_parameter<double>(
@@ -233,6 +239,7 @@ public:
         sub_health_ = create_subscription<std_msgs::msg::String>(
             "/argus/system_health", qos, [this](std_msgs::msg::String::ConstSharedPtr msg) {
                 system_ok_ = msg->data == "OK";
+                last_system_health_at_ = std::chrono::steady_clock::now();
                 if (!system_ok_ && msg->data.rfind("DEAD:", 0) == 0) {
                     dead_nodes_ = msg->data.substr(5);
                 } else {
@@ -506,22 +513,27 @@ private:
         if (pose_required && !result.pose_used && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
-        if (!system_ok_ && status == ObstacleArray::STATUS_CLEAR) {
+        if (!system_healthy() && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
-        if (!sensor_ok_ && status == ObstacleArray::STATUS_CLEAR) {
+        if (!sensor_healthy() && status == ObstacleArray::STATUS_CLEAR) {
             status = ObstacleArray::STATUS_DEGRADED;
         }
         unknown_reason_.clear();
         if (status == ObstacleArray::STATUS_CLEAR) {
-            const float verified = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
-            if (verified < unknown_visibility_m_) {
-                status = ObstacleArray::STATUS_UNKNOWN;
-                char why[96];
+            const float observed = observed_forward_range_m(cloud, pipeline_->gauge(), visibility_);
+            status = ObstacleArray::STATUS_UNKNOWN;
+            if (observed < unknown_visibility_m_) {
+                char why[256];
                 std::snprintf(
-                    why, sizeof(why), "недостаточно улик: проверенная дальность %.1f м < %.1f м",
-                    static_cast<double>(verified), static_cast<double>(unknown_visibility_m_));
+                    why, sizeof(why),
+                    "наблюдаемая дальность %.1f м < %.1f м; свободный габарит не подтверждён",
+                    static_cast<double>(observed), static_cast<double>(unknown_visibility_m_));
                 unknown_reason_ = why;
+            } else {
+                unknown_reason_ =
+                    "свободный габарит не подтверждён; дальний возврат не доказывает свободный "
+                    "путь";
             }
         }
         out.status = status;
@@ -556,13 +568,9 @@ private:
         gs.max_range = gauge_params_.max_range;
         gs.train_speed_mps = current_speed();
         gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
-        float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
-        if (out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f) {
-            clear_range = std::min(clear_range, out.nearest_range_m);
-        }
-        gs.clear_range_m = clear_range;
-        gs.speed_limit_mps =
-            speed_limit_for_visibility_mps(clear_range, braking_, visibility_margin_m_);
+        gs.observed_range_m = observed_forward_range_m(cloud, pipeline_->gauge(), visibility_);
+        gs.clear_range_m = 0.0f;
+        gs.speed_limit_mps = 0.0f;
         pub_gauge_state_->publish(gs);
     }
 
@@ -580,10 +588,12 @@ private:
                 static_cast<uint8_t>(t.votes_free_space + t.votes_no_return + t.votes_geometry);
             text += format_alert(t, reason);
         } else if (out.status == ObstacleArray::STATUS_DEGRADED) {
-            if (!sensor_ok_) {
-                text += "DEGRADED: сенсор неисправен (загрязнение/перекрытие окна)\n";
-            } else if (!system_ok_) {
-                text += "DEGRADED: молчат критические узлы: " + dead_nodes_ + "\n";
+            if (!sensor_healthy()) {
+                text += "DEGRADED: нет свежего подтверждения исправности сенсора\n";
+            } else if (!system_healthy()) {
+                text +=
+                    "DEGRADED: нет свежего подтверждения работы критических узлов: " + dead_nodes_ +
+                    "\n";
             } else {
                 text += "DEGRADED: нет валидной позы одометрии, требуемой активным детекторам\n";
             }
@@ -597,21 +607,17 @@ private:
         }
         char tail[320];
         const FrameSyncStats& ss = sync_->stats();
-        const float clear_range = forward_visibility_m(cloud, pipeline_->gauge(), visibility_);
+        const float observed_range =
+            observed_forward_range_m(cloud, pipeline_->gauge(), visibility_);
         std::snprintf(
             tail, sizeof(tail),
             "status=%s obstacles=%u nearest=%.1f m processing=%.1f ms\n"
-            "supervision: clear=%.1f m limit=%.2f m/s speed=%.2f m/s\n"
+            "supervision: observed=%.1f m clear=0.0 m limit=0.00 m/s speed=%.2f m/s\n"
             "sync: arrivals=%llu snapped=%llu expired=%llu (нет cloud=%llu geom=%llu nr=%llu)\n",
             status_name(out.status).c_str(), out.obstacles_detected,
             static_cast<double>(out.nearest_range_m), static_cast<double>(out.processing_ms),
-            static_cast<double>(clear_range),
-            static_cast<double>(speed_limit_for_visibility_mps(
-                out.status == ObstacleArray::STATUS_BLOCKED && out.nearest_range_m > 0.0f
-                    ? std::min(clear_range, out.nearest_range_m)
-                    : clear_range,
-                braking_, visibility_margin_m_)),
-            static_cast<double>(current_speed()), static_cast<unsigned long long>(ss.arrivals),
+            static_cast<double>(observed_range), static_cast<double>(current_speed()),
+            static_cast<unsigned long long>(ss.arrivals),
             static_cast<unsigned long long>(ss.snapped),
             static_cast<unsigned long long>(ss.expired),
             static_cast<unsigned long long>(ss.expired_missing_cloud),
@@ -702,6 +708,16 @@ private:
         return static_cast<float>(default_speed_);
     }
 
+    bool health_fresh(std::chrono::steady_clock::time_point received_at) const {
+        return received_at.time_since_epoch().count() > 0 &&
+               std::chrono::duration<double>(std::chrono::steady_clock::now() - received_at)
+                       .count() <= stale_timeout_;
+    }
+
+    bool sensor_healthy() const { return sensor_ok_ && health_fresh(last_sensor_diag_at_); }
+
+    bool system_healthy() const { return system_ok_ && health_fresh(last_system_health_at_); }
+
     uint8_t severity_of(const Track& t) {
         const float critical_range = effective_critical_range();
         const bool critical =
@@ -779,6 +795,7 @@ private:
         gs.max_range = gauge_params_.max_range;
         gs.train_speed_mps = current_speed();
         gs.braking_distance_m = braking_distance_m(gs.train_speed_mps, braking_);
+        gs.observed_range_m = 0.0f;
         gs.clear_range_m = 0.0f;
         gs.speed_limit_mps = 0.0f;
         pub_gauge_state_->publish(gs);
@@ -836,7 +853,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_speed_;
     rclcpp::Subscription<DiagnosticsMsg>::SharedPtr sub_sensor_;
     rclcpp::Publisher<GaugeState>::SharedPtr pub_gauge_state_;
-    bool sensor_ok_ = true;
+    bool sensor_ok_ = false;
     std::chrono::steady_clock::time_point last_sensor_diag_at_{};
     bool publish_markers_ = true;
     float marker_max_range_ = 60.0f;
@@ -868,7 +885,8 @@ private:
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_health_;
     rclcpp::TimerBase::SharedPtr stale_timer_;
     rclcpp::TimerBase::SharedPtr heartbeat_timer_;
-    bool system_ok_ = true;
+    bool system_ok_ = false;
+    std::chrono::steady_clock::time_point last_system_health_at_{};
     std::string dead_nodes_;
 };
 

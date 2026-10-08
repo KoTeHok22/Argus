@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 
 #include "argus_core/supervision.hpp"
 
@@ -25,14 +26,14 @@ argus::CleanCloud make_cloud(float front_range, float lateral) {
     return c;
 }
 
-TEST(Supervision, VisibilityFindsForwardReturn) {
+TEST(Supervision, ObservationFindsForwardReturn) {
     const auto gauge = make_gauge();
     argus::VisibilityParams p;
     const auto cloud = make_cloud(80.0f, 0.0f);
-    EXPECT_NEAR(argus::forward_visibility_m(cloud, gauge, p), 80.0f, 0.5f);
+    EXPECT_NEAR(argus::observed_forward_range_m(cloud, gauge, p), 80.0f, 0.5f);
 }
 
-TEST(Supervision, VisibilityIgnoresBehindAndGround) {
+TEST(Supervision, ObservationIgnoresBehindAndGround) {
     const auto gauge = make_gauge();
     argus::VisibilityParams p;
     argus::CleanCloud cloud;
@@ -42,23 +43,49 @@ TEST(Supervision, VisibilityIgnoresBehindAndGround) {
     cloud.x.push_back(0.0f);
     cloud.y.push_back(-100.0f);
     cloud.z.push_back(-1.0f);
-    EXPECT_FLOAT_EQ(argus::forward_visibility_m(cloud, gauge, p), 0.0f);
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
 }
 
-TEST(Supervision, VisibilityIgnoresWideOffAxis) {
+TEST(Supervision, ObservationIgnoresWideOffAxis) {
     const auto gauge = make_gauge();
     argus::VisibilityParams p;
     p.half_angle_deg = 20.0f;
     const auto cloud = make_cloud(60.0f, 60.0f);
-    EXPECT_FLOAT_EQ(argus::forward_visibility_m(cloud, gauge, p), 0.0f);
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
 }
 
-TEST(Supervision, VisibilityRespectsMaxRange) {
+TEST(Supervision, ObservationRespectsMaxRange) {
     const auto gauge = make_gauge();
     argus::VisibilityParams p;
     p.max_range_m = 50.0f;
     const auto cloud = make_cloud(200.0f, 0.0f);
-    EXPECT_FLOAT_EQ(argus::forward_visibility_m(cloud, gauge, p), 0.0f);
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
+}
+
+TEST(Supervision, ObservationRejectsNonfiniteCoordinates) {
+    const auto gauge = make_gauge();
+    argus::VisibilityParams p;
+    auto cloud = make_cloud(80.0f, 0.0f);
+    cloud.x[0] = std::numeric_limits<float>::quiet_NaN();
+    cloud.y[1] = -std::numeric_limits<float>::infinity();
+    cloud.z[2] = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 80.0f);
+    for (auto& z : cloud.z) z = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
+}
+
+TEST(Supervision, ObservationRejectsInvalidParameters) {
+    const auto gauge = make_gauge();
+    const auto cloud = make_cloud(80.0f, 0.0f);
+    for (float value : {0.0f, -1.0f, std::numeric_limits<float>::quiet_NaN(),
+                        std::numeric_limits<float>::infinity()}) {
+        argus::VisibilityParams p;
+        p.max_range_m = value;
+        EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
+    }
+    argus::VisibilityParams p;
+    p.half_angle_deg = 180.0f;
+    EXPECT_FLOAT_EQ(argus::observed_forward_range_m(cloud, gauge, p), 0.0f);
 }
 
 TEST(Supervision, SpeedLimitZeroWhenVisibilityBelowMargin) {
@@ -95,6 +122,35 @@ TEST(Supervision, SpeedLimitMatchesMetroCase) {
     b.reaction_s = 0.5f;
     const float v = argus::speed_limit_for_visibility_mps(200.0f, b, 10.0f);
     EXPECT_NEAR(v, 21.6f, 0.5f);
+}
+
+TEST(Supervision, SpeedLimitRejectsInvalidInputs) {
+    argus::BrakingParams b;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    for (float visibility : {nan, inf, -1.0f}) {
+        EXPECT_FLOAT_EQ(argus::speed_limit_for_visibility_mps(visibility, b, 10.0f), 0.0f);
+    }
+    for (float margin : {nan, inf, -1.0f}) {
+        EXPECT_FLOAT_EQ(argus::speed_limit_for_visibility_mps(100.0f, b, margin), 0.0f);
+    }
+    for (float decel : {0.0f, -1.0f, nan, inf}) {
+        b.decel_mps2 = decel;
+        EXPECT_FLOAT_EQ(argus::speed_limit_for_visibility_mps(100.0f, b, 10.0f), 0.0f);
+    }
+    b = argus::BrakingParams{};
+    for (float reaction : {-1.0f, nan, inf}) {
+        b.reaction_s = reaction;
+        EXPECT_FLOAT_EQ(argus::speed_limit_for_visibility_mps(100.0f, b, 10.0f), 0.0f);
+    }
+}
+
+TEST(Supervision, SpeedLimitUsesActualSmallDeceleration) {
+    argus::BrakingParams b;
+    b.decel_mps2 = 0.0001f;
+    const float v = argus::speed_limit_for_visibility_mps(100.0f, b, 10.0f);
+    EXPECT_GT(v, 0.0f);
+    EXPECT_NEAR(v * b.reaction_s + v * v / (2.0f * b.decel_mps2), 90.0f, 0.1f);
 }
 
 } // namespace

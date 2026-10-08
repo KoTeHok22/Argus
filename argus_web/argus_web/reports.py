@@ -13,7 +13,7 @@ STATUS_LABEL = {
     "WARNING": "внимание",
     "BLOCKED": "препятствие",
     "DEGRADED": "нет данных",
-    "UNKNOWN": "недостаточно улик",
+    "UNKNOWN": "свободный путь не подтверждён",
 }
 
 
@@ -197,15 +197,15 @@ def summarize_fusion(rows: list[dict]) -> dict:
         for v in (_num(r.get("forward_m")) for r in alerts)
         if v is not None and v > 0
     ]
-    first = next((int(r["frame"]) for r in usable if str(r.get("alert") or "0").strip() == "1"), None)
+    first = int(alerts[0]["frame"]) if alerts else None
     frames_out = []
     for row in usable:
-        alert = str(row.get("alert") or "0").strip() == "1"
+        alert = str(row.get("alert") or "0").strip() in ("1", "true", "True")
         frames_out.append(
             {
                 "index": int(row["frame"]),
-                "status": "BLOCKED" if alert else "CLEAR",
-                "status_label": "препятствие" if alert else "свободно",
+                "status": "BLOCKED" if alert else "UNKNOWN",
+                "status_label": "препятствие" if alert else "свободный путь не подтверждён",
                 "nearest_m": _num(row.get("range_m")) if alert else None,
                 "forward_m": _num(row.get("forward_m")) if alert else None,
                 "objects": int(_num(row.get("tracks")) or 0),
@@ -217,7 +217,8 @@ def summarize_fusion(rows: list[dict]) -> dict:
         "kind": "offline",
         "frames": len(usable),
         "blocked": len(alerts),
-        "clear": len(usable) - len(alerts),
+        "clear": 0,
+        "unknown": len(usable) - len(alerts),
         "degraded": 0,
         "nearest_m": min(nearest) if nearest else (min(forward) if forward else None),
         "first_blocked_frame": first,
@@ -340,6 +341,8 @@ def csv_to_text(report: dict) -> str:
         f"Препятствие: {report['blocked']}",
         f"Свободно: {report['clear']}",
     ]
+    if report.get("unknown"):
+        lines.append(f"Свободный путь не подтверждён: {report['unknown']}")
     if report.get("nearest_m") is not None:
         lines.append(f"Ближайшее: {report['nearest_m']:.1f} м")
     lat = report.get("latency_ms") or {}

@@ -1,4 +1,4 @@
-FROM osrf/ros@sha256:592f97da6b871a438fdb97f86b422ab9f80657e80efa7b98d258894738c8a0c0 AS builder
+FROM osrf/ros@sha256:592f97da6b871a438fdb97f86b422ab9f80657e80efa7b98d258894738c8a0c0 AS build_environment
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -10,7 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ws
-COPY third_party/patchworkpp /ws/third_party/patchworkpp
+RUN git clone https://github.com/url-kaist/patchwork-plusplus.git /ws/third_party/patchworkpp && \
+    git -C /ws/third_party/patchworkpp checkout --detach 3e6903a1d5537a4cc2ace897b0bbb98a92d6014c
+
+FROM build_environment AS development
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pytest python3-numpy \
+    ros-humble-ament-cmake-pytest \
+    ros-humble-ament-cmake-gtest \
+    ros-humble-ament-lint-auto \
+    ros-humble-ament-cmake-flake8 \
+    ros-humble-ament-cmake-lint-cmake \
+    ros-humble-ament-cmake-pep257 \
+    ros-humble-ament-cmake-xmllint \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM build_environment AS builder
 COPY argus_core   /ws/argus_core
 COPY argus_msgs   /ws/argus_msgs
 COPY argus_node_preprocess   /ws/argus_node_preprocess
@@ -25,7 +40,9 @@ COPY argus_eval   /ws/argus_eval
 COPY argus_web    /ws/argus_web
 
 RUN . /opt/ros/humble/setup.sh && \
-    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+    MAKEFLAGS=-j2 CMAKE_BUILD_PARALLEL_LEVEL=2 \
+    colcon build --parallel-workers 2 \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 
 FROM osrf/ros@sha256:592f97da6b871a438fdb97f86b422ab9f80657e80efa7b98d258894738c8a0c0
 

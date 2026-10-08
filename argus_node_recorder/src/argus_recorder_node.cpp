@@ -109,14 +109,16 @@ public:
         sub_gauge_ = create_subscription<GaugeState>(
             "/argus/gauge_state", qos, [this](GaugeState::ConstSharedPtr msg) {
                 char line[320];
-                std::snprintf(line, sizeof(line),
-                              "{\"type\":\"gauge\",\"stamp\":%u.%09u,\"speed\":%.2f,"
-                              "\"braking_m\":%.1f,\"clear_m\":%.1f,\"limit_mps\":%.2f}",
-                              msg->header.stamp.sec, msg->header.stamp.nanosec,
-                              static_cast<double>(msg->train_speed_mps),
-                              static_cast<double>(msg->braking_distance_m),
-                              static_cast<double>(msg->clear_range_m),
-                              static_cast<double>(msg->speed_limit_mps));
+                std::snprintf(
+                    line, sizeof(line),
+                    "{\"type\":\"gauge\",\"stamp\":%u.%09u,\"speed\":%.2f,"
+                    "\"braking_m\":%.1f,\"observed_m\":%.1f,\"clear_m\":%.1f,\"limit_mps\":%.2f}",
+                    msg->header.stamp.sec, msg->header.stamp.nanosec,
+                    static_cast<double>(msg->train_speed_mps),
+                    static_cast<double>(msg->braking_distance_m),
+                    static_cast<double>(msg->observed_range_m),
+                    static_cast<double>(msg->clear_range_m),
+                    static_cast<double>(msg->speed_limit_mps));
                 log_->write(line);
             });
         sub_health_ = create_subscription<std_msgs::msg::String>(
@@ -147,6 +149,8 @@ private:
                 return "WARNING";
             case ObstacleArray::STATUS_DEGRADED:
                 return "DEGRADED";
+            case ObstacleArray::STATUS_UNKNOWN:
+                return "UNKNOWN";
             default:
                 return "CLEAR";
         }

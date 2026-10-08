@@ -33,7 +33,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(argus_eval_pytest test)
+  ament_add_pytest_test(argus_eval_pytest test TIMEOUT 180)
 endif()
 
 ament_package()

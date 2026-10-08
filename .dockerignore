@@ -1,8 +1,11 @@
 data/
 датасет/
-data/
+Datas/
+ProjectSubmission/
 *.zst
 *.db3
+*.head
+*.frames
 *.pcd
 *.npz
 results/
@@ -15,11 +18,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-third_party/*/
-!third_party/argus.repos
-!third_party/patchworkpp
-!third_party/patchworkpp/**
-third_party/patchworkpp/.git
+third_party/
 
 .git/
 .gitignore

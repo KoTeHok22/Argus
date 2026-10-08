@@ -7,7 +7,6 @@ Ubuntu 22.04, ROS 2 Humble, Docker. GPU не нужен — всё работа�
 ## Сборка
 
 ```bash
-./scripts/fetch_third_party.sh          # подтягивает patchwork-plusplus по argus.repos
 docker build -f docker/Dockerfile -t argus .
 ```
 
@@ -218,10 +217,30 @@ scripts/ci/all.sh      # lint + build + test
 
 ```bash
 git clone <repo> && cd Argus
-./scripts/fetch_third_party.sh
 docker build -f docker/Dockerfile -t argus .
 docker run --rm --shm-size=256m -v "$PWD/Datas/dataset/<recordings>":/data \
     argus detect /data/<recording> 0
 ```
 
 Ожидаемый вывод — строки `ALERT BLOCKED` около 16.9 м.
+
+Patchwork++ загружается внутри сборки образа и закреплён на конкретном коммите.
+Для нативной сборки без Docker остаётся `scripts/fetch_third_party.sh`.
+
+## Проверка изменений в контейнере
+
+```bash
+docker build --target development -f docker/Dockerfile -t argus:dev .
+./scripts/fetch_third_party.sh
+docker run --rm --shm-size=256m -v "$PWD":/ws -w /ws argus:dev bash scripts/ci/all.sh
+```
+
+После сборки все ROS-потребители `GaugeState` должны использовать обновлённое
+сообщение с `observed_range_m`. Старые бинарники несовместимы с изменённым контрактом.
+На здоровой сцене без препятствия ожидается `UNKNOWN`, а не разрешение на движение.
+CI запускается при push веток `feature/**` и при pull request; журналы тестов
+сохраняются как артефакт запуска, в том числе при ошибке.
+
+При запуске панели через Docker на Windows можно задать `ARGUS_DOCKER_WORKSPACE`
+путём к локальному рабочему каталогу. Отчёты и снимок параметров внутри этого
+каталога монтируются в `/ws`; внутренние пути контейнера используют `/`.

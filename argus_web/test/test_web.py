@@ -11,13 +11,17 @@ from argus_web.cloud import header_stamp_ns, load_frame
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("ARGUS_ROOT", str(ROOT.parent))
-os.environ["ARGUS_DATA"] = str(Path(__file__).resolve().parent / "_empty_data")
-os.environ["ARGUS_RESULTS"] = str(Path(__file__).resolve().parent / "_empty_results")
-os.environ["ARGUS_UI_ROOT"] = str(Path(__file__).resolve().parent / "_empty_ui")
 
 from argus_web.align import align_rows, gauge_profile, load_gauge, reset_gauge, save_gauge, verdict_for_stamp
 from argus_web.bags import describe, parse_metadata
-from argus_web.reports import csv_to_text, load_report, percentile, summarize_latency
+from argus_web.reports import csv_to_text, load_report, percentile, summarize_fusion, summarize_latency
+
+
+@pytest.fixture(autouse=True)
+def isolated_ui_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARGUS_DATA", str(tmp_path / "data"))
+    monkeypatch.setenv("ARGUS_RESULTS", str(tmp_path / "results"))
+    monkeypatch.setenv("ARGUS_UI_ROOT", str(tmp_path / "ui"))
 
 
 def test_percentile_empty():
@@ -51,6 +55,15 @@ def test_summarize_latency_preserves_source_frame_numbers():
         {"source_frame": "370", "frame": "370", "status": "DEGRADED", "nearest_m": "-1"},
     ])
     assert out["rows"][0]["source_index"] == 370
+
+
+def test_summarize_latency_preserves_unknown_without_claiming_free_path():
+    report = summarize_latency([{"status": "UNKNOWN", "nearest_m": "-1"}])
+    report["name"] = "unknown-scene"
+    assert report["clear"] == 0
+    assert report["unknown"] == 1
+    assert report["rows"][0]["status_label"] == "свободный путь не подтверждён"
+    assert "Свободный путь не подтверждён: 1" in csv_to_text(report)
 
 
 def test_summarize_latency_keeps_every_degraded_frame():
@@ -106,12 +119,23 @@ def test_summarize_latency_exposes_candidates_without_confirming_them():
     assert row["candidates"][0]["extent"] == [0.3, 0.4, 0.8]
 
 
-def test_lab_source_list_contains_real_frame_sources():
-    from argus_web.lab import sources
+def test_lab_source_list_contains_frame_sources(tmp_path, monkeypatch):
+    from argus_web import lab
 
-    items = sources()
-    assert items
-    assert all(item["id"] and item["name"] for item in items)
+    monkeypatch.setattr(lab, "repo_root", lambda: tmp_path)
+    for directory, name in [("data/frames", "scene-a"), ("results", "scene-b")]:
+        root = tmp_path / directory
+        root.mkdir(parents=True)
+        (root / f"{name}.frames").write_bytes(b"ARGFRM1\0" + struct.pack("<I", 0))
+    assert lab.sources() == [{"id": "scene-a", "name": "scene-a"},
+                             {"id": "scene-b", "name": "scene-b"}]
+
+
+def test_lab_source_list_is_empty_without_dataset(tmp_path, monkeypatch):
+    from argus_web import lab
+
+    monkeypatch.setattr(lab, "repo_root", lambda: tmp_path)
+    assert lab.sources() == []
 
 
 def test_lab_rejects_unknown_frame_source():
@@ -151,11 +175,27 @@ def test_load_report_fusion(tmp_path: Path):
     report = load_report(path)
     assert report["name"] == "fusion_obstacle"
     assert report["blocked"] == 1
-    assert report["clear"] == 1
+    assert report["clear"] == 0
+    assert report["unknown"] == 1
+    assert report["rows"][0]["status"] == "UNKNOWN"
+    assert report["rows"][0]["status_label"] == "свободный путь не подтверждён"
     assert abs(report["nearest_m"] - 16.9) < 1e-6
     text = csv_to_text(report)
     assert "Препятствие: 1" in text
+    assert "Свободный путь не подтверждён: 1" in text
     assert "16.90" in text
+
+
+def test_summarize_fusion_accepts_boolean_alerts():
+    report = summarize_fusion([
+        {"frame": "4", "alert": "true", "range_m": "17"},
+        {"frame": "5", "alert": "True", "range_m": "18"},
+        {"frame": "6", "alert": "0"},
+    ])
+    assert report["blocked"] == 2
+    assert report["unknown"] == 1
+    assert report["first_blocked_frame"] == 4
+    assert [row["status"] for row in report["rows"]] == ["BLOCKED", "BLOCKED", "UNKNOWN"]
 
 
 def test_parse_metadata(tmp_path: Path):
@@ -294,16 +334,18 @@ def test_docker_run_mounts_active_gauge(tmp_path: Path, monkeypatch):
     assert cmd[-1] == "/tmp/argus_runs/result_params.yaml"
 
 
-def test_docker_runner_preserves_workspace_absolute_paths(monkeypatch):
+def test_docker_runner_preserves_workspace_absolute_paths(tmp_path, monkeypatch):
     from argus_web import runner
 
     monkeypatch.setattr(runner.shutil, "which", lambda _: "/usr/bin/docker")
+    workspace = tmp_path / "workspace"
+    monkeypatch.setenv("ARGUS_DOCKER_WORKSPACE", str(workspace))
     cmd = runner._detect_cmd(
-        {"id": "scene-obj", "path": "/data/scene-obj"},
+        {"id": "scene-obj", "path": str(tmp_path / "data" / "scene-obj")},
         0.0,
-        Path("/ws/data/ui/runs/scene-obj_run.csv"),
+        workspace / "data/ui/runs/scene-obj_run.csv",
     )
-    assert "/ws:/ws" in cmd
+    assert f"{workspace}:/ws" in cmd
     assert "ARGUS_LATENCY_CSV=/ws/data/ui/runs/scene-obj_run.csv" in cmd
     assert "/ws/data/ui/runs/scene-obj_run_params.yaml" in cmd
 

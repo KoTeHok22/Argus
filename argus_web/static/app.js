@@ -21,7 +21,7 @@ const STATUS = {
   WARNING: "ВНИМАНИЕ",
   BLOCKED: "ПРЕПЯТСТВИЕ",
   DEGRADED: "НЕТ ДАННЫХ",
-  UNKNOWN: "МАЛО УЛИК",
+  UNKNOWN: "ПУТЬ НЕ ПОДТВЕРЖДЁН",
   ready: "ГОТОВО",
   incomplete: "НЕ СОБРАНА",
   holdout: "ОТЛОЖЕНА",
@@ -105,7 +105,7 @@ function verdictOf(report, row, view) {
     return { code: "unsure", chip: "НЕ УВЕРЕН", cls: "warn-text", phrase: "Детектор не уверен: кадр обработан не полностью", meters: null };
   }
   if (row.status === "UNKNOWN") {
-    return { code: "unsure", chip: "МАЛО УЛИК", cls: "warn-text", phrase: "Мало проверенной дальности: путь не подтверждён свободным", meters: null };
+    return { code: "unsure", chip: "ПУТЬ НЕ ПОДТВЕРЖДЁН", cls: "warn-text", phrase: "Препятствие не найдено; свободный путь не подтверждён", meters: null };
   }
   if (row.status === "BLOCKED" && row.nearest_m != null) {
     return {
@@ -125,6 +125,7 @@ function verdictOf(report, row, view) {
 function decisionPhrase(report) {
   if (!report) return "Детектор ещё не прогнан";
   if (report.blocked > 0 && report.nearest_m != null) return `Препятствие, ${fmtNum(report.nearest_m, 1)} м`;
+  if (report.unknown > 0) return "Свободный путь не подтверждён";
   if (report.clear > 0 && !report.blocked) return "В габарите пусто";
   return "Детектор не уверен";
 }
@@ -700,6 +701,7 @@ async function pageOverview() {
   const hz = latest && latest.fps ? latest.fps : 10;
   const uptime = latest ? latest.frames / hz : null;
   const blocked = latest && latest.blocked > 0;
+  const clear = latest && latest.clear > 0 && !latest.unknown && !latest.degraded;
   const phrase = decisionPhrase(latest);
   const job = (bagData.jobs || []).find((j) => j.status === "parsing");
   const bags = bagData.items || [];
@@ -740,7 +742,7 @@ async function pageOverview() {
           <h2>Состояние обнаружения</h2>
           <div class="scale-wrap">${scaleSvg(latest && latest.nearest_m != null ? latest.nearest_m : null)}</div>
           <div class="det-line">
-            ${latest ? chip(blocked ? "ПРЕПЯТСТВИЕ" : latest.blocked ? "НЕ УВЕРЕН" : "ПУСТО", blocked ? "bad" : latest.blocked ? "warn" : "ok") : chip("НЕТ ОТЧЁТА", "")}
+            ${latest ? chip(blocked ? "ПРЕПЯТСТВИЕ" : clear ? "ПУСТО" : "ПУТЬ НЕ ПОДТВЕРЖДЁН", blocked ? "bad" : clear ? "ok" : "warn") : chip("НЕТ ОТЧЁТА", "")}
             <span class="phrase">${phrase}</span>
           </div>
           <div class="tunnel">${tunnelSvg()}</div>
@@ -1354,7 +1356,11 @@ async function pageReports(reportId) {
     if (r.status === "BLOCKED") acc += 1;
     return acc;
   });
-  const clearSeries = rows.map((r, i) => i + 1 - blockedSeries[i]);
+  let unknownCount = 0;
+  const unknownSeries = rows.map((r) => {
+    if (r.status === "UNKNOWN") unknownCount += 1;
+    return unknownCount;
+  });
   const nearestSeries = rows.map((r) => r.nearest_m).filter((v) => v != null);
   const alertRow = rows.find((r) => r.status === "BLOCKED");
   const liveLink = current.bag_id ? `#/efir/${encodeURIComponent(current.bag_id)}` : "#/efir";
@@ -1377,7 +1383,7 @@ async function pageReports(reportId) {
     <div class="summary-row">
       ${metricCard("КАДРЫ", fmtInt(current.frames), rows.map((_, i) => i), "#8a9199")}
       ${metricCard("ПРЕПЯТСТВИЯ", fmtInt(current.blocked), blockedSeries, "#b95c4f")}
-      ${metricCard("ПУСТО", fmtInt(current.clear), clearSeries, "#7fa97f")}
+      ${metricCard("ПУТЬ НЕ ПОДТВЕРЖДЁН", fmtInt(unknownCount), unknownSeries, "#c59d5f")}
       ${metricCard("БЛИЖАЙШЕЕ", current.nearest_m != null ? fmtNum(current.nearest_m, 1) : "—", nearestSeries, "#b95c4f")}
       ${metricCard("P95 ЗАДЕРЖКА", current.latency_ms && current.latency_ms.p95 != null ? `${fmtNum(current.latency_ms.p95, 0)} <small>мс</small>` : "—", latSeries, "#8a9199")}
     </div>
@@ -1430,7 +1436,7 @@ async function pageReports(reportId) {
     const slice = rows.slice(page * pageSize, page * pageSize + pageSize);
     document.getElementById("frame-rows").innerHTML = slice
       .map((r) => {
-        const st = r.status === "BLOCKED" ? chip("ПРЕПЯТСТВИЕ", "bad") : r.status === "CLEAR" ? chip("ПУСТО", "ok") : chip("НЕТ ДАННЫХ", "");
+        const st = r.status === "BLOCKED" ? chip("ПРЕПЯТСТВИЕ", "bad") : r.status === "CLEAR" ? chip("ПУСТО", "ok") : r.status === "UNKNOWN" ? chip("ПУТЬ НЕ ПОДТВЕРЖДЁН", "warn") : chip(STATUS[r.status] || "НЕТ ДАННЫХ", "warn");
         return `
           <tr>
             <td>${fmtInt((r.index || 0) + 1)}</td>
