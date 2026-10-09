@@ -1,0 +1,1306 @@
+{
+  "schema_version": 2,
+  "evaluation_kind": "synthetic_nearest_distance_diagnostic",
+  "receipts": {
+    "source": {
+      "path": "/data/frames/new_data_23.frames",
+      "sha256": "24800cf332a859c4924a718aaaef47c4011e2d8ded0f818f169dc2c635d82b8d",
+      "bytes": 420757052
+    },
+    "poses": {
+      "path": "/audit/t112-poses.csv",
+      "sha256": "80ec11c9b9ad2e6bfb4a03e5c5d814854747efeb03c470386859793c5333e5e9",
+      "bytes": 5533
+    },
+    "detector": {
+      "path": "build/argus_core/offline_detector",
+      "sha256": "245d9764de530d632ffd47b6970efc8d6fc7734708af6f281bd50a2bff6a13b2",
+      "bytes": 108016
+    },
+    "generator": {
+      "path": "scripts/synth_obstacle.py",
+      "sha256": "ea5e1d401f4d6396cc171cb8b9047bf25897874218693895314f3e874cc51d70",
+      "bytes": 12970
+    },
+    "harness": {
+      "path": "/ws/scripts/eval/ray_coverage_recall.py",
+      "sha256": "52bb0b5b2a785e623bd297fcb0cba0f91cf5a50888490acdc60d2eb9e6704c20",
+      "bytes": 11084
+    }
+  },
+  "parameters": {
+    "frames": "/data/frames/new_data_23.frames",
+    "poses": "/audit/t112-poses.csv",
+    "detector": "build/argus_core/offline_detector",
+    "generator": "scripts/synth_obstacle.py",
+    "python": "python3",
+    "cases": "0.45:0.30:1.75:20,0.45:0.30:1.75:40,0.45:0.30:1.75:60,0.45:0.30:1.75:100,3:2.1:2.1:20,3:2.1:2.1:40,3:2.1:2.1:60,3:2.1:2.1:100",
+    "start_frame": 10,
+    "frames_n": 40,
+    "tolerance_m": 3.0,
+    "seed": 1,
+    "geom_max_ranges": "45,150",
+    "artifacts_dir": "/audit/t112a-final-artifacts",
+    "out": "/audit/t112a-final-paired.json"
+  },
+  "full_report_sha256": "513184ed2b264c2fdc8a83f971a6c11e521784a5e9df8b5b26695ec0c1fabc56",
+  "detector_source_commit": "b94a696fc13363a59f709d33593c4bf8a6cf52c0",
+  "poses_invocation": [
+    "build/argus_core/offline_detector",
+    "/data/frames/new_data_23.frames",
+    "--odometry",
+    "--odom-heading",
+    "--frames",
+    "100"
+  ],
+  "cases": [
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 20.0,
+      "active_frames": 30,
+      "matched_frames": 21,
+      "mean_rays": 534.6666666666666,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 21,
+          "missed": 9,
+          "recall": 0.7
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "d674c5ea142d3610de3b1b0f1b8c9f4054ee3a2742ffa260ad8bf534bb87b553",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_00/truth.json",
+        "sha256": "6e97e0ba7d75a56a15f3458f683f861bb376a7f37578dbdb9cfa6c3d5c77fc39",
+        "bytes": 61873
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_00/detector_00_range_45.csv",
+        "sha256": "ab1da8f9ee42e8fa353c811205144ab06afdb00c81530cd32941316e423e2e29",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_00/detector_00_range_45.stderr.txt",
+        "sha256": "c6339f37278fbde73613736f1e41a73a4edbe01adef466c3a23eaba59710cdf0",
+        "bytes": 5644
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 20.0,
+      "active_frames": 30,
+      "matched_frames": 21,
+      "mean_rays": 534.6666666666666,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 21,
+          "missed": 9,
+          "recall": 0.7
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "d674c5ea142d3610de3b1b0f1b8c9f4054ee3a2742ffa260ad8bf534bb87b553",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_00/truth.json",
+        "sha256": "6e97e0ba7d75a56a15f3458f683f861bb376a7f37578dbdb9cfa6c3d5c77fc39",
+        "bytes": 61873
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_00/detector_01_range_150.csv",
+        "sha256": "ab1da8f9ee42e8fa353c811205144ab06afdb00c81530cd32941316e423e2e29",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_00/detector_01_range_150.stderr.txt",
+        "sha256": "c6339f37278fbde73613736f1e41a73a4edbe01adef466c3a23eaba59710cdf0",
+        "bytes": 5644
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 40.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 83.6,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "134fc77a6e9b061edb4e6301c1ffb529da043aabadb6378ba8fe8a159ee154a1",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_01/truth.json",
+        "sha256": "739a1e39882cd26599e2d9c22a3aeddbbc18d5dd277c1d68fdb1f21889b20f88",
+        "bytes": 61879
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_01/detector_00_range_45.csv",
+        "sha256": "343903de5be3cce1bdd1c43ae56b69857fd721e6b91d9e72edec4d2634184270",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_01/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 40.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 83.6,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "134fc77a6e9b061edb4e6301c1ffb529da043aabadb6378ba8fe8a159ee154a1",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_01/truth.json",
+        "sha256": "739a1e39882cd26599e2d9c22a3aeddbbc18d5dd277c1d68fdb1f21889b20f88",
+        "bytes": 61879
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_01/detector_01_range_150.csv",
+        "sha256": "343903de5be3cce1bdd1c43ae56b69857fd721e6b91d9e72edec4d2634184270",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_01/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 60.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 18.466666666666665,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 4,
+          "matched": 0,
+          "missed": 4,
+          "recall": 0.0
+        },
+        {
+          "bin": "16-32",
+          "frames": 26,
+          "matched": 0,
+          "missed": 26,
+          "recall": 0.0
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "a2f37e68924a23f4323aae7d0a4c089c2a9ab4ea5de62f6eb8d0ed7959c97c65",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_02/truth.json",
+        "sha256": "1b904e658212f06d2acfa656a5a03b8f27c02fa8e0b216bd8da2385a6e9b864b",
+        "bytes": 61792
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_02/detector_00_range_45.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_02/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 60.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 18.466666666666665,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 4,
+          "matched": 0,
+          "missed": 4,
+          "recall": 0.0
+        },
+        {
+          "bin": "16-32",
+          "frames": 26,
+          "matched": 0,
+          "missed": 26,
+          "recall": 0.0
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "a2f37e68924a23f4323aae7d0a4c089c2a9ab4ea5de62f6eb8d0ed7959c97c65",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_02/truth.json",
+        "sha256": "1b904e658212f06d2acfa656a5a03b8f27c02fa8e0b216bd8da2385a6e9b864b",
+        "bytes": 61792
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_02/detector_01_range_150.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_02/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 100.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 9.066666666666666,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 7,
+          "matched": 0,
+          "missed": 7,
+          "recall": 0.0
+        },
+        {
+          "bin": "8-16",
+          "frames": 23,
+          "matched": 0,
+          "missed": 23,
+          "recall": 0.0
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "b3cda355256a2ab3fe6941490adc99b8bbad1ade7ccb1094290055404721293d",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_03/truth.json",
+        "sha256": "ba560e4a00006a2b3a4dc49e1e5873e3ba7096d0373ad9a241b58412c4dffaee",
+        "bytes": 61677
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_03/detector_00_range_45.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_03/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        0.45,
+        0.3,
+        1.75
+      ],
+      "distance_m": 100.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 9.066666666666666,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 7,
+          "matched": 0,
+          "missed": 7,
+          "recall": 0.0
+        },
+        {
+          "bin": "8-16",
+          "frames": 23,
+          "matched": 0,
+          "missed": 23,
+          "recall": 0.0
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "b3cda355256a2ab3fe6941490adc99b8bbad1ade7ccb1094290055404721293d",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_03/truth.json",
+        "sha256": "ba560e4a00006a2b3a4dc49e1e5873e3ba7096d0373ad9a241b58412c4dffaee",
+        "bytes": 61677
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_03/detector_01_range_150.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_03/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 20.0,
+      "active_frames": 30,
+      "matched_frames": 2,
+      "mean_rays": 5183.066666666667,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 2,
+          "missed": 28,
+          "recall": 0.06666666666666667
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "7c6fde50d5b117e98eafa8fd00ba9e051b581125b7e03501326e8ebe912f03eb",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_04/truth.json",
+        "sha256": "e0c4ca05d7ba42e3dd61bda0d251dd72d9c8a805f0363ea93c815bac932d502c",
+        "bytes": 62169
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_04/detector_00_range_45.csv",
+        "sha256": "4afde32583fb6a727148f633f7db94cce09fa95caacb7b9e6681f095db8c851f",
+        "bytes": 1492
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_04/detector_00_range_45.stderr.txt",
+        "sha256": "e5d27844a3251360e6350755dcbc16800f62e6662379c79262a1b3c3e2f9ec63",
+        "bytes": 2472
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 20.0,
+      "active_frames": 30,
+      "matched_frames": 2,
+      "mean_rays": 5183.066666666667,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 2,
+          "missed": 28,
+          "recall": 0.06666666666666667
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "7c6fde50d5b117e98eafa8fd00ba9e051b581125b7e03501326e8ebe912f03eb",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_04/truth.json",
+        "sha256": "e0c4ca05d7ba42e3dd61bda0d251dd72d9c8a805f0363ea93c815bac932d502c",
+        "bytes": 62169
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_04/detector_01_range_150.csv",
+        "sha256": "4afde32583fb6a727148f633f7db94cce09fa95caacb7b9e6681f095db8c851f",
+        "bytes": 1492
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_04/detector_01_range_150.stderr.txt",
+        "sha256": "e5d27844a3251360e6350755dcbc16800f62e6662379c79262a1b3c3e2f9ec63",
+        "bytes": 2472
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 40.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 1012.7333333333333,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "cf3a3be610f9e428b10e02e73379a4add3eee06060d16f6cb85b9f3764d31616",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_05/truth.json",
+        "sha256": "b6aa23e3244f91d5708e405e91f1d6c1781b79962f74a0ff6d7424ca91727a1c",
+        "bytes": 61920
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_05/detector_00_range_45.csv",
+        "sha256": "fcb66748180e57b438fad9d9fb224a7dcb3f36764af99c3e2f96ad854c8f1b21",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_05/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 40.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 1012.7333333333333,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "cf3a3be610f9e428b10e02e73379a4add3eee06060d16f6cb85b9f3764d31616",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_05/truth.json",
+        "sha256": "b6aa23e3244f91d5708e405e91f1d6c1781b79962f74a0ff6d7424ca91727a1c",
+        "bytes": 61920
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_05/detector_01_range_150.csv",
+        "sha256": "fcb66748180e57b438fad9d9fb224a7dcb3f36764af99c3e2f96ad854c8f1b21",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_05/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 60.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 336.8333333333333,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "160fc16c4acc2ce19948065931984fce41387b38764bfeec545bd41e8146dab7",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_06/truth.json",
+        "sha256": "2aed76ca1d50159a8d9bd12aa7460d6d845b4b5182888e4caec2a2fec7b7a1ca",
+        "bytes": 62059
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_06/detector_00_range_45.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_06/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 60.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 336.8333333333333,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "160fc16c4acc2ce19948065931984fce41387b38764bfeec545bd41e8146dab7",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_06/truth.json",
+        "sha256": "2aed76ca1d50159a8d9bd12aa7460d6d845b4b5182888e4caec2a2fec7b7a1ca",
+        "bytes": 62059
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_06/detector_01_range_150.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_06/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 100.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 86.6,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 45.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "cdb21a1785c5436efd75a3360b8027478bacadbd8969e1d498a63c15f23c5d9b",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_07/truth.json",
+        "sha256": "6e07c44a542f88f50f10e2953f1d38858b2f744994744fcac553b4ebd2b58273",
+        "bytes": 61984
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_07/detector_00_range_45.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_07/detector_00_range_45.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "45.0"
+      ]
+    },
+    {
+      "dimensions_m": [
+        3.0,
+        2.1,
+        2.1
+      ],
+      "distance_m": 100.0,
+      "active_frames": 30,
+      "matched_frames": 0,
+      "mean_rays": 86.6,
+      "bins": [
+        {
+          "bin": "0-8",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "8-16",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "16-32",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "32-64",
+          "frames": 0,
+          "matched": 0,
+          "missed": 0,
+          "recall": null
+        },
+        {
+          "bin": "64+",
+          "frames": 30,
+          "matched": 0,
+          "missed": 30,
+          "recall": 0.0
+        }
+      ],
+      "geom_max_range_m": 150.0,
+      "predictions_received": 40,
+      "expected_predictions": 40,
+      "scene": {
+        "path": "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "sha256": "cdb21a1785c5436efd75a3360b8027478bacadbd8969e1d498a63c15f23c5d9b",
+        "bytes": 168521388
+      },
+      "truth": {
+        "path": "/audit/t112a-final-artifacts/case_07/truth.json",
+        "sha256": "6e07c44a542f88f50f10e2953f1d38858b2f744994744fcac553b4ebd2b58273",
+        "bytes": 61984
+      },
+      "predictions": {
+        "path": "/audit/t112a-final-artifacts/case_07/detector_01_range_150.csv",
+        "sha256": "3b86bbff09ac641d0c8c67207097b6bca2c86041ec6b005d28fd6d7eef7e00d2",
+        "bytes": 1499
+      },
+      "stderr": {
+        "path": "/audit/t112a-final-artifacts/case_07/detector_01_range_150.stderr.txt",
+        "sha256": "cb0d53b501f46998705236f152dce09f74adf5dadbaf263464bd15a5b8028948",
+        "bytes": 503
+      },
+      "invocation": [
+        "build/argus_core/offline_detector",
+        "/tmp/argus_rays_4a_nvlyv/scene.frames",
+        "--fusion",
+        "--geom-max-range",
+        "150.0"
+      ]
+    }
+  ]
+}
