@@ -91,12 +91,22 @@ def test_missing_or_unreviewed_frame_breaks_false_event(reviewed):
 
 def test_kilometric_rate_requires_verified_complete_reference_distance():
     truth = annotations([frame(), frame(200000000, path=100)])
-    preds = [predicted(detections=[detection()])]
+    preds = [predicted(detections=[detection()]), predicted(200000000)]
     assert score_scene(truth, preds, PROTOCOL)['false_track_events_per_km'] is None
     truth['reference_distance_verified'] = True
     assert score_scene(truth, preds, PROTOCOL)['false_track_events_per_km'] == 10
     truth['frames'][1]['reviewed'] = False
     assert score_scene(truth, preds, PROTOCOL)['false_track_events_per_km'] is None
+
+
+@pytest.mark.parametrize('preds', [[], [predicted()]])
+def test_lost_predictions_cannot_report_zero_false_events_per_kilometer(preds):
+    truth = annotations([frame(), frame(200000000, path=100)])
+    truth['reference_distance_verified'] = True
+    result = score_scene(truth, preds, PROTOCOL)
+    assert result['false_track_events'] == 0
+    assert result['false_track_events_per_km'] is None
+    assert result['prediction_coverage'] < 1
 
 
 def test_empty_denominators_do_not_report_perfect_recall_or_zero_rate():

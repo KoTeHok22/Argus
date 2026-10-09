@@ -206,7 +206,8 @@ def score_scene(annotations, predictions, protocol):
         'matched_object_frames': matches, 'total_object_frames': presences,
         'false_detections': false_detections, 'false_track_events': false_events,
         'reference_distance_m': distance,
-        'false_track_events_per_km': false_events * 1000 / distance if distance else None,
+        'false_track_events_per_km': (
+            false_events * 1000 / distance if distance and received == len(frames) else None),
         'metric_scope': 'fully_reviewed' if reviewed == len(frames) else 'reviewed_frames_only',
     }
 
@@ -228,7 +229,8 @@ def evaluate(manifest_path, predictions_path):
     expected = {scene['scene_id'] for scene in manifest['scenes']}
     if set(predictions['scenes']) != expected:
         raise ValueError('Prediction scenes must exactly match the manifest')
-    report = {'manifest_sha256': digest(manifest_path), 'scenes': {}}
+    report = {'manifest_sha256': digest(manifest_path),
+              'evaluator_sha256': digest(__file__), 'scenes': {}}
     for scene in manifest['scenes']:
         for key in ('source', 'annotations'):
             if digest(root / scene[key]) != scene[key + '_sha256']:
